@@ -8,7 +8,7 @@ crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 # Dioxus framework with web features
-dioxus = { workspace = true, features = ["web", "router"] }
+dioxus = { workspace = true, features = ["web", "router", "macro", "html"] }
 dioxus-web = { workspace = true }
 dioxus-router = { workspace = true }
 dioxus-signals = { workspace = true }
@@ -19,25 +19,25 @@ latex-ide-ui = { path = "../../crates/ui", features = ["web"] }
 latex-ide-editor = { path = "../../crates/editor", features = ["web"] }
 
 # WASM-specific Yrs bindings
-ywasm = { workspace = true }
+yrs = { workspace = true }
 
 # WebAssembly support
-wasm-bindgen = { workspace = true }
+wasm-bindgen = { workspace = true, features = ["serde-serialize"] }
 js-sys = { workspace = true }
 web-sys = { workspace = true, features = [
     "Window", "Document", "Element", "HtmlElement",
-    "WebTransport", "WebSocket", "EventSource",
-    "ReadableStream", "WritableStream", "Headers",
-    "Request", "Response", "Fetch", "AbortController",
+    "WebSocket", "EventSource", "BinaryType",
     "MessageEvent", "CloseEvent", "ErrorEvent",
-    "BinaryType", "Blob", "File", "FileReader",
-    "Storage", "Location", "History", "console"
+    "Request", "Response", "AbortController",
+    "Blob", "File", "FileReader", "HtmlInputElement",
+    "Storage", "Location", "History", "console", "KeyboardEvent",
+    "MediaQueryList"
 ]}
 wasm-bindgen-futures = { workspace = true }
 
 # Async utilities for WASM
 gloo-utils = "0.2"
-gloo-timers = "0.3"
+gloo-timers = { version = "0.3", features = ["futures"] }
 gloo-events = "0.2"
 gloo-storage = "0.3"
 
@@ -64,8 +64,7 @@ base64 = "0.22"
 default = ["dev"]
 dev = []
 
-[dependencies.wasm-bindgen]
-version = "0.2"
-features = [
-    "serde-serialize",
-]
+# WebTransport support (native only, not for WASM)
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+wtransport = { workspace = true }
+

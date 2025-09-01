@@ -1,4 +1,4 @@
-use dioxus::prelude::*;
+use crate::*;
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Copy, PartialEq, Serialize, Deserialize)]
@@ -31,7 +31,7 @@ impl Theme {
 
 #[component]
 pub fn ThemeProvider(children: Element) -> Element {
-    let mut theme = use_signal(|| Theme::default());
+    let theme = use_signal(|| Theme::default());
     
     use_context_provider(|| theme);
     

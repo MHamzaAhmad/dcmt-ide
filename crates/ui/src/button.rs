@@ -1,4 +1,4 @@
-use dioxus::prelude::*;
+use crate::*;
 
 #[derive(Clone, Copy, PartialEq)]
 pub enum ButtonVariant {

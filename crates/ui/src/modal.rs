@@ -1,4 +1,4 @@
-use dioxus::prelude::*;
+use crate::*;
 
 #[component]
 pub fn Modal(
@@ -8,7 +8,7 @@ pub fn Modal(
     #[props(default)] title: Option<String>,
 ) -> Element {
     if !is_open {
-        return None;
+        return VNode::empty();
     }
     
     rsx! {

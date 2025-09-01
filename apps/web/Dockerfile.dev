@@ -27,8 +27,8 @@ WORKDIR /app
 
 # Copy built WASM package and web assets
 COPY --from=builder /app/apps/web/pkg ./pkg
-COPY apps/web/index.html .
-COPY apps/web/style.css .
+COPY --from=builder /app/apps/web/index.html ./index.html
+COPY --from=builder /app/apps/web/style.css ./style.css
 
 # Install development server
 RUN npm install -g live-server

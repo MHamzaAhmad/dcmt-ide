@@ -1,5 +1,4 @@
 use ropey::Rope;
-use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug)]
 pub struct TextBuffer {

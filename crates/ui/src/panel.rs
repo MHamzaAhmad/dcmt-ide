@@ -1,4 +1,4 @@
-use dioxus::prelude::*;
+use crate::*;
 
 #[component]
 pub fn ResizablePanel(

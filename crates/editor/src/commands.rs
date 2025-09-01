@@ -1,6 +1,5 @@
 use crate::buffer::TextBuffer;
 use crate::cursor::Cursor;
-use crate::selection::Selection;
 
 pub enum EditorCommand {
     InsertChar(char),

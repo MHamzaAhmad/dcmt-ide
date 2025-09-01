@@ -223,13 +223,13 @@
 
                 // Load WebAssembly module
                 updateLoadingProgress(30, 'Loading WebAssembly module...');
-                const { run } = await import('./pkg/latex_ide_web.js');
+                const wasmModule = await import('./pkg/latex_ide_web.js');
 
                 updateLoadingProgress(60, 'Initializing WASM...');
-                await new Promise(resolve => setTimeout(resolve, 500)); // Brief pause for UI
-
+                await wasmModule.default(); // Initialize WASM
+                
                 updateLoadingProgress(80, 'Starting application...');
-                await run();
+                wasmModule.main(); // Start the Dioxus app
 
                 updateLoadingProgress(100, 'Ready!');
                 hideLoadingScreen();

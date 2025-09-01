@@ -1,4 +1,4 @@
-use dioxus::prelude::*;
+use crate::*;
 
 #[component]
 pub fn SplitView(
@@ -16,7 +16,8 @@ pub fn SplitView(
             onmousemove: move |evt| {
                 if *is_dragging.read() && resizable {
                     let x = evt.client_coordinates().x;
-                    let width = evt.target().map(|t| t.client_width()).unwrap_or(1000) as f64;
+                    // Use a fixed width for now, in a real app you'd get the container width
+                    let width = 1000.0; 
                     let new_split = ((x / width) * 100.0) as f32;
                     split_position.set(new_split.clamp(20.0, 80.0));
                 }

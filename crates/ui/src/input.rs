@@ -1,4 +1,4 @@
-use dioxus::prelude::*;
+use crate::*;
 
 #[component]
 pub fn Input(
@@ -14,12 +14,16 @@ pub fn Input(
         class.unwrap_or_default()
     );
     
+    let input_type_str = input_type.as_deref().unwrap_or("text");
+    let value_str = value.as_deref().unwrap_or("");
+    let placeholder_str = placeholder.as_deref().unwrap_or("");
+    
     rsx! {
         input {
             class: "{class_str}",
-            r#type: "{input_type.unwrap_or_else(|| \"text\".to_string())}",
-            value: "{value.unwrap_or_default()}",
-            placeholder: "{placeholder.unwrap_or_default()}",
+            r#type: "{input_type_str}",
+            value: "{value_str}",
+            placeholder: "{placeholder_str}",
             disabled: disabled,
             oninput: move |evt| {
                 onchange.call(evt.value());

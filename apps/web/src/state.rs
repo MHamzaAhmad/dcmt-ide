@@ -1,18 +1,33 @@
-use dioxus::prelude::*;
+use dioxus_signals::{Signal, Readable, Writable};
+use dioxus_hooks::{use_signal, use_effect};
 use serde::{Deserialize, Serialize};
-use ywasm::*;
+use yrs::{Doc as YDoc, Text, Transact, GetString};
 use std::collections::HashMap;
 use uuid::Uuid;
-use crate::hooks::{use_local_storage, BrowserCapabilities, ConnectionState};
+use crate::hooks::{use_local_storage, BrowserCapabilities};
+use crate::transport::ConnectionState;
 
 /// Web application state with persistence
-#[derive(Clone)]
+#[allow(dead_code)]
 pub struct WebAppState {
     pub ui_state: Signal<WebUIState>,
     pub documents: Signal<HashMap<String, YDoc>>,
     pub active_document: Signal<Option<String>>,
     pub connection_state: Signal<ConnectionState>,
     pub capabilities: Signal<BrowserCapabilities>,
+}
+
+// Implement Clone manually
+impl Clone for WebAppState {
+    fn clone(&self) -> Self {
+        Self {
+            ui_state: self.ui_state,
+            documents: self.documents,
+            active_document: self.active_document,
+            connection_state: self.connection_state,
+            capabilities: self.capabilities,
+        }
+    }
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -51,6 +66,7 @@ impl Default for WebUIState {
     }
 }
 
+#[allow(dead_code)]
 impl WebAppState {
     pub fn new() -> Self {
         // Load UI state from localStorage
@@ -58,9 +74,10 @@ impl WebAppState {
         
         // Auto-save UI state changes
         use_effect({
-            let save_fn = save_ui_state.clone();
+            let save_fn = save_ui_state;
+            let ui_state_clone = ui_state;
             move || {
-                let state = ui_state.read().clone();
+                let state = ui_state_clone.read().clone();
                 save_fn(state);
             }
         });
@@ -81,12 +98,12 @@ impl WebAppState {
         }
     }
     
-    pub fn create_document(&self, name: String, content: Option<String>) -> String {
+    pub fn create_document(&mut self, name: String, content: Option<String>) -> String {
         let doc = YDoc::new();
-        let text = doc.get_text("content");
+        let text = doc.get_or_insert_text("content");
         
         if let Some(initial_content) = content {
-            text.insert(0, &initial_content);
+            text.insert(&mut doc.transact_mut(), 0, &initial_content);
         }
         
         self.documents.write().insert(name.clone(), doc);
@@ -105,8 +122,8 @@ impl WebAppState {
     
     pub fn get_document_content(&self, doc_name: &str) -> Option<String> {
         if let Some(doc) = self.documents.read().get(doc_name) {
-            let text = doc.get_text("content");
-            Some(text.to_string())
+            let text = doc.get_or_insert_text("content");
+            Some(text.get_string(&doc.transact()))
         } else {
             None
         }
@@ -114,19 +131,20 @@ impl WebAppState {
     
     pub fn update_document_content(&self, doc_name: &str, content: &str) {
         if let Some(doc) = self.documents.read().get(doc_name) {
-            let text = doc.get_text("content");
+            let text = doc.get_or_insert_text("content");
             
             // Clear existing content and insert new content
             // In a real implementation, you'd want to use proper diff/patch
-            let current_length = text.len();
+            let mut txn = doc.transact_mut();
+            let current_length = text.len(&txn);
             if current_length > 0 {
-                text.remove_range(0, current_length);
+                text.remove_range(&mut txn, 0, current_length);
             }
-            text.insert(0, content);
+            text.insert(&mut txn, 0, content);
         }
     }
     
-    pub fn close_document(&self, doc_name: &str) {
+    pub fn close_document(&mut self, doc_name: &str) {
         self.documents.write().remove(doc_name);
         
         // If this was the active document, switch to another one
@@ -136,31 +154,36 @@ impl WebAppState {
         }
     }
     
-    pub fn toggle_sidebar(&self) {
+    pub fn toggle_sidebar(&mut self) {
         let mut ui_state = self.ui_state.write();
         ui_state.sidebar_collapsed = !ui_state.sidebar_collapsed;
     }
     
-    pub fn toggle_ai_chat(&self) {
+    pub fn toggle_ai_chat(&mut self) {
         let mut ui_state = self.ui_state.write();
         ui_state.ai_chat_visible = !ui_state.ai_chat_visible;
     }
     
-    pub fn toggle_pdf_preview(&self) {
+    pub fn toggle_pdf_preview(&mut self) {
         let mut ui_state = self.ui_state.write();
         ui_state.pdf_preview_visible = !ui_state.pdf_preview_visible;
     }
     
-    pub fn set_theme(&self, theme: WebTheme) {
-        let mut ui_state = self.ui_state.write();
-        ui_state.current_theme = theme;
+    pub fn set_theme(&mut self, theme: WebTheme) {
+        {
+            let mut ui_state = self.ui_state.write();
+            ui_state.current_theme = theme;
+        }
         
-        // Apply theme to document
+        // Apply theme to document  
         self.apply_theme_to_document();
     }
     
-    pub fn toggle_theme(&self) {
-        let current_theme = &self.ui_state.read().current_theme;
+    pub fn toggle_theme(&mut self) {
+        let current_theme = {
+            let ui_state = self.ui_state.read();
+            ui_state.current_theme.clone()
+        };
         let new_theme = match current_theme {
             WebTheme::Light => WebTheme::Dark,
             WebTheme::Dark => WebTheme::Light,
@@ -169,34 +192,36 @@ impl WebAppState {
         self.set_theme(new_theme);
     }
     
-    pub fn set_zoom_level(&self, zoom: f32) {
-        let mut ui_state = self.ui_state.write();
-        ui_state.zoom_level = zoom.clamp(0.5, 3.0);
+    pub fn set_zoom_level(&mut self, zoom: f32) {
+        {
+            let mut ui_state = self.ui_state.write();
+            ui_state.zoom_level = zoom.clamp(0.5, 3.0);
+        }
         
         // Apply zoom to editor and preview
         self.apply_zoom_to_ui();
     }
     
-    pub fn zoom_in(&self) {
+    pub fn zoom_in(&mut self) {
         let current_zoom = self.ui_state.read().zoom_level;
         self.set_zoom_level(current_zoom * 1.1);
     }
     
-    pub fn zoom_out(&self) {
+    pub fn zoom_out(&mut self) {
         let current_zoom = self.ui_state.read().zoom_level;
         self.set_zoom_level(current_zoom / 1.1);
     }
     
-    pub fn reset_zoom(&self) {
+    pub fn reset_zoom(&mut self) {
         self.set_zoom_level(1.0);
     }
     
-    pub fn toggle_auto_compile(&self) {
+    pub fn toggle_auto_compile(&mut self) {
         let mut ui_state = self.ui_state.write();
         ui_state.auto_compile = !ui_state.auto_compile;
     }
     
-    pub fn toggle_vim_mode(&self) {
+    pub fn toggle_vim_mode(&mut self) {
         let mut ui_state = self.ui_state.write();
         ui_state.vim_mode = !ui_state.vim_mode;
     }
@@ -210,8 +235,12 @@ impl WebAppState {
                         WebTheme::Dark => "dark",
                         WebTheme::Auto => {
                             // Check system preference
-                            if window.match_media("(prefers-color-scheme: dark)").is_ok() {
-                                "dark"
+                            if let Ok(Some(media_query)) = window.match_media("(prefers-color-scheme: dark)") {
+                                if media_query.matches() {
+                                    "dark"
+                                } else {
+                                    ""
+                                }
                             } else {
                                 ""
                             }
@@ -246,7 +275,7 @@ impl WebAppState {
         serde_json::to_string(&state)
     }
     
-    pub fn import_state(&self, state_json: &str) -> Result<(), serde_json::Error> {
+    pub fn import_state(&mut self, state_json: &str) -> Result<(), serde_json::Error> {
         let state: WebAppExportState = serde_json::from_str(state_json)?;
         
         // Restore UI state
@@ -264,6 +293,7 @@ impl WebAppState {
 }
 
 #[derive(Serialize, Deserialize)]
+#[allow(dead_code)]
 struct WebAppExportState {
     ui_state: WebUIState,
     document_names: Vec<String>,
@@ -272,6 +302,7 @@ struct WebAppExportState {
 
 /// Project management for web app
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[allow(dead_code)]
 pub struct WebProject {
     pub id: String,
     pub name: String,
@@ -283,6 +314,7 @@ pub struct WebProject {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[allow(dead_code)]
 pub struct ProjectSettings {
     pub latex_engine: String, // pdflatex, xelatex, lualatex
     pub bibliography_tool: String, // bibtex, biber
@@ -307,6 +339,7 @@ impl Default for ProjectSettings {
     }
 }
 
+#[allow(dead_code)]
 impl WebProject {
     pub fn new(name: String) -> Self {
         let now = js_sys::Date::now();

@@ -4,19 +4,21 @@ version.workspace = true
 edition.workspace = true
 
 [dependencies]
-dioxus = { workspace = true }
+dioxus = { workspace = true, features = ["macro", "html"] }
 dioxus-signals = { workspace = true }
 dioxus-hooks = { workspace = true }
 latex-ide-ui = { path = "../ui" }
 ropey = { workspace = true }
-tree-sitter = { workspace = true }
-tree-sitter-latex = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 similar = { workspace = true }
 regex = { workspace = true }
 
+# Tree-sitter only works on native platforms, not WASM
+tree-sitter = { workspace = true, optional = true }
+tree-sitter-latex = { workspace = true, optional = true }
+
 [features]
 default = []
-desktop = ["dioxus/desktop", "latex-ide-ui/desktop"]
+desktop = ["dioxus/desktop", "latex-ide-ui/desktop", "tree-sitter", "tree-sitter-latex"]
 web = ["dioxus/web", "latex-ide-ui/web"]

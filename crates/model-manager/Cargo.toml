@@ -45,6 +45,3 @@ dashmap = "6.1"
 
 [features]
 default = []
-kalosm-llama = ["kalosm/llama"]
-kalosm-mistral = ["kalosm/mistral"] 
-kalosm-phi = ["kalosm/phi"]

@@ -4,7 +4,7 @@ version.workspace = true
 edition.workspace = true
 
 [dependencies]
-dioxus = { workspace = true }
+dioxus = { workspace = true, features = ["macro", "html"] }
 dioxus-signals = { workspace = true }
 dioxus-hooks = { workspace = true }
 serde = { workspace = true }

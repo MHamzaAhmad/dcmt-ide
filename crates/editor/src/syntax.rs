@@ -1,11 +1,16 @@
+#[cfg(feature = "tree-sitter")]
 use tree_sitter::{Parser, Tree, Language};
+#[cfg(feature = "tree-sitter")]
 use tree_sitter_latex;
 
 pub struct SyntaxHighlighter {
+    #[cfg(feature = "tree-sitter")]
     parser: Parser,
+    #[cfg(feature = "tree-sitter")]
     tree: Option<Tree>,
 }
 
+#[cfg(feature = "tree-sitter")]
 impl SyntaxHighlighter {
     pub fn new() -> Self {
         let mut parser = Parser::new();
@@ -61,6 +66,22 @@ impl SyntaxHighlighter {
                 self.collect_highlights(&child, start_line, end_line, highlights);
             }
         }
+    }
+}
+
+#[cfg(not(feature = "tree-sitter"))]
+impl SyntaxHighlighter {
+    pub fn new() -> Self {
+        Self {}
+    }
+    
+    pub fn parse(&mut self, _text: &str) {
+        // No-op for web builds
+    }
+    
+    pub fn get_highlights(&self, _start_line: usize, _end_line: usize) -> Vec<Highlight> {
+        // Return empty highlights for web builds
+        Vec::new()
     }
 }
 

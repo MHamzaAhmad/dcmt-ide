@@ -103,7 +103,7 @@ dev_web() {
     cd ../..
     
     info "Starting Docker development environment..."
-    docker-compose -f docker-compose.dev.yml up --build web-dev
+    docker compose -f docker-compose.dev.yml up --build web-dev
 }
 
 # Backend services
@@ -113,7 +113,7 @@ dev_backend() {
     create_dev_certs
     
     info "Starting backend services with Docker..."
-    docker-compose -f docker-compose.dev.yml up --build backend-dev postgres redis latex-compiler
+    docker compose -f docker-compose.dev.yml up --build backend-dev postgres redis latex-compiler
 }
 
 # Full stack development
@@ -123,7 +123,7 @@ dev_full() {
     create_dev_certs
     
     info "Starting all services..."
-    docker-compose -f docker-compose.dev.yml up --build
+    docker compose -f docker-compose.dev.yml up --build
 }
 
 # Both desktop and web simultaneously
@@ -134,7 +134,7 @@ dev_both() {
     
     # Start web services in background
     info "Starting web services in background..."
-    docker-compose -f docker-compose.dev.yml up -d --build web-dev backend-dev postgres redis
+    docker compose -f docker-compose.dev.yml up -d --build web-dev backend-dev postgres redis
     
     # Wait a moment for services to start
     sleep 3
@@ -175,7 +175,7 @@ dev_clean() {
     
     # Clean Docker volumes and images
     if command -v docker &> /dev/null; then
-        docker-compose -f docker-compose.dev.yml down -v --rmi local
+        docker compose -f docker-compose.dev.yml down -v --rmi local
         docker system prune -f
     fi
     
@@ -221,7 +221,7 @@ dev_watch() {
     fi
     
     # Watch for changes in source files
-    watchexec -r -e rs,toml,html,css,js -w crates -w apps -- docker-compose -f docker-compose.dev.yml restart web-dev backend-dev
+    watchexec -r -e rs,toml,html,css,js -w crates -w apps -- docker compose -f docker-compose.dev.yml restart web-dev backend-dev
 }
 
 # Main script logic
@@ -276,7 +276,7 @@ main() {
 # Trap Ctrl+C to clean up background processes
 cleanup() {
     info "Shutting down development environment..."
-    docker-compose -f docker-compose.dev.yml down
+    docker compose -f docker-compose.dev.yml down
     exit 0
 }
 

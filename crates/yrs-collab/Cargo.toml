@@ -30,4 +30,3 @@ tracing = { workspace = true }
 
 [features]
 default = []
-wasm = ["yrs/wasm"]

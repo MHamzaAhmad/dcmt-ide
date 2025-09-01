@@ -1,10 +1,16 @@
-use dioxus::prelude::*;
+use crate::*;
 
 #[derive(Clone)]
 pub struct Tab {
     pub id: String,
     pub label: String,
     pub content: Element,
+}
+
+impl PartialEq for Tab {
+    fn eq(&self, other: &Self) -> bool {
+        self.id == other.id && self.label == other.label
+    }
 }
 
 #[component]

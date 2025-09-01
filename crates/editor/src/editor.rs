@@ -1,11 +1,5 @@
-use dioxus::prelude::*;
-use latex_ide_ui::theme::use_theme;
-use crate::{
-    buffer::TextBuffer,
-    cursor::Cursor,
-    syntax::{SyntaxHighlighter, HighlightType},
-    commands::{CommandExecutor, EditorCommand},
-};
+use crate::*;
+use crate::commands::{CommandExecutor, EditorCommand};
 
 #[component]
 pub fn TextEditor(
@@ -25,7 +19,7 @@ pub fn TextEditor(
     let mut cursor = use_signal(|| Cursor::new());
     let mut highlighter = use_signal(|| SyntaxHighlighter::new());
     let mut executor = use_signal(|| CommandExecutor::new());
-    let theme = use_theme();
+    let _theme = use_theme();
     
     // Parse content for syntax highlighting
     use_effect(move || {
@@ -37,7 +31,7 @@ pub fn TextEditor(
     let handle_keydown = move |evt: KeyboardEvent| {
         let key = evt.key();
         let ctrl = evt.modifiers().ctrl();
-        let shift = evt.modifiers().shift();
+        let _shift = evt.modifiers().shift();
         
         let command = match key {
             Key::Character(ch) if !ctrl => {

@@ -1,3 +1,7 @@
+// Re-export common dioxus types for convenience
+pub use latex_ide_ui::*;
+pub use dioxus_hooks::use_effect;
+
 pub mod buffer;
 pub mod editor;
 pub mod syntax;

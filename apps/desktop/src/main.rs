@@ -1,5 +1,6 @@
 use dioxus::prelude::*;
 use dioxus_hooks::{use_resource, use_effect, Resource};
+use dioxus_desktop::launch::launch;
 use latex_ide_ui::*;
 use latex_ide_yrs_collab::{CollaborationEngine, LaTeXDocument, UserInfo};
 use latex_ide_model_manager::ModelManager;
@@ -9,7 +10,7 @@ use anyhow::Result;
 use tracing::{info, error};
 
 // Import components from shared crates
-use latex_ide_editor::desktop::DesktopTextEditor;
+use latex_ide_editor::desktop::DesktopCodeMirrorEditor;
 use latex_ide_chat::desktop::DesktopAIChatInterface;
 use latex_ide_file_manager::desktop::DesktopFileTree;
 use latex_ide_pdf_viewer::desktop::DesktopPreviewPane;
@@ -28,15 +29,13 @@ fn main() -> Result<()> {
     info!("Starting LaTeX IDE Desktop application");
 
     // Launch Dioxus desktop app  
-    dioxus_desktop::launch(App);
-
-    Ok(())
+    launch(App, vec![], vec![])
 }
 
 #[component]
 fn App() -> Element {
     // Initialize application state
-    let _app_state = use_context_provider(|| AppState::new());
+    let mut app_state = use_context_provider(|| AppState::new());
     
     // Initialize collaboration engine
     let collab_engine = use_resource(move || async move {
@@ -61,6 +60,19 @@ fn App() -> Element {
                 error!("Failed to initialize model manager: {}", e);
                 None
             }
+        }
+    });
+    
+    // Update app state when resources are ready
+    use_effect(move || {
+        if let Some(engine) = collab_engine.read().as_ref() {
+            app_state.collaboration_engine.set(Some(engine.clone()));
+        }
+    });
+    
+    use_effect(move || {
+        if let Some(manager) = model_manager.read().as_ref() {
+            app_state.model_manager.set(manager.clone());
         }
     });
 
@@ -108,14 +120,20 @@ fn App() -> Element {
                     
                     // AI Chat sidebar  
                     div { class: "w-80 border-l border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800",
-                        DesktopAIChatInterface {
-                            model_manager: None, // TODO: Fix type compatibility with Resource
+                        if app_state.ui_state.read().ai_chat_visible {
+                            DesktopAIChatInterface {
+                                model_manager: app_state.model_manager.read().as_ref().map(|m| use_signal(|| Some(m.clone()))),
+                            }
+                        } else {
+                            div { class: "h-full flex items-center justify-center text-gray-500",
+                                "AI Chat Hidden"
+                            }
                         }
                     }
                 }
                 
                 // Status bar
-                StatusBar {}
+                StatusBar { app_state: app_state }
             }
         }
     }
@@ -186,14 +204,13 @@ Hello, world!
                 }
             }
             
-            // Editor using shared component
+            // Editor using CodeMirror
             div { class: "flex-1",
                 if current_document.read().is_some() {
-                    DesktopTextEditor {
-                        initial_content: Some(document_content.read().clone()),
-                        onchange: None, // TODO: Fix event handler compatibility
-                        show_line_numbers: Some(true),
-                        syntax_highlighting: Some(true),
+                    DesktopCodeMirrorEditor {
+                        content: document_content,
+                        enable_ai_suggestions: true,
+                        enable_pdf_sync: true,
                     }
                 } else {
                     div { class: "h-full flex items-center justify-center text-gray-500",
@@ -206,7 +223,7 @@ Hello, world!
 }
 
 #[component]
-fn StatusBar() -> Element {
+fn StatusBar(app_state: AppState) -> Element {
     let mut theme = use_theme();
     
     rsx! {
@@ -215,10 +232,28 @@ fn StatusBar() -> Element {
                 span { "Ready" }
                 span { "UTF-8" }
                 span { "LaTeX" }
-                span { "Line 1, Col 1" }
+                span { 
+                    if app_state.active_document.read().is_some() {
+                        "Document Active"
+                    } else {
+                        "No document"
+                    }
+                }
             }
             
             div { class: "flex items-center space-x-4",
+                button {
+                    class: "hover:bg-blue-700 px-2 py-0.5 rounded",
+                    onclick: {
+                        let mut app_state = app_state.clone();
+                        move |_| {
+                            let mut ui_state = app_state.ui_state.write();
+                            ui_state.ai_chat_visible = !ui_state.ai_chat_visible;
+                        }
+                    },
+                    if app_state.ui_state.read().ai_chat_visible { "💬" } else { "💬" }
+                }
+                
                 button {
                     class: "hover:bg-blue-700 px-2 py-0.5 rounded",
                     onclick: move |_| {
@@ -231,7 +266,13 @@ fn StatusBar() -> Element {
                     }
                 }
                 
-                span { "Connected" }
+                span { 
+                    if app_state.collaboration_engine.read().is_some() {
+                        "🟢 Connected"
+                    } else {
+                        "🟡 Offline"
+                    }
+                }
                 span { "Yrs CRDT" }
             }
         }

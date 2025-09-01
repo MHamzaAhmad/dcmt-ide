@@ -6,7 +6,6 @@ use {
     wtransport::{Connection, Endpoint, ClientConfig},
     tokio::sync::Mutex,
     std::collections::HashMap,
-    tokio::io::{AsyncWriteExt},
     std::sync::Arc,
 };
 

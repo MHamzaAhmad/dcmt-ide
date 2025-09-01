@@ -5,7 +5,7 @@ use dioxus_hooks::use_signal;
 use wasm_bindgen::prelude::*;
 
 // Import components from shared crates
-use latex_ide_editor::web::WebTextEditor;
+use latex_ide_editor::web::WebCodeMirrorEditor;
 use latex_ide_chat::web::{WebAIChatInterface, BrowserCapabilities};
 use latex_ide_file_manager::{web::WebFileTree, ProjectManager};
 use latex_ide_pdf_viewer::web::WebPreviewPane;
@@ -14,6 +14,7 @@ mod hooks;
 mod transport;
 
 // Create a simple function to convert between BrowserCapabilities types
+#[allow(dead_code)]
 fn convert_capabilities(local_caps: &hooks::BrowserCapabilities) -> BrowserCapabilities {
     BrowserCapabilities {
         server_sent_events: local_caps.server_sent_events,
@@ -111,10 +112,12 @@ fn EditorPane(document_content: Signal<String>) -> Element {
                 }
             }
             
-            // Editor using the new WebTextEditor component
+            // Editor using CodeMirror
             div { class: "flex-1",
-                WebTextEditor {
+                WebCodeMirrorEditor {
                     content: document_content,
+                    enable_ai_suggestions: true,
+                    enable_pdf_sync: true,
                 }
             }
         }

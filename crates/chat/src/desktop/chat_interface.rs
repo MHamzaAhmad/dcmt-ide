@@ -3,17 +3,14 @@ use dioxus_signals::{Signal, Readable, Writable};
 use dioxus_hooks::use_signal;
 use crate::ChatEngine;
 #[cfg(feature = "latex-ide-model-manager")]
-use latex_ide_model_manager::{ModelConfig, ModelManager};
+use latex_ide_model_manager::ModelManager;
 use latex_ide_ui::*;
 use latex_ide_ui::button::ButtonVariant;
 
 /// Desktop AI chat interface using shared chat engine
 #[component]
 pub fn DesktopAIChatInterface(
-    #[cfg(feature = "latex-ide-model-manager")]
     model_manager: Option<Signal<Option<std::sync::Arc<ModelManager>>>>,
-    #[cfg(not(feature = "latex-ide-model-manager"))]
-    model_manager: Option<()>,
 ) -> Element {
     let mut chat_engine = use_signal(|| ChatEngine::new());
     let mut current_message = use_signal(|| String::new());

@@ -1,6 +1,6 @@
 use axum::{
     extract::{Query, State},
-    response::{Response, IntoResponse, sse::{Event, Sse}},
+    response::{IntoResponse, sse::{Event, Sse}},
     http::{StatusCode, HeaderMap, header},
     routing::{get, post},
     Router, Json,
@@ -12,7 +12,7 @@ use uuid::Uuid;
 use std::{collections::HashMap, sync::Arc, time::Duration};
 use anyhow::Result;
 use tracing::{info, error, debug};
-use futures::stream::{self, StreamExt};
+use futures::stream::StreamExt;
 
 // All types are defined in this file for simplicity
 
@@ -149,7 +149,7 @@ impl SSEHandler {
     pub async fn stream_ai_response(
         &self,
         request: ModelRequest,
-        stream_id: Uuid,
+        _stream_id: Uuid,
     ) -> Result<()> {
         let model_manager = Arc::clone(&self.model_manager);
         let broadcast_sender = self.broadcast_sender.clone();
@@ -245,7 +245,7 @@ impl SSEHandler {
 
 /// SSE stream handler
 async fn sse_stream_handler(
-    Query(params): Query<StreamParams>,
+    Query(_params): Query<StreamParams>,
     State(handler): State<Arc<SSEHandler>>,
 ) -> impl IntoResponse {
     let stream_id = Uuid::new_v4();

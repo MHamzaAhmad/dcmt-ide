@@ -50,6 +50,9 @@ RUN mkdir -p /app/web
 RUN cp -r /app/apps/web/pkg /app/web/
 RUN cp /app/apps/web/index.html /app/web/
 RUN cp /app/apps/web/style.css /app/web/
+RUN cp /app/apps/web/manifest.json /app/web/
+RUN mkdir -p /app/web/assets
+RUN cp -r /app/crates/editor/assets/* /app/web/assets/
 
 # Create SQLite database
 RUN sqlite3 /app/data/latex_ide.db "CREATE TABLE IF NOT EXISTS documents (id INTEGER PRIMARY KEY, name TEXT, content TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP);"

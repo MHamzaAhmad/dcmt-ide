@@ -1,4 +1,3 @@
-use dioxus::prelude::*;
 use dioxus_hooks::use_signal;
 use dioxus_signals::{Signal, Readable, Writable};
 use latex_ide_yrs_collab::{CollaborationEngine, LaTeXDocument};
@@ -8,7 +7,7 @@ use std::collections::HashMap;
 use uuid::Uuid;
 
 /// Global application state for the desktop app
-#[derive(Clone)]
+#[derive(Clone, PartialEq)]
 pub struct AppState {
     pub current_project: Signal<Option<Project>>,
     pub open_documents: Signal<HashMap<Uuid, LaTeXDocument>>,
@@ -18,7 +17,7 @@ pub struct AppState {
     pub ui_state: Signal<UIState>,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Project {
     pub id: Uuid,
     pub name: String,
@@ -27,7 +26,7 @@ pub struct Project {
     pub documents: Vec<Uuid>,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct UIState {
     pub sidebar_collapsed: bool,
     pub sidebar_width: u32,
@@ -62,7 +61,7 @@ impl AppState {
         }
     }
 
-    pub fn create_new_document(&self, content: Option<String>) -> Uuid {
+    pub fn create_new_document(&mut self, content: Option<String>) -> Uuid {
         let doc_id = Uuid::new_v4();
         
         // Create LaTeX document with Yrs CRDT
@@ -78,7 +77,7 @@ impl AppState {
         doc_id
     }
 
-    pub fn open_document(&self, file_path: &str) -> Result<Uuid, std::io::Error> {
+    pub fn open_document(&mut self, file_path: &str) -> Result<Uuid, std::io::Error> {
         let content = std::fs::read_to_string(file_path)?;
         let doc_id = self.create_new_document(Some(content));
         Ok(doc_id)
@@ -92,7 +91,7 @@ impl AppState {
         Ok(())
     }
 
-    pub fn close_document(&self, doc_id: Uuid) {
+    pub fn close_document(&mut self, doc_id: Uuid) {
         self.open_documents.write().remove(&doc_id);
         
         // If this was the active document, switch to another one
@@ -110,17 +109,17 @@ impl AppState {
         }
     }
 
-    pub fn toggle_sidebar(&self) {
+    pub fn toggle_sidebar(&mut self) {
         let mut ui_state = self.ui_state.write();
         ui_state.sidebar_collapsed = !ui_state.sidebar_collapsed;
     }
 
-    pub fn toggle_theme(&self) {
+    pub fn toggle_theme(&mut self) {
         let mut ui_state = self.ui_state.write();
         ui_state.current_theme = ui_state.current_theme.toggle();
     }
 
-    pub fn set_editor_split(&self, split: f32) {
+    pub fn set_editor_split(&mut self, split: f32) {
         let mut ui_state = self.ui_state.write();
         ui_state.editor_split = split.clamp(20.0, 80.0);
     }

@@ -1,5 +1,5 @@
 //! Desktop-specific editor components and implementations
 
-pub mod text_editor;
+pub mod codemirror_desktop;
 
-pub use text_editor::*;
+pub use codemirror_desktop::DesktopCodeMirrorEditor;

@@ -1,5 +1,5 @@
 //! Web-specific editor components and implementations
 
-pub mod text_editor;
+pub mod codemirror_web;
 
-pub use text_editor::*;
+pub use codemirror_web::WebCodeMirrorEditor;

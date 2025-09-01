@@ -8,6 +8,31 @@
     <!-- TailwindCSS -->
     <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
     
+    <!-- CodeMirror 6 CSS -->
+    <style>
+        .cm-editor {
+            height: 100%;
+            border: 1px solid #e2e8f0;
+        }
+        
+        .cm-focused {
+            outline: 2px solid #3b82f6;
+            outline-offset: -2px;
+        }
+        
+        /* LaTeX-specific styling */
+        .cm-latex-command { color: #0969da; font-weight: 600; }
+        .cm-latex-environment { color: #8250df; }
+        .cm-latex-math { color: #0550ae; font-style: italic; }
+        .cm-latex-comment { color: #6e7781; font-style: italic; }
+        
+        /* AI suggestion decorations */
+        .cm-addition { background-color: rgba(34, 197, 94, 0.2); border-bottom: 2px solid rgb(34, 197, 94); }
+        .cm-deletion { background-color: rgba(239, 68, 68, 0.2); text-decoration: line-through; }
+        .cm-modification { background-color: rgba(251, 191, 36, 0.2); border-bottom: 2px solid rgb(251, 191, 36); }
+        .cm-sync-highlight { background-color: rgba(168, 85, 247, 0.3); border-left: 3px solid rgb(168, 85, 247); }
+    </style>
+    
     <!-- Custom styles -->
     <link rel="stylesheet" href="style.css">
     
@@ -199,6 +224,88 @@
             if (statusText) statusText.textContent = status;
         }
 
+        // Load script helper
+        function loadScript(src) {
+            return new Promise((resolve, reject) => {
+                const script = document.createElement('script');
+                script.src = src;
+                script.onload = resolve;
+                script.onerror = reject;
+                document.head.appendChild(script);
+            });
+        }
+
+        // Load CodeMirror LaTeX IDE bundle
+        async function loadCodeMirrorBundle() {
+            try {
+                // Load the bundled CodeMirror LaTeX IDE
+                const bundleScript = document.createElement('script');
+                bundleScript.src = './assets/codemirror-bundle.js';
+                bundleScript.async = true;
+                
+                return new Promise((resolve, reject) => {
+                    bundleScript.onload = () => {
+                        console.log('CodeMirror LaTeX IDE bundle loaded');
+                        resolve();
+                    };
+                    bundleScript.onerror = reject;
+                    document.head.appendChild(bundleScript);
+                });
+                
+            } catch (error) {
+                console.error('Failed to load CodeMirror bundle:', error);
+                throw error;
+            }
+        }
+        
+        // Enhanced CodeMirror factory with bundled modules
+        function setupCodeMirror6() {
+            if (!window.CodeMirrorLaTeXIDE) {
+                console.error('CodeMirror LaTeX IDE bundle not loaded');
+                return;
+            }
+            
+            // Create enhanced factory
+            window.CodeMirrorFactory = {
+                createEditor: async function(container, initialContent = '') {
+                    console.log('Creating enhanced CodeMirror editor...');
+                    
+                    try {
+                        const editor = await window.CodeMirrorLaTeXIDE.createEditor(container, {
+                            content: initialContent,
+                            theme: document.documentElement.classList.contains('dark') ? 'dark' : 'light',
+                            enableLatex: true,
+                            enableAutocompletion: true,
+                            enableLineNumbers: true,
+                            enableLineWrapping: true,
+                            onChange: (content) => {
+                                // Notify Rust/WASM about content changes
+                                if (window.onEditorContentChange) {
+                                    window.onEditorContentChange(content);
+                                }
+                            },
+                            onSelectionChange: (selection) => {
+                                // Notify Rust/WASM about selection changes
+                                if (window.onEditorSelectionChange) {
+                                    window.onEditorSelectionChange(selection);
+                                }
+                            }
+                        });
+                        
+                        // Store as global reference for WASM interaction
+                        window.cmEditor = editor;
+                        
+                        console.log('Enhanced CodeMirror editor created successfully');
+                        return editor;
+                        
+                    } catch (error) {
+                        console.error('Failed to create CodeMirror editor:', error);
+                        throw error;
+                    }
+                }
+            };
+        }
+
         // Hide loading screen
         function hideLoadingScreen() {
             const loadingScreen = document.getElementById('loading-screen');
@@ -221,10 +328,18 @@
                     console.warn('Some browser features may not be available');
                 }
 
+                // Load CodeMirror LaTeX IDE bundle
+                updateLoadingProgress(20, 'Loading CodeMirror LaTeX IDE bundle...');
+                await loadCodeMirrorBundle();
+                
                 // Load WebAssembly module
-                updateLoadingProgress(30, 'Loading WebAssembly module...');
+                updateLoadingProgress(50, 'Loading WebAssembly module...');
                 const wasmModule = await import('./pkg/latex_ide_web.js');
 
+                // Set up enhanced CodeMirror 6 factory
+                updateLoadingProgress(40, 'Setting up enhanced editor...');
+                setupCodeMirror6();
+                
                 updateLoadingProgress(60, 'Initializing WASM...');
                 await wasmModule.default(); // Initialize WASM
                 

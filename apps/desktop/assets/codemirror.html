@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>CodeMirror 6 for Desktop</title>
+    <style>
+        .cm-editor {
+            height: 100%;
+            border: 1px solid #e2e8f0;
+        }
+        
+        .cm-focused {
+            outline: 2px solid #3b82f6;
+            outline-offset: -2px;
+        }
+        
+        /* LaTeX-specific styling */
+        .cm-latex-command { color: #0969da; font-weight: 600; }
+        .cm-latex-environment { color: #8250df; }
+        .cm-latex-math { color: #0550ae; font-style: italic; }
+        .cm-latex-comment { color: #6e7781; font-style: italic; }
+        
+        /* AI suggestion decorations */
+        .cm-addition { background-color: rgba(34, 197, 94, 0.2); border-bottom: 2px solid rgb(34, 197, 94); }
+        .cm-deletion { background-color: rgba(239, 68, 68, 0.2); text-decoration: line-through; }
+        .cm-modification { background-color: rgba(251, 191, 36, 0.2); border-bottom: 2px solid rgb(251, 191, 36); }
+        .cm-sync-highlight { background-color: rgba(168, 85, 247, 0.3); border-left: 3px solid rgb(168, 85, 247); }
+    </style>
+</head>
+<body>
+    <script src="../../../crates/editor/assets/codemirror-bundle.js"></script>
+    <script type="module">
+        // Wait for bundle to load then set up desktop-specific CodeMirror
+        document.addEventListener('DOMContentLoaded', async function() {
+            try {
+                // Wait for CodeMirror LaTeX IDE bundle to be available
+                let retryCount = 0;
+                while (!window.CodeMirrorLaTeXIDE && retryCount < 50) {
+                    await new Promise(resolve => setTimeout(resolve, 100));
+                    retryCount++;
+                }
+                
+                if (!window.CodeMirrorLaTeXIDE) {
+                    throw new Error('CodeMirror LaTeX IDE bundle failed to load');
+                }
+                
+                console.log('Setting up desktop CodeMirror with enhanced bundle...');
+                
+                // Create enhanced desktop factory
+                window.CodeMirrorFactory = {
+                    createEditor: async function(container, initialContent = '') {
+                        console.log('Creating enhanced desktop CodeMirror editor...');
+                        
+                        try {
+                            const editor = await window.CodeMirrorLaTeXIDE.createEditor(container, {
+                                content: initialContent,
+                                theme: window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light',
+                                enableLatex: true,
+                                enableAutocompletion: true,
+                                enableLineNumbers: true,
+                                enableLineWrapping: true,
+                                onChange: (content) => {
+                                    // Desktop-specific content change handling
+                                    console.log('Desktop editor content changed');
+                                    if (window.onDesktopEditorContentChange) {
+                                        window.onDesktopEditorContentChange(content);
+                                    }
+                                },
+                                onSelectionChange: (selection) => {
+                                    // Desktop-specific selection change handling
+                                    if (window.onDesktopEditorSelectionChange) {
+                                        window.onDesktopEditorSelectionChange(selection);
+                                    }
+                                }
+                            });
+                            
+                            // Store as global reference for desktop integration
+                            window.cmEditor = editor;
+                            
+                            // Add desktop-specific enhancements
+                            editor.onDesktopKeydown = (event) => {
+                                // Handle desktop-specific keyboard shortcuts
+                                if (event.ctrlKey || event.metaKey) {
+                                    switch (event.key) {
+                                        case 's':
+                                            event.preventDefault();
+                                            if (window.onDesktopSave) {
+                                                window.onDesktopSave(editor.getContent());
+                                            }
+                                            break;
+                                        case 'o':
+                                            event.preventDefault();
+                                            if (window.onDesktopOpen) {
+                                                window.onDesktopOpen();
+                                            }
+                                            break;
+                                        case 'n':
+                                            event.preventDefault();
+                                            if (window.onDesktopNew) {
+                                                window.onDesktopNew();
+                                            }
+                                            break;
+                                    }
+                                }
+                            };
+                            
+                            // Add keyboard event listener
+                            editor.dom.addEventListener('keydown', editor.onDesktopKeydown);
+                            
+                            console.log('Enhanced desktop CodeMirror editor created successfully');
+                            return editor;
+                            
+                        } catch (error) {
+                            console.error('Failed to create desktop CodeMirror editor:', error);
+                            // Fallback to basic editor
+                            throw error;
+                        }
+                    }
+                };
+                
+                console.log('Desktop CodeMirror 6 with enhanced LaTeX support loaded');
+                
+            } catch (error) {
+                console.error('Failed to initialize desktop CodeMirror:', error);
+                
+                // Create fallback factory
+                window.CodeMirrorFactory = {
+                    createEditor: function(container, initialContent = '') {
+                        console.warn('Using fallback CodeMirror implementation');
+                        const textarea = document.createElement('textarea');
+                        textarea.value = initialContent;
+                        textarea.style.cssText = 'width: 100%; height: 100%; border: 1px solid #ccc; font-family: monospace; padding: 8px;';
+                        container.appendChild(textarea);
+                        
+                        return {
+                            getContent: () => textarea.value,
+                            setContent: (content) => { textarea.value = content; },
+                            format: () => console.log('Format not available in fallback mode'),
+                            destroy: () => container.removeChild(textarea)
+                        };
+                    }
+                };
+            }
+        });
+    </script>
+</body>
+</html>

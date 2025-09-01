@@ -14,6 +14,23 @@ serde_json = { workspace = true }
 similar = { workspace = true }
 regex = { workspace = true }
 tracing = { workspace = true }
+uuid = { workspace = true }
+anyhow = { workspace = true }
+thiserror = { workspace = true }
+
+# Web-specific dependencies for enhanced WASM integration
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+wasm-bindgen = { workspace = true, features = ["serde-serialize"] }
+wasm-bindgen-futures = { workspace = true }
+js-sys = { workspace = true }
+web-sys = { workspace = true, features = [
+    "HtmlTextAreaElement", "Element", "Document", "Window", "HtmlElement",
+    "console", "AbortController", "BinaryType", "MessageEvent", 
+    "CloseEvent", "ErrorEvent", "KeyboardEvent", "MouseEvent", "FocusEvent",
+    "InputEvent", "CompositionEvent", "CssStyleDeclaration", "DomRect",
+    "Performance", "PerformanceNavigation", "PerformanceTiming",
+    "Url", "UrlSearchParams", "Location", "History"
+] }
 
 # Tree-sitter only works on native platforms, not WASM
 tree-sitter = { workspace = true, optional = true }
@@ -21,5 +38,11 @@ tree-sitter-latex = { workspace = true, optional = true }
 
 [features]
 default = []
-desktop = ["dioxus/desktop", "latex-ide-ui/desktop", "tree-sitter", "tree-sitter-latex"]
+desktop = ["dioxus/desktop", "latex-ide-ui/desktop", "tree-sitter", "tree-sitter-latex", "tokio"]
 web = ["dioxus/web", "latex-ide-ui/web"]
+
+# Desktop-specific dependencies with enhanced integration
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+serde_json = { workspace = true }
+tokio = { workspace = true, features = ["macros", "rt", "time"], optional = true }
+futures = { workspace = true }

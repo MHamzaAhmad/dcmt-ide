@@ -67,4 +67,5 @@ dev = []
 # WebTransport support (native only, not for WASM)
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 wtransport = { workspace = true }
+tokio = { workspace = true }
 

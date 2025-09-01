@@ -1,13 +1,25 @@
-FROM rust:1.89 as builder
+FROM rust:1.89
 
-# Install Node.js and wasm-pack for WASM compilation
-RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - && \
-    apt-get install -y nodejs
+# Install system dependencies for unified development environment
+RUN apt-get update && apt-get install -y \
+    curl \
+    nodejs \
+    npm \
+    sqlite3 \
+    texlive-latex-recommended \
+    texlive-latex-extra \
+    texlive-fonts-recommended \
+    supervisor \
+    && rm -rf /var/lib/apt/lists/*
 
+# Install wasm-pack for WASM compilation
 RUN curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
 
 # Add WebAssembly target
 RUN rustup target add wasm32-unknown-unknown
+
+# Install Node.js development tools
+RUN npm install -g live-server pm2
 
 WORKDIR /app
 
@@ -16,28 +28,52 @@ COPY Cargo.toml Cargo.lock ./
 COPY crates/ ./crates/
 COPY apps/web/ ./apps/web/
 
-# Build WASM module with debug symbols for development
+# Build backend services for development
+RUN cargo build \
+    --bin webtransport-server \
+    --bin sse-handler \
+    --bin model-manager
+
+# Build WASM module for development
 WORKDIR /app/apps/web
 RUN wasm-pack build --target web --out-dir pkg --dev --scope latex-ide
 
-# Development server stage
-FROM node:20-alpine
-
+# Setup directories for unified services
 WORKDIR /app
+RUN mkdir -p /app/data /app/logs /app/config
 
-# Copy built WASM package and web assets
-COPY --from=builder /app/apps/web/pkg ./pkg
-COPY --from=builder /app/apps/web/index.html ./index.html
-COPY --from=builder /app/apps/web/style.css ./style.css
+# Copy web assets to serve location
+RUN mkdir -p /app/web
+RUN cp -r /app/apps/web/pkg /app/web/
+RUN cp /app/apps/web/index.html /app/web/
+RUN cp /app/apps/web/style.css /app/web/
 
-# Install development server
-RUN npm install -g live-server
+# Create SQLite database
+RUN sqlite3 /app/data/latex_ide.db "CREATE TABLE IF NOT EXISTS documents (id INTEGER PRIMARY KEY, name TEXT, content TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP);"
 
-# Create development certificate for WebTransport
-RUN mkdir -p /certs
+# Create supervisor configuration for all services
+RUN mkdir -p /etc/supervisor/conf.d
 
-# Expose ports
-EXPOSE 8080 3000
+# Copy service startup configuration
+COPY apps/web/supervisord.conf /etc/supervisor/conf.d/latex-ide.conf
 
-# Start development server with live reloading
-CMD ["live-server", "--port=8080", "--host=0.0.0.0", "--entry-file=index.html", "--watch=pkg,*.html,*.css", "--cors"]
+# Create startup script
+RUN echo '#!/bin/bash\n\
+echo "Starting LaTeX IDE unified development server..."\n\
+echo "Frontend: http://localhost:8080"\n\
+echo "WebTransport Server: localhost:3001"\n\
+echo "SSE Handler: localhost:3002"\n\
+echo "Model Manager: localhost:3003"\n\
+echo "Database: SQLite at /app/data/latex_ide.db"\n\
+exec supervisord -c /etc/supervisor/supervisord.conf -n\n\
+' > /app/start-dev.sh && chmod +x /app/start-dev.sh
+
+# Expose all service ports
+EXPOSE 8080 3001 3002 3003
+
+# Health check for the web frontend
+HEALTHCHECK --interval=30s --timeout=10s --start-period=10s --retries=3 \
+    CMD curl -f http://localhost:8080/ || exit 1
+
+# Start all services with supervisor
+CMD ["/app/start-dev.sh"]

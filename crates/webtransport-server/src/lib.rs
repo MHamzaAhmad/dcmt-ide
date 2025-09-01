@@ -1,5 +1,5 @@
-use wtransport::prelude::*;
-use latex_ide_yrs_collab::{CollaborationEngine, UserInfo, CollaborationEvent};
+use wtransport::{Endpoint, Connection, ServerConfig, RecvStream, Identity, tls::{Certificate, CertificateChain, PrivateKey}};
+use latex_ide_yrs_collab::{CollaborationEngine, UserInfo};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -8,14 +8,9 @@ use uuid::Uuid;
 use anyhow::Result;
 use tracing::{info, error, debug, warn};
 
-pub mod server;
-pub mod session;
-pub mod streams;
-pub mod fallback;
+// All types are defined in this file for simplicity
 
-pub use server::WebTransportServer;
-pub use session::UserSession;
-pub use streams::StreamManager;
+// All types are defined in this file
 
 /// WebTransport message types for different streams
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -107,8 +102,8 @@ impl StreamType {
 
 /// WebTransport server for LaTeX IDE collaboration
 pub struct WebTransportServer {
-    server: Endpoint,
-    sessions: Arc<RwLock<HashMap<Uuid, UserSession>>>,
+    server: Endpoint<wtransport::endpoint::endpoint_side::Server>,
+    sessions: Arc<RwLock<HashMap<Uuid, UserInfo>>>,
     documents: Arc<RwLock<HashMap<Uuid, Arc<Mutex<CollaborationEngine>>>>>,
     event_sender: broadcast::Sender<ServerEvent>,
 }
@@ -129,7 +124,7 @@ impl WebTransportServer {
         let config = Self::create_server_config(cert_path, key_path).await?;
         
         // Create WebTransport endpoint
-        let server = Endpoint::server(config, bind_addr.parse()?)?;
+        let server = Endpoint::server(config)?;
         
         let (event_sender, event_receiver) = broadcast::channel(1000);
         
@@ -147,10 +142,16 @@ impl WebTransportServer {
         info!("WebTransport server listening for connections");
         
         loop {
-            let incoming = self.server.accept().await;
-            let session_request = incoming.accept().await?;
+            let incoming_session = self.server.accept().await;
+            let session_request = match incoming_session.await {
+                Ok(req) => req,
+                Err(e) => {
+                    error!("Failed to accept session: {}", e);
+                    continue;
+                }
+            };
             
-            info!("New WebTransport connection from: {:?}", session_request.remote_address());
+            info!("New WebTransport connection");
             
             // Spawn task to handle this session
             let sessions = Arc::clone(&self.sessions);
@@ -166,8 +167,8 @@ impl WebTransportServer {
     }
     
     async fn handle_session(
-        session_request: SessionRequest,
-        sessions: Arc<RwLock<HashMap<Uuid, UserSession>>>,
+        session_request: wtransport::endpoint::SessionRequest,
+        sessions: Arc<RwLock<HashMap<Uuid, UserInfo>>>,
         documents: Arc<RwLock<HashMap<Uuid, Arc<Mutex<CollaborationEngine>>>>>,
         event_sender: broadcast::Sender<ServerEvent>,
     ) -> Result<()> {
@@ -188,13 +189,12 @@ impl WebTransportServer {
         
         info!("User {} connected to document {:?}", user_info.name, document_id);
         
-        // Create user session
-        let user_session = UserSession::new(user_info.clone(), session);
+        // Store user info
         let user_id = user_info.id;
         
         {
             let mut sessions_guard = sessions.write().await;
-            sessions_guard.insert(user_id, user_session);
+            sessions_guard.insert(user_id, user_info.clone());
         }
         
         // Get or create collaboration engine for document
@@ -216,9 +216,10 @@ impl WebTransportServer {
         
         // Handle multiplexed streams
         Self::handle_multiplexed_streams(
+            session.clone(),
             sessions.clone(),
             documents.clone(),
-            event_sender,
+            event_sender.clone(),
             user_id,
             collab_engine,
         ).await?;
@@ -236,19 +237,17 @@ impl WebTransportServer {
     }
     
     async fn handle_multiplexed_streams(
-        sessions: Arc<RwLock<HashMap<Uuid, UserSession>>>,
-        documents: Arc<RwLock<HashMap<Uuid, Arc<Mutex<CollaborationEngine>>>>>,
+        session: Connection,
+        _sessions: Arc<RwLock<HashMap<Uuid, UserInfo>>>,
+        _documents: Arc<RwLock<HashMap<Uuid, Arc<Mutex<CollaborationEngine>>>>>,
         event_sender: broadcast::Sender<ServerEvent>,
-        user_id: Uuid,
+        _user_id: Uuid,
         collab_engine: Arc<Mutex<CollaborationEngine>>,
     ) -> Result<()> {
-        let sessions_guard = sessions.read().await;
-        let user_session = sessions_guard.get(&user_id)
-            .ok_or_else(|| anyhow::anyhow!("User session not found"))?;
-        
         loop {
-            let mut stream = user_session.session.accept_uni().await?;
-            let stream_id = stream.id().index();
+            let mut stream = session.accept_uni().await?;
+            // Simple stream identification (we'll just handle all as document sync for now)
+            let stream_id = 0;
             
             debug!("Received stream {}", stream_id);
             
@@ -314,7 +313,7 @@ impl WebTransportServer {
     
     async fn handle_awareness_stream(
         stream: &mut RecvStream,
-        collab_engine: Arc<Mutex<CollaborationEngine>>,
+        _collab_engine: Arc<Mutex<CollaborationEngine>>,
         event_sender: broadcast::Sender<ServerEvent>,
     ) -> Result<()> {
         let message = Self::read_message(stream).await?;
@@ -341,7 +340,7 @@ impl WebTransportServer {
         let message = Self::read_message(stream).await?;
         
         match message {
-            WebTransportMessage::AiChat { conversation_id, message, model_id } => {
+            WebTransportMessage::AiChat { conversation_id, message, model_id: _ } => {
                 debug!("AI chat message for conversation {}: {}", conversation_id, message);
                 // Forward to AI handler
                 // TODO: Implement AI chat handling
@@ -406,40 +405,51 @@ impl WebTransportServer {
         let cert_chain = Self::load_cert_chain(cert_path).await?;
         let private_key = Self::load_private_key(key_path).await?;
         
-        let mut config = ServerConfig::builder()
-            .with_single_cert(cert_chain, private_key)?
-            .clone();
-            
-        // Enable WebTransport
-        config.alpn_protocols = vec![b"h3".to_vec(), b"h3-32".to_vec(), b"h3-31".to_vec()];
+        // Create certificates from raw bytes
+        let certs: Result<Vec<Certificate>, _> = cert_chain.into_iter()
+            .map(|der| Certificate::from_der(der))
+            .collect();
+        let certs = certs?;
+        
+        // Create certificate chain and private key
+        let cert_chain = CertificateChain::new(certs);
+        let private_key = PrivateKey::from_der_pkcs8(private_key);
+        let identity = Identity::new(cert_chain, private_key);
+        
+        let config = ServerConfig::builder()
+            .with_bind_address(([0, 0, 0, 0], 3001).into())
+            .with_identity(identity)
+            .build();
         
         Ok(config)
     }
     
-    async fn load_cert_chain(path: &str) -> Result<Vec<rustls::Certificate>> {
+    async fn load_cert_chain(path: &str) -> Result<Vec<Vec<u8>>> {
         use rustls_pemfile;
         
         let cert_file = tokio::fs::read(path).await?;
         let mut reader = std::io::Cursor::new(cert_file);
         
-        let certs = rustls_pemfile::certs(&mut reader)?
+        let certs = rustls_pemfile::certs(&mut reader)
+            .collect::<Result<Vec<_>, _>>()?
             .into_iter()
-            .map(rustls::Certificate)
+            .map(|cert| cert.to_vec())
             .collect();
             
         Ok(certs)
     }
     
-    async fn load_private_key(path: &str) -> Result<rustls::PrivateKey> {
+    async fn load_private_key(path: &str) -> Result<Vec<u8>> {
         use rustls_pemfile;
         
         let key_file = tokio::fs::read(path).await?;
         let mut reader = std::io::Cursor::new(key_file);
         
-        let keys = rustls_pemfile::pkcs8_private_keys(&mut reader)?;
+        let keys = rustls_pemfile::pkcs8_private_keys(&mut reader)
+            .collect::<Result<Vec<_>, _>>()?;
         
         match keys.into_iter().next() {
-            Some(key) => Ok(rustls::PrivateKey(key)),
+            Some(key) => Ok(key.secret_pkcs8_der().to_vec()),
             None => Err(anyhow::anyhow!("No private key found in file")),
         }
     }

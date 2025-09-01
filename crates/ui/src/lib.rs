@@ -1,7 +1,7 @@
 // Re-export common dioxus types for convenience
 pub use dioxus::prelude::*;
 pub use dioxus_signals::{GlobalSignal, Owner, Readable, Writable, Signal};
-pub use dioxus_hooks::{use_signal, use_context, use_context_provider};
+pub use dioxus_hooks::{use_signal, use_context, use_context_provider, use_resource};
 
 pub mod button;
 pub mod card;

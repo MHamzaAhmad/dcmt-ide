@@ -1,11 +1,10 @@
 use anyhow::Result;
-use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use tokio::process::Command;
 use tokio::fs;
-use tracing::{debug, error, info};
+use tracing::{debug, info};
 
 #[derive(Clone, Copy, Debug, Serialize, Deserialize)]
 pub enum Engine {

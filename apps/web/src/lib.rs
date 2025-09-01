@@ -18,9 +18,7 @@ pub fn main() {
     // Set up panic hook for better error messages
     console_error_panic_hook::set_once();
     
-    // Initialize logging
-    tracing_wasm::set_as_global_default();
-    
+    // Tracing is initialized by Dioxus
     tracing::info!("Starting LaTeX IDE Web application");
     
     // Launch Dioxus web app 
@@ -36,23 +34,24 @@ pub fn run() {
 
 #[component]
 fn App() -> Element {
-    // Simple demo app for now to get the build working
     rsx! {
-        div {
-            id: "app",
-            class: "h-screen w-screen bg-white dark:bg-gray-900 flex flex-col p-4",
-            
-            h1 { class: "text-2xl font-bold text-gray-900 dark:text-gray-100 mb-4",
-                "LaTeX IDE Web"
-            }
-            
-            div { class: "flex-1 flex gap-4",
-                div { class: "flex-1",
-                    WebEditorPane { }
+        ThemeProvider {
+            div {
+                id: "app",
+                class: "h-screen w-screen bg-white dark:bg-gray-900 flex flex-col p-4",
+                
+                h1 { class: "text-2xl font-bold text-gray-900 dark:text-gray-100 mb-4",
+                    "LaTeX IDE Web"
                 }
                 
-                div { class: "flex-1",
-                    WebPreviewPane { }
+                div { class: "flex-1 flex gap-4",
+                    div { class: "flex-1",
+                        WebEditorPane { }
+                    }
+                    
+                    div { class: "flex-1",
+                        WebPreviewPane { }
+                    }
                 }
             }
         }
@@ -403,7 +402,6 @@ fn ChatBubble(message: ChatMessage) -> Element {
 
 #[component]
 fn WebStatusBar(capabilities: Signal<BrowserCapabilities>) -> Element {
-    let mut theme = use_theme();
     let caps = capabilities.read();
     
     rsx! {
@@ -416,18 +414,6 @@ fn WebStatusBar(capabilities: Signal<BrowserCapabilities>) -> Element {
             }
             
             div { class: "flex items-center space-x-4",
-                button {
-                    class: "hover:bg-blue-700 px-2 py-0.5 rounded transition-colors",
-                    onclick: move |_| {
-                        let new_theme = theme.read().toggle();
-                        theme.set(new_theme);
-                    },
-                    match *theme.read() {
-                        Theme::Light => "🌙",
-                        Theme::Dark => "☀️"
-                    }
-                }
-                
                 span {
                     class: if caps.webtransport_supported { "text-green-300" } else { "text-yellow-300" },
                     if caps.webtransport_supported { "WebTransport" } else { "WebSocket" }

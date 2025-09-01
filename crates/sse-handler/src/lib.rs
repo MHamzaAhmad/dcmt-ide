@@ -6,7 +6,7 @@ use axum::{
     Router, Json,
 };
 use serde::{Deserialize, Serialize};
-use tokio_stream::{wrappers::ReceiverStream, Stream};
+use tokio_stream::{wrappers::BroadcastStream, Stream};
 use tokio::sync::{broadcast, mpsc};
 use uuid::Uuid;
 use std::{collections::HashMap, sync::Arc, time::Duration};
@@ -14,12 +14,9 @@ use anyhow::Result;
 use tracing::{info, error, debug};
 use futures::stream::{self, StreamExt};
 
-pub mod models;
-pub mod streaming;
-pub mod handlers;
+// All types are defined in this file for simplicity
 
-pub use models::{ModelManager, ModelType, ModelRequest, ModelResponse};
-pub use streaming::StreamingResponse;
+// All types are defined in this file
 
 /// SSE message types for AI streaming
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -257,7 +254,7 @@ async fn sse_stream_handler(
     info!("New SSE stream connected: {}", stream_id);
     
     // Convert broadcast receiver to SSE stream
-    let stream = ReceiverStream::new(receiver)
+    let stream = BroadcastStream::new(receiver)
         .filter_map(|msg| async move {
             match msg {
                 Ok(sse_msg) => {

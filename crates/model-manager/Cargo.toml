@@ -3,15 +3,19 @@ name = "latex-ide-model-manager"
 version.workspace = true
 edition.workspace = true
 
+[[bin]]
+name = "model-manager"
+path = "src/main.rs"
+
 [dependencies]
 # SSE Handler dependency
 latex-ide-sse-handler = { path = "../sse-handler" }
 
-# AI/ML Libraries
-kalosm = { workspace = true }
-ollama-rs = { workspace = true }
-openai-api-rs = { workspace = true }
-async-openai = { workspace = true }
+# AI/ML Libraries (disabled for development build due to dependency conflicts)
+# kalosm = { workspace = true }
+# ollama-rs = { workspace = true }
+# openai-api-rs = { workspace = true }
+# async-openai = { workspace = true }
 
 # Async runtime
 tokio = { workspace = true }
@@ -30,6 +34,13 @@ thiserror = { workspace = true }
 
 # Logging
 tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+
+# Database
+sqlx = { version = "0.8", features = ["runtime-tokio-rustls", "sqlite"] }
+
+# HTTP server
+axum = { workspace = true }
 
 # UUID
 uuid = { workspace = true }
@@ -42,6 +53,9 @@ config = { workspace = true }
 
 # Collections
 dashmap = "6.1"
+
+# Time
+chrono = { workspace = true }
 
 [features]
 default = []

@@ -6,7 +6,7 @@ use {
     wtransport::{Connection, Endpoint, ClientConfig},
     tokio::sync::Mutex,
     std::collections::HashMap,
-    tokio::io::{AsyncReadExt, AsyncWriteExt},
+    tokio::io::{AsyncWriteExt},
     std::sync::Arc,
 };
 
@@ -107,11 +107,11 @@ impl Transport {
         // Configure wtransport client
         let config = ClientConfig::builder()
             .with_bind_default()
-            .with_no_cert_validation()
+            .with_native_certs()
             .build();
             
         let endpoint = Endpoint::client(config)?;
-        let connection = endpoint.connect(url.parse()?).await?;
+        let connection = endpoint.connect(url).await?;
             
         self.connection = Some(connection);
         self.connection_state = ConnectionState::Connected;
@@ -122,7 +122,8 @@ impl Transport {
     
     pub async fn send_message(&self, message: TransportMessage) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         if let Some(connection) = &self.connection {
-            let (mut send_stream, _recv_stream) = connection.open_bi().await?;
+            let opening_stream = connection.open_bi().await?;
+            let (mut send_stream, _recv_stream) = opening_stream.await?;
             let serialized = serde_json::to_vec(&message)?;
             
             // Write message length first (4 bytes)

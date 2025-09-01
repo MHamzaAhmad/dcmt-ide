@@ -25,6 +25,9 @@ thiserror = { workspace = true }
 # UUID for document IDs
 uuid = { workspace = true }
 
+# Regex for LaTeX parsing
+regex = { workspace = true }
+
 # Logging
 tracing = { workspace = true }
 

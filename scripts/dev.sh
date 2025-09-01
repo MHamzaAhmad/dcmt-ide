@@ -103,7 +103,7 @@ dev_web() {
     cd ../..
     
     info "Starting Docker development environment..."
-    docker compose -f docker-compose.dev.yml up --build web-dev
+    docker compose -f docker-compose.dev.yml up --build latex-ide-unified
 }
 
 # Backend services
@@ -134,7 +134,7 @@ dev_both() {
     
     # Start web services in background
     info "Starting web services in background..."
-    docker compose -f docker-compose.dev.yml up -d --build web-dev backend-dev postgres redis
+    docker compose -f docker-compose.dev.yml up -d --build latex-ide-unified
     
     # Wait a moment for services to start
     sleep 3
@@ -221,7 +221,7 @@ dev_watch() {
     fi
     
     # Watch for changes in source files
-    watchexec -r -e rs,toml,html,css,js -w crates -w apps -- docker compose -f docker-compose.dev.yml restart web-dev backend-dev
+    watchexec -r -e rs,toml,html,css,js -w crates -w apps -- docker compose -f docker-compose.dev.yml restart latex-ide-unified
 }
 
 # Main script logic

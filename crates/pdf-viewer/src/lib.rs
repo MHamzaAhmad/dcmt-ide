@@ -1,8 +1,4 @@
-use dioxus::prelude::*;
-use latex_ide_ui::{Button, ButtonVariant};
-use pdfium_render::prelude::*;
-use std::path::{Path, PathBuf};
-use anyhow::Result;
+use std::path::PathBuf;
 
 pub mod viewer;
 pub mod controls;

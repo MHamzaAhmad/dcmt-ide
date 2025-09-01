@@ -3,6 +3,10 @@ name = "latex-ide-webtransport-server"
 version.workspace = true
 edition.workspace = true
 
+[[bin]]
+name = "webtransport-server"
+path = "src/main.rs"
+
 [dependencies]
 # WebTransport/QUIC
 wtransport = { workspace = true }
@@ -44,6 +48,13 @@ dashmap = "6.1"
 axum = "0.7"
 tower = { workspace = true }
 tower-http = { workspace = true }
+
+# Database
+sqlx = { version = "0.8", features = ["runtime-tokio-rustls", "sqlite"] }
+
+# TLS
+rustls-pemfile = "2.0"
+rustls = "0.23"
 
 [features]
 default = []

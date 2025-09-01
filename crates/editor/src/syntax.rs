@@ -1,13 +1,25 @@
 #[cfg(feature = "tree-sitter")]
-use tree_sitter::{Parser, Tree, Language};
+use tree_sitter::{Parser, Tree};
 #[cfg(feature = "tree-sitter")]
 use tree_sitter_latex;
+
+#[cfg(not(feature = "tree-sitter"))]
+use regex::Regex;
 
 pub struct SyntaxHighlighter {
     #[cfg(feature = "tree-sitter")]
     parser: Parser,
     #[cfg(feature = "tree-sitter")]
     tree: Option<Tree>,
+    // Regex patterns for web builds
+    #[cfg(not(feature = "tree-sitter"))]
+    command_pattern: Regex,
+    #[cfg(not(feature = "tree-sitter"))]
+    math_pattern: Regex,
+    #[cfg(not(feature = "tree-sitter"))]
+    comment_pattern: Regex,
+    #[cfg(not(feature = "tree-sitter"))]
+    env_pattern: Regex,
 }
 
 #[cfg(feature = "tree-sitter")]
@@ -72,16 +84,84 @@ impl SyntaxHighlighter {
 #[cfg(not(feature = "tree-sitter"))]
 impl SyntaxHighlighter {
     pub fn new() -> Self {
-        Self {}
+        Self {
+            command_pattern: Regex::new(r"\\[a-zA-Z]+\*?").unwrap(),
+            math_pattern: Regex::new(r"\$[^$]*\$|\$\$[^$]*\$\$|\\begin\{equation\}.*?\\end\{equation\}|\\begin\{align\}.*?\\end\{align\}|\\begin\{math\}.*?\\end\{math\}").unwrap(),
+            comment_pattern: Regex::new(r"%.*$").unwrap(),
+            env_pattern: Regex::new(r"\\begin\{[^}]+\}|\\end\{[^}]+\}").unwrap(),
+        }
     }
     
     pub fn parse(&mut self, _text: &str) {
-        // No-op for web builds
+        // Regex-based parsing doesn't need preprocessing
     }
     
     pub fn get_highlights(&self, _start_line: usize, _end_line: usize) -> Vec<Highlight> {
-        // Return empty highlights for web builds
+        // For now, return empty - we'll implement line-by-line highlighting in the component
         Vec::new()
+    }
+    
+    pub fn highlight_line(&self, line: &str, line_idx: usize) -> Vec<Highlight> {
+        let mut highlights = Vec::new();
+        
+        // Comments (highest priority)
+        for mat in self.comment_pattern.find_iter(line) {
+            highlights.push(Highlight {
+                start_line: line_idx,
+                start_col: mat.start(),
+                end_line: line_idx,
+                end_col: mat.end(),
+                highlight_type: HighlightType::Comment,
+            });
+        }
+        
+        // Skip highlighting inside comments
+        let comment_start = self.comment_pattern.find(line).map(|m| m.start()).unwrap_or(line.len());
+        let line_before_comment = &line[..comment_start];
+        
+        // Math expressions
+        for mat in self.math_pattern.find_iter(line_before_comment) {
+            highlights.push(Highlight {
+                start_line: line_idx,
+                start_col: mat.start(),
+                end_line: line_idx,
+                end_col: mat.end(),
+                highlight_type: HighlightType::Math,
+            });
+        }
+        
+        // Environment commands
+        for mat in self.env_pattern.find_iter(line_before_comment) {
+            highlights.push(Highlight {
+                start_line: line_idx,
+                start_col: mat.start(),
+                end_line: line_idx,
+                end_col: mat.end(),
+                highlight_type: HighlightType::Keyword,
+            });
+        }
+        
+        // Commands (but not inside math or comments)
+        for mat in self.command_pattern.find_iter(line_before_comment) {
+            // Check if this command is inside math or already highlighted
+            let is_inside_highlight = highlights.iter().any(|h| {
+                mat.start() >= h.start_col && mat.end() <= h.end_col
+            });
+            
+            if !is_inside_highlight {
+                highlights.push(Highlight {
+                    start_line: line_idx,
+                    start_col: mat.start(),
+                    end_line: line_idx,
+                    end_col: mat.end(),
+                    highlight_type: HighlightType::Keyword,
+                });
+            }
+        }
+        
+        // Sort highlights by start position
+        highlights.sort_by_key(|h| h.start_col);
+        highlights
     }
 }
 

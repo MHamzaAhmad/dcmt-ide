@@ -88,9 +88,12 @@ pub fn TextEditor(
             
             // Editor content
             div {
-                class: "flex-1 relative",
+                class: "flex-1 relative focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-50 rounded",
                 tabindex: 0,
                 onkeydown: handle_keydown,
+                onclick: move |_| {
+                    // Focus the editor when clicked
+                },
                 
                 // Text content with syntax highlighting
                 div {
@@ -130,7 +133,11 @@ fn RenderHighlightedLine(
     line_idx: usize,
     highlighter: Signal<SyntaxHighlighter>,
 ) -> Element {
+#[cfg(feature = "tree-sitter")]
     let highlights = highlighter.read().get_highlights(line_idx, line_idx);
+    
+    #[cfg(not(feature = "tree-sitter"))]
+    let highlights = highlighter.read().highlight_line(&line, line_idx);
     
     rsx! {
         span {

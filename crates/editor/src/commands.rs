@@ -1,6 +1,7 @@
 use crate::buffer::TextBuffer;
 use crate::cursor::Cursor;
 
+#[derive(Debug)]
 pub enum EditorCommand {
     InsertChar(char),
     InsertText(String),
@@ -38,8 +39,15 @@ impl CommandExecutor {
             EditorCommand::InsertChar(ch) => {
                 self.save_state(buffer);
                 let pos = self.cursor_to_char_index(cursor, buffer);
-                buffer.insert(pos, &ch.to_string());
-                cursor.move_right(buffer.get_line(cursor.position.line).map(|l| l.len()).unwrap_or(0));
+                
+                if ch == '\n' {
+                    buffer.insert(pos, "\n");
+                    cursor.position.line += 1;
+                    cursor.position.column = 0;
+                } else {
+                    buffer.insert(pos, &ch.to_string());
+                    cursor.position.column += 1;
+                }
             }
             EditorCommand::InsertText(text) => {
                 self.save_state(buffer);
@@ -51,9 +59,34 @@ impl CommandExecutor {
                 if cursor.position.column > 0 || cursor.position.line > 0 {
                     self.save_state(buffer);
                     let pos = self.cursor_to_char_index(cursor, buffer);
+                    let cursor_before = cursor.position;
+                    
                     if pos > 0 {
+                        // Get the character we're about to delete for debugging
+                        let text_before = buffer.get_text();
+                        let char_to_delete = text_before.chars().nth(pos - 1).unwrap_or(' ');
+                        
                         buffer.delete(pos - 1, pos);
-                        cursor.move_left();
+                        
+                        // Handle cursor movement properly
+                        if cursor.position.column > 0 {
+                            cursor.position.column -= 1;
+                        } else if cursor.position.line > 0 {
+                            // Moving to end of previous line
+                            cursor.position.line -= 1;
+                            cursor.position.column = buffer.get_line(cursor.position.line)
+                                .map(|l| l.trim_end_matches('\n').len())
+                                .unwrap_or(0);
+                        }
+                        
+                        // Debug logging (always enabled for now)
+                        tracing::info!(
+                            "Backspace: deleted '{}' at pos {}, cursor {} -> {}", 
+                            char_to_delete, 
+                            pos - 1, 
+                            format!("{}:{}", cursor_before.line, cursor_before.column),
+                            format!("{}:{}", cursor.position.line, cursor.position.column)
+                        );
                     }
                 }
             }
@@ -68,7 +101,9 @@ impl CommandExecutor {
                 cursor.move_left();
             }
             EditorCommand::MoveCursorRight => {
-                let line_len = buffer.get_line(cursor.position.line).map(|l| l.len()).unwrap_or(0);
+                let line_len = buffer.get_line(cursor.position.line)
+                    .map(|l| l.trim_end_matches('\n').len())
+                    .unwrap_or(0);
                 cursor.move_right(line_len);
             }
             EditorCommand::MoveCursorUp => {
@@ -81,7 +116,9 @@ impl CommandExecutor {
                 cursor.move_to_line_start();
             }
             EditorCommand::MoveToLineEnd => {
-                let line_len = buffer.get_line(cursor.position.line).map(|l| l.len()).unwrap_or(0);
+                let line_len = buffer.get_line(cursor.position.line)
+                    .map(|l| l.trim_end_matches('\n').len())
+                    .unwrap_or(0);
                 cursor.move_to_line_end(line_len);
             }
             EditorCommand::Undo => {
@@ -112,8 +149,9 @@ impl CommandExecutor {
     
     fn cursor_to_char_index(&self, cursor: &Cursor, buffer: &TextBuffer) -> usize {
         let line_start = buffer.line_to_char(cursor.position.line);
-        line_start + cursor.position.column.min(
-            buffer.get_line(cursor.position.line).map(|l| l.len()).unwrap_or(0)
-        )
+        let line_len = buffer.get_line(cursor.position.line)
+            .map(|l| l.trim_end_matches('\n').len())
+            .unwrap_or(0);
+        line_start + cursor.position.column.min(line_len)
     }
 }

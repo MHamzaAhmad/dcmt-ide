@@ -210,28 +210,72 @@ fn WebTextEditor(content: Signal<String>) -> Element {
     });
     
     let handle_keydown = move |evt: KeyboardEvent| {
+        // Prevent default behavior for handled keys
         let key = evt.key();
         let ctrl = evt.modifiers().ctrl();
         
+        tracing::info!("Key pressed: {:?}, ctrl: {}", key, ctrl);
+        
         let command = match key {
             Key::Character(ch) if !ctrl => {
+                evt.prevent_default();
                 Some(latex_ide_editor::commands::EditorCommand::InsertChar(ch.chars().next().unwrap_or(' ')))
             }
-            Key::Backspace => Some(latex_ide_editor::commands::EditorCommand::Backspace),
-            Key::Delete => Some(latex_ide_editor::commands::EditorCommand::DeleteChar),
-            Key::ArrowLeft => Some(latex_ide_editor::commands::EditorCommand::MoveCursorLeft),
-            Key::ArrowRight => Some(latex_ide_editor::commands::EditorCommand::MoveCursorRight),
-            Key::ArrowUp => Some(latex_ide_editor::commands::EditorCommand::MoveCursorUp),
-            Key::ArrowDown => Some(latex_ide_editor::commands::EditorCommand::MoveCursorDown),
-            Key::Home => Some(latex_ide_editor::commands::EditorCommand::MoveToLineStart),
-            Key::End => Some(latex_ide_editor::commands::EditorCommand::MoveToLineEnd),
-            Key::Character(ch) if ctrl && ch == "z" => Some(latex_ide_editor::commands::EditorCommand::Undo),
-            Key::Character(ch) if ctrl && ch == "y" => Some(latex_ide_editor::commands::EditorCommand::Redo),
+            Key::Backspace => {
+                evt.prevent_default();
+                Some(latex_ide_editor::commands::EditorCommand::Backspace)
+            }
+            Key::Delete => {
+                evt.prevent_default();
+                Some(latex_ide_editor::commands::EditorCommand::DeleteChar)
+            }
+            Key::ArrowLeft => {
+                evt.prevent_default();
+                Some(latex_ide_editor::commands::EditorCommand::MoveCursorLeft)
+            }
+            Key::ArrowRight => {
+                evt.prevent_default();
+                Some(latex_ide_editor::commands::EditorCommand::MoveCursorRight)
+            }
+            Key::ArrowUp => {
+                evt.prevent_default();
+                Some(latex_ide_editor::commands::EditorCommand::MoveCursorUp)
+            }
+            Key::ArrowDown => {
+                evt.prevent_default();
+                Some(latex_ide_editor::commands::EditorCommand::MoveCursorDown)
+            }
+            Key::Home => {
+                evt.prevent_default();
+                Some(latex_ide_editor::commands::EditorCommand::MoveToLineStart)
+            }
+            Key::End => {
+                evt.prevent_default();
+                Some(latex_ide_editor::commands::EditorCommand::MoveToLineEnd)
+            }
+            Key::Character(ch) if ctrl && ch == "z" => {
+                evt.prevent_default();
+                Some(latex_ide_editor::commands::EditorCommand::Undo)
+            }
+            Key::Character(ch) if ctrl && ch == "y" => {
+                evt.prevent_default();
+                Some(latex_ide_editor::commands::EditorCommand::Redo)
+            }
+            Key::Enter => {
+                evt.prevent_default();
+                Some(latex_ide_editor::commands::EditorCommand::InsertChar('\n'))
+            }
             _ => None,
         };
         
         if let Some(cmd) = command {
+            let cursor_before = cursor.read().position;
+            tracing::info!("Executing command: {:?}, cursor before: {:?}", cmd, cursor_before);
+            
             executor.write().execute(cmd, &mut buffer.write(), &mut cursor.write());
+            
+            let cursor_after = cursor.read().position;
+            tracing::info!("Cursor after: {:?}", cursor_after);
             
             // Update parent content
             let new_content = buffer.read().get_text();
@@ -239,6 +283,11 @@ fn WebTextEditor(content: Signal<String>) -> Element {
             
             // Re-parse for syntax highlighting
             highlighter.write().parse(&new_content);
+            
+            tracing::info!("Buffer updated, new content length: {}, lines: {}", 
+                new_content.len(), 
+                new_content.lines().count()
+            );
         }
     };
     
@@ -259,22 +308,71 @@ fn WebTextEditor(content: Signal<String>) -> Element {
             
             // Editor content
             div {
-                class: "flex-1 relative",
+                class: "flex-1 relative focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-50",
                 tabindex: 0,
+                autofocus: true,
                 onkeydown: handle_keydown,
+                onkeypress: |evt: KeyboardEvent| {
+                    // Also handle keypress to ensure we catch all input
+                    tracing::info!("Key press event: {:?}", evt.key());
+                },
+                onclick: move |_| {
+                    tracing::info!("Editor clicked - attempting to focus");
+                    // Focus will happen automatically due to tabindex
+                },
+                onfocusin: |_| {
+                    tracing::info!("Editor focused");
+                },
+                onfocusout: |_| {
+                    tracing::info!("Editor lost focus");
+                },
                 
                 // Text content with syntax highlighting
                 div {
-                    class: "p-2",
-                    for (line_idx, line) in buffer.read().get_text().lines().enumerate() {
-                        div {
-                            class: "min-h-[1.5rem] leading-6",
-                            RenderHighlightedLine {
-                                line: line.to_string(),
-                                line_idx: line_idx,
-                                highlighter: highlighter,
+                    class: "p-2 cursor-text",
+                    onclick: move |evt| {
+                        // Position cursor based on click location
+                        evt.stop_propagation();
+                    },
+                    {
+                        let text = buffer.read().get_text();
+                        let lines: Vec<String> = text.lines().map(|l| l.to_string()).collect();
+                        lines.into_iter().enumerate().map(|(line_idx, line)| {
+                            rsx! {
+                                div {
+                                    key: "{line_idx}",
+                                    class: "min-h-[24px] leading-6",
+                                    style: "height: 24px; line-height: 24px;",
+                                    onclick: move |evt| {
+                                        // Calculate cursor position based on click coordinates
+                                        let click_x = evt.client_coordinates().x;
+                                        let click_y = evt.client_coordinates().y;
+                                        
+                                        // Get element position to calculate relative coordinates
+                                        let relative_x = click_x - 8.0; // Account for editor padding
+                                        let char_width = 9.6; // Same as cursor positioning
+                                        
+                                        // Calculate column position, ensure it's within line bounds
+                                        let clicked_column = if relative_x < 0.0 {
+                                            0
+                                        } else {
+                                            ((relative_x / char_width).round() as usize).min(line.len())
+                                        };
+                                        
+                                        tracing::info!("Click at ({}, {}), relative_x: {}, line length: {}, calculated column: {}", 
+                                            click_x, click_y, relative_x, line.len(), clicked_column);
+                                        
+                                        cursor.write().position.line = line_idx;
+                                        cursor.write().position.column = clicked_column;
+                                    },
+                                    RenderHighlightedLine {
+                                        line: line.clone(),
+                                        line_idx: line_idx,
+                                        highlighter: highlighter,
+                                    }
+                                }
                             }
-                        }
+                        })
                     }
                 }
                 
@@ -294,7 +392,8 @@ fn RenderHighlightedLine(
     line_idx: usize,
     highlighter: Signal<latex_ide_editor::SyntaxHighlighter>,
 ) -> Element {
-    let highlights = highlighter.read().get_highlights(line_idx, line_idx);
+    // For web builds, use the regex-based line highlighting
+    let highlights = highlighter.read().highlight_line(&line, line_idx);
     
     rsx! {
         span {
@@ -321,16 +420,18 @@ fn RenderCursor(
     buffer: Signal<latex_ide_editor::TextBuffer>,
 ) -> Element {
     let cursor_pos = cursor.read().position;
-    let line_height = 1.5; // rem
-    let char_width = 0.6; // rem
     
-    let top = cursor_pos.line as f32 * line_height;
-    let left = cursor_pos.column as f32 * char_width;
+    // Use pixel-based positioning like engrave
+    let line_height = 24.0; // pixels, matches text line height
+    let char_width = 9.6; // pixels, approximate for monospace font
+    
+    let top = cursor_pos.line as f32 * line_height + 8.0; // Add padding offset
+    let left = cursor_pos.column as f32 * char_width + 8.0; // Add padding offset
     
     rsx! {
         div {
-            class: "absolute w-0.5 h-6 bg-blue-600 animate-pulse",
-            style: "top: {top}rem; left: {left}rem;",
+            class: "absolute bg-blue-600",
+            style: "top: {top}px; left: {left}px; width: 2px; height: 20px; z-index: 9; display: block;",
         }
     }
 }

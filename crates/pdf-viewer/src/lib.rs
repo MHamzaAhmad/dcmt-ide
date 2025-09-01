@@ -4,6 +4,10 @@ pub mod viewer;
 pub mod controls;
 pub mod renderer;
 
+// Platform-specific modules
+pub mod web;
+pub mod desktop;
+
 pub use viewer::PDFViewer;
 pub use controls::PDFControls;
 pub use renderer::PDFRenderer;

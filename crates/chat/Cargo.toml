@@ -1,0 +1,23 @@
+[package]
+name = "latex-ide-chat"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+dioxus = { workspace = true, features = ["macro", "html"] }
+dioxus-signals = { workspace = true }
+dioxus-hooks = { workspace = true }
+latex-ide-ui = { path = "../ui" }
+latex-ide-model-manager = { path = "../model-manager", optional = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tracing = { workspace = true }
+js-sys = { workspace = true, optional = true }
+wasm-bindgen = { workspace = true, optional = true }
+wasm-bindgen-futures = { workspace = true, optional = true }
+gloo-timers = { workspace = true, optional = true }
+
+[features]
+default = []
+desktop = ["dioxus/desktop", "latex-ide-ui/desktop", "latex-ide-model-manager"]
+web = ["dioxus/web", "latex-ide-ui/web", "js-sys", "wasm-bindgen", "wasm-bindgen-futures", "gloo-timers"]

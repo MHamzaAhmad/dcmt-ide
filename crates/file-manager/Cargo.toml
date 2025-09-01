@@ -1,0 +1,24 @@
+[package]
+name = "latex-ide-file-manager"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+dioxus = { workspace = true, features = ["macro", "html"] }
+dioxus-signals = { workspace = true }
+dioxus-hooks = { workspace = true }
+latex-ide-ui = { path = "../ui" }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tracing = { workspace = true }
+uuid = { workspace = true }
+
+# Platform-specific dependencies
+js-sys = { workspace = true, optional = true }
+wasm-bindgen = { workspace = true, optional = true }
+web-sys = { workspace = true, optional = true }
+
+[features]
+default = []
+desktop = ["dioxus/desktop", "latex-ide-ui/desktop"]
+web = ["dioxus/web", "latex-ide-ui/web", "js-sys", "wasm-bindgen", "web-sys"]

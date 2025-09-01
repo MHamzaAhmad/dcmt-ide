@@ -1,4 +1,5 @@
 use dioxus::prelude::*;
+use dioxus_hooks::{use_resource, use_effect, Resource};
 use latex_ide_ui::*;
 use latex_ide_yrs_collab::{CollaborationEngine, LaTeXDocument, UserInfo};
 use latex_ide_model_manager::ModelManager;
@@ -7,11 +8,13 @@ use std::sync::Arc;
 use anyhow::Result;
 use tracing::{info, error};
 
-mod components;
-mod hooks;
-mod state;
+// Import components from shared crates
+use latex_ide_editor::desktop::DesktopTextEditor;
+use latex_ide_chat::desktop::DesktopAIChatInterface;
+use latex_ide_file_manager::desktop::DesktopFileTree;
+use latex_ide_pdf_viewer::desktop::DesktopPreviewPane;
 
-use components::*;
+mod state;
 use state::AppState;
 
 const WINDOW_TITLE: &str = "LaTeX IDE - Desktop";
@@ -24,16 +27,8 @@ fn main() -> Result<()> {
 
     info!("Starting LaTeX IDE Desktop application");
 
-    // Launch Dioxus desktop app
-    LaunchBuilder::desktop()
-        .with_cfg(dioxus::desktop::Config::new()
-            .with_window_title(WINDOW_TITLE)
-            .with_window_size((1400, 900))
-            .with_min_window_size((800, 600))
-            .with_icon(include_bytes!("../assets/icon.ico"))
-            .with_menu(create_menu())
-        )
-        .launch(App);
+    // Launch Dioxus desktop app  
+    dioxus_desktop::launch(App);
 
     Ok(())
 }
@@ -41,7 +36,7 @@ fn main() -> Result<()> {
 #[component]
 fn App() -> Element {
     // Initialize application state
-    let app_state = use_context_provider(|| AppState::new());
+    let _app_state = use_context_provider(|| AppState::new());
     
     // Initialize collaboration engine
     let collab_engine = use_resource(move || async move {
@@ -85,7 +80,7 @@ fn App() -> Element {
                     Sidebar { 
                         collapsed: false,
                         width: 250,
-                        FileTree { 
+                        DesktopFileTree { 
                             onfile_select: move |file_path| {
                                 info!("Selected file: {:?}", file_path);
                                 // Handle file selection
@@ -106,15 +101,15 @@ fn App() -> Element {
                             },
                             
                             right: rsx! {
-                                PreviewPane {}
+                                DesktopPreviewPane {}
                             }
                         }
                     }
                     
                     // AI Chat sidebar  
                     div { class: "w-80 border-l border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800",
-                        AIChatInterface {
-                            model_manager: model_manager,
+                        DesktopAIChatInterface {
+                            model_manager: None, // TODO: Fix type compatibility with Resource
                         }
                     }
                 }
@@ -142,56 +137,9 @@ fn MenuBar() -> Element {
 }
 
 #[component]
-fn FileTree(onfile_select: EventHandler<String>) -> Element {
-    let current_dir = use_signal(|| std::env::current_dir().unwrap_or_default());
-    
-    rsx! {
-        div { class: "h-full overflow-auto p-2",
-            div { class: "text-sm font-medium text-gray-700 dark:text-gray-300 mb-2",
-                "Files"
-            }
-            
-            // Mock file tree for now
-            div { class: "space-y-1",
-                FileItem { 
-                    name: "document.tex",
-                    is_file: true,
-                    onclick: move |_| onfile_select.call("document.tex".to_string())
-                }
-                FileItem { 
-                    name: "figures/",
-                    is_file: false,
-                    onclick: move |_| {}
-                }
-                FileItem { 
-                    name: "references.bib",
-                    is_file: true,
-                    onclick: move |_| onfile_select.call("references.bib".to_string())
-                }
-            }
-        }
-    }
-}
-
-#[component]
-fn FileItem(name: String, is_file: bool, onclick: EventHandler<MouseEvent>) -> Element {
-    let icon = if is_file { "📄" } else { "📁" };
-    
-    rsx! {
-        div { 
-            class: "flex items-center space-x-2 px-2 py-1 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded cursor-pointer",
-            onclick: move |evt| onclick.call(evt),
-            
-            span { "{icon}" }
-            span { "{name}" }
-        }
-    }
-}
-
-#[component]
 fn EditorPane(collab_engine: Resource<Arc<CollaborationEngine>>) -> Element {
-    let current_document = use_signal(|| None::<LaTeXDocument>);
-    let document_content = use_signal(|| String::new());
+    let mut current_document = use_signal(|| None::<LaTeXDocument>);
+    let mut document_content = use_signal(|| String::new());
     
     // Initialize document when collaboration engine is ready
     use_effect(move || {
@@ -238,16 +186,14 @@ Hello, world!
                 }
             }
             
-            // Editor
+            // Editor using shared component
             div { class: "flex-1",
-                if let Some(_doc) = current_document.read().as_ref() {
-                    latex_ide_editor::TextEditor {
+                if current_document.read().is_some() {
+                    DesktopTextEditor {
                         initial_content: Some(document_content.read().clone()),
-                        onchange: Some(move |content| {
-                            document_content.set(content);
-                        }),
-                        show_line_numbers: true,
-                        syntax_highlighting: true,
+                        onchange: None, // TODO: Fix event handler compatibility
+                        show_line_numbers: Some(true),
+                        syntax_highlighting: Some(true),
                     }
                 } else {
                     div { class: "h-full flex items-center justify-center text-gray-500",
@@ -260,160 +206,8 @@ Hello, world!
 }
 
 #[component]
-fn PreviewPane() -> Element {
-    rsx! {
-        div { class: "h-full bg-gray-50 dark:bg-gray-900 border-l border-gray-200 dark:border-gray-700",
-            
-            // PDF controls
-            div { class: "h-12 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between px-4",
-                div { class: "flex items-center space-x-2",
-                    Button {
-                        variant: ButtonVariant::Secondary,
-                        size: ButtonSize::Small,
-                        onclick: move |_| {
-                            // Compile document
-                        },
-                        "Compile"
-                    }
-                    
-                    Button {
-                        variant: ButtonVariant::Ghost,
-                        size: ButtonSize::Small,
-                        onclick: move |_| {
-                            // Refresh PDF
-                        },
-                        "🔄"
-                    }
-                }
-                
-                div { class: "flex items-center space-x-2 text-sm text-gray-600 dark:text-gray-400",
-                    span { "Page 1 of 1" }
-                    
-                    Button {
-                        variant: ButtonVariant::Ghost,
-                        size: ButtonSize::Small,
-                        onclick: move |_| {
-                            // Zoom out
-                        },
-                        "−"
-                    }
-                    
-                    span { "100%" }
-                    
-                    Button {
-                        variant: ButtonVariant::Ghost,
-                        size: ButtonSize::Small,
-                        onclick: move |_| {
-                            // Zoom in
-                        },
-                        "+"
-                    }
-                }
-            }
-            
-            // PDF viewer
-            div { class: "flex-1 overflow-auto p-4",
-                div { class: "bg-white shadow-lg mx-auto",
-                    style: "width: 210mm; min-height: 297mm;",
-                    
-                    div { class: "h-full flex items-center justify-center text-gray-500",
-                        "PDF Preview\n(Compile document to see output)"
-                    }
-                }
-            }
-        }
-    }
-}
-
-#[component]
-fn AIChatInterface(model_manager: Resource<Option<Arc<ModelManager>>>) -> Element {
-    let selected_model = use_signal(|| "llama-3.1".to_string());
-    let chat_messages = use_signal(|| Vec::<String>::new());
-    let current_message = use_signal(|| String::new());
-    
-    rsx! {
-        div { class: "h-full flex flex-col",
-            
-            // AI Chat header
-            div { class: "p-4 border-b border-gray-200 dark:border-gray-700",
-                h3 { class: "text-lg font-medium text-gray-900 dark:text-gray-100 mb-2",
-                    "AI Assistant"
-                }
-                
-                // Model selection
-                Dropdown {
-                    items: vec![
-                        DropdownItem { 
-                            id: "llama-3.1".to_string(), 
-                            label: "Llama 3.1 (Local)".to_string(),
-                            icon: None 
-                        },
-                        DropdownItem { 
-                            id: "gpt-4o".to_string(), 
-                            label: "GPT-4o (OpenAI)".to_string(),
-                            icon: None 
-                        },
-                        DropdownItem { 
-                            id: "claude-sonnet".to_string(), 
-                            label: "Claude 3.5 Sonnet".to_string(),
-                            icon: None 
-                        }
-                    ],
-                    selected: Some(selected_model.read().clone()),
-                    onselect: move |model_id| {
-                        selected_model.set(model_id);
-                    },
-                    placeholder: "Select Model".to_string(),
-                }
-            }
-            
-            // Chat messages
-            div { class: "flex-1 overflow-auto p-4 space-y-4",
-                if chat_messages.read().is_empty() {
-                    div { class: "text-center text-gray-500 mt-8",
-                        "Start a conversation with your AI assistant.\nAsk about LaTeX syntax, document structure, or get help with your writing."
-                    }
-                } else {
-                    for message in chat_messages.read().iter() {
-                        div { class: "bg-gray-100 dark:bg-gray-700 rounded-lg p-3",
-                            "{message}"
-                        }
-                    }
-                }
-            }
-            
-            // Message input
-            div { class: "p-4 border-t border-gray-200 dark:border-gray-700",
-                div { class: "flex space-x-2",
-                    Input {
-                        value: Some(current_message.read().clone()),
-                        placeholder: Some("Ask about LaTeX, document structure, or get writing help...".to_string()),
-                        onchange: move |value| {
-                            current_message.set(value);
-                        }
-                    }
-                    
-                    Button {
-                        variant: ButtonVariant::Primary,
-                        onclick: move |_| {
-                            let message = current_message.read().clone();
-                            if !message.trim().is_empty() {
-                                chat_messages.write().push(format!("You: {}", message));
-                                chat_messages.write().push(format!("AI: I can help you with that LaTeX question!"));
-                                current_message.set(String::new());
-                            }
-                        },
-                        "Send"
-                    }
-                }
-            }
-        }
-    }
-}
-
-#[component]
 fn StatusBar() -> Element {
-    let theme = use_theme();
+    let mut theme = use_theme();
     
     rsx! {
         div { class: "h-6 bg-blue-600 text-white text-xs flex items-center justify-between px-4",
@@ -444,24 +238,25 @@ fn StatusBar() -> Element {
     }
 }
 
-fn create_menu() -> dioxus::desktop::tao::menu::MenuBar {
-    use dioxus::desktop::tao::menu::*;
-    
-    MenuBar::new()
-        .add_submenu(Submenu::new("File", true)
-            .add_item(MenuItem::new("New", true, None))
-            .add_item(MenuItem::new("Open", true, None))
-            .add_item(MenuItem::new("Save", true, None))
-            .add_separator()
-            .add_item(MenuItem::new("Exit", true, None)))
-        .add_submenu(Submenu::new("Edit", true)
-            .add_item(MenuItem::new("Undo", true, None))
-            .add_item(MenuItem::new("Redo", true, None))
-            .add_separator()
-            .add_item(MenuItem::new("Cut", true, None))
-            .add_item(MenuItem::new("Copy", true, None))
-            .add_item(MenuItem::new("Paste", true, None)))
-        .add_submenu(Submenu::new("View", true)
-            .add_item(MenuItem::new("Toggle Theme", true, None))
-            .add_item(MenuItem::new("Toggle Sidebar", true, None)))
-}
+// TODO: Fix menu API compatibility
+// fn create_menu() -> dioxus::desktop::tao::menu::MenuBar {
+//     use dioxus::desktop::tao::menu::*;
+//     
+//     MenuBar::new()
+//         .add_submenu(Submenu::new("File", true)
+//             .add_item(MenuItem::new("New", true, None))
+//             .add_item(MenuItem::new("Open", true, None))
+//             .add_item(MenuItem::new("Save", true, None))
+//             .add_separator()
+//             .add_item(MenuItem::new("Exit", true, None)))
+//         .add_submenu(Submenu::new("Edit", true)
+//             .add_item(MenuItem::new("Undo", true, None))
+//             .add_item(MenuItem::new("Redo", true, None))
+//             .add_separator()
+//             .add_item(MenuItem::new("Cut", true, None))
+//             .add_item(MenuItem::new("Copy", true, None))
+//             .add_item(MenuItem::new("Paste", true, None)))
+//         .add_submenu(Submenu::new("View", true)
+//             .add_item(MenuItem::new("Toggle Theme", true, None))
+//             .add_item(MenuItem::new("Toggle Sidebar", true, None)))
+// }

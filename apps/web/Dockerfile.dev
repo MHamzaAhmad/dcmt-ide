@@ -28,6 +28,9 @@ COPY Cargo.toml Cargo.lock ./
 COPY crates/ ./crates/
 COPY apps/web/ ./apps/web/
 
+# Create web-only workspace (exclude desktop app for Docker build)
+RUN sed '/apps\/desktop/d' Cargo.toml > Cargo.web.toml && mv Cargo.web.toml Cargo.toml
+
 # Build backend services for development
 RUN cargo build \
     --bin webtransport-server \

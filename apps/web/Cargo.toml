@@ -14,9 +14,12 @@ dioxus-router = { workspace = true }
 dioxus-signals = { workspace = true }
 dioxus-hooks = { workspace = true }
 
-# UI components
+# UI components and shared crates
 latex-ide-ui = { path = "../../crates/ui", features = ["web"] }
 latex-ide-editor = { path = "../../crates/editor", features = ["web"] }
+latex-ide-chat = { path = "../../crates/chat", features = ["web"] }
+latex-ide-file-manager = { path = "../../crates/file-manager", features = ["web"] }
+latex-ide-pdf-viewer = { path = "../../crates/pdf-viewer", features = ["web"] }
 
 # WASM-specific Yrs bindings
 yrs = { workspace = true }

@@ -8,14 +8,24 @@ dioxus = { workspace = true }
 dioxus-signals = { workspace = true }
 dioxus-hooks = { workspace = true }
 latex-ide-ui = { path = "../ui" }
-pdfium-render = { workspace = true }
+pdfium-render = { workspace = true, optional = true }
 anyhow = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
-tokio = { workspace = true }
+tokio = { version = "1.47", features = ["macros", "rt"], optional = true }
 base64 = "0.22"
+tracing = { workspace = true }
+
+# Web-specific dependencies
+wasm-bindgen = { workspace = true, optional = true }
+wasm-bindgen-futures = { workspace = true, optional = true }
+js-sys = { workspace = true, optional = true }
+web-sys = { workspace = true, optional = true, features = [
+    "Blob", "BlobPropertyBag", "Url"
+] }
+gloo-timers = { workspace = true, optional = true }
 
 [features]
 default = []
-desktop = ["dioxus/desktop", "latex-ide-ui/desktop"]
-web = ["dioxus/web", "latex-ide-ui/web"]
+desktop = ["dioxus/desktop", "latex-ide-ui/desktop", "tokio", "pdfium-render"]
+web = ["dioxus/web", "latex-ide-ui/web", "wasm-bindgen", "wasm-bindgen-futures", "js-sys", "web-sys", "gloo-timers"]

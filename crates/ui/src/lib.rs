@@ -14,6 +14,10 @@ pub mod theme;
 pub mod icons;
 pub mod layout;
 
+// Platform-specific modules
+pub mod web;
+pub mod desktop;
+
 pub use button::Button;
 pub use card::Card;
 pub use dropdown::{Dropdown, DropdownItem};

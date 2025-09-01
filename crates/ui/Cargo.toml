@@ -1,0 +1,16 @@
+[package]
+name = "latex-ide-ui"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+dioxus = { workspace = true }
+dioxus-signals = { workspace = true }
+dioxus-hooks = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+[features]
+default = []
+desktop = ["dioxus/desktop"]
+web = ["dioxus/web"]

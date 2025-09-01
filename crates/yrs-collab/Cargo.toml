@@ -1,0 +1,33 @@
+[package]
+name = "latex-ide-yrs-collab"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+# Yrs CRDT
+yrs = { workspace = true }
+y-sync = { workspace = true }
+
+# Async runtime
+tokio = { workspace = true }
+futures = { workspace = true }
+async-trait = { workspace = true }
+
+# Serialization
+serde = { workspace = true }
+serde_json = { workspace = true }
+bincode = { workspace = true }
+
+# Error handling
+anyhow = { workspace = true }
+thiserror = { workspace = true }
+
+# UUID for document IDs
+uuid = { workspace = true }
+
+# Logging
+tracing = { workspace = true }
+
+[features]
+default = []
+wasm = ["yrs/wasm"]

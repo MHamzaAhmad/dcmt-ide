@@ -1,0 +1,257 @@
+name: Web Development Build
+
+on:
+  push:
+    branches: [ main, develop ]
+    paths:
+      - 'apps/web/**'
+      - 'crates/**'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - 'docker-compose.dev.yml'
+  pull_request:
+    branches: [ main ]
+    paths:
+      - 'apps/web/**'
+      - 'crates/**'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  test-web:
+    name: Test Web App
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Install Rust toolchain
+      uses: dtolnay/rust-toolchain@stable
+      with:
+        targets: wasm32-unknown-unknown
+        components: rustfmt, clippy
+
+    - name: Cache cargo
+      uses: actions/cache@v4
+      with:
+        path: |
+          ~/.cargo/registry/index/
+          ~/.cargo/registry/cache/
+          ~/.cargo/git/db/
+          target/
+        key: ${{ runner.os }}-cargo-wasm-${{ hashFiles('**/Cargo.lock') }}
+
+    - name: Install wasm-pack
+      run: |
+        curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
+
+    - name: Install Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20'
+        cache: 'npm'
+
+    - name: Install dependencies
+      run: npm ci
+
+    - name: Run Rust tests (web target)
+      run: cargo test --workspace --target wasm32-unknown-unknown --exclude latex-ide-desktop
+
+    - name: Run clippy (web target)
+      run: cargo clippy --workspace --target wasm32-unknown-unknown --exclude latex-ide-desktop -- -D warnings
+
+    - name: Build WASM (development)
+      run: |
+        cd apps/web
+        wasm-pack build --target web --out-dir pkg --dev
+
+    - name: Build WASM (release)
+      run: |
+        cd apps/web
+        wasm-pack build --target web --out-dir pkg --release
+
+    - name: Test WASM in browser
+      run: |
+        cd apps/web
+        wasm-pack test --headless --firefox
+
+    - name: Check WASM bundle size
+      run: |
+        ls -la apps/web/pkg/
+        du -h apps/web/pkg/*.wasm
+
+    - name: Upload WASM build artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: wasm-build-artifacts
+        path: |
+          apps/web/pkg/
+          apps/web/index.html
+          apps/web/style.css
+        retention-days: 7
+
+  test-docker:
+    name: Test Docker Build
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+
+    - name: Build Docker image
+      uses: docker/build-push-action@v5
+      with:
+        context: .
+        file: apps/web/Dockerfile.dev
+        push: false
+        tags: latex-ide-web:dev
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
+
+    - name: Test Docker container
+      run: |
+        docker run -d --name latex-ide-test -p 8080:8080 latex-ide-web:dev
+        sleep 10
+        curl -f http://localhost:8080 || exit 1
+        docker logs latex-ide-test
+        docker stop latex-ide-test
+
+  performance-test:
+    name: Web Performance Test
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Install Rust and wasm-pack
+      run: |
+        curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+        source ~/.cargo/env
+        rustup target add wasm32-unknown-unknown
+        curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
+
+    - name: Install Node.js and dependencies
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20'
+    
+    - name: Install Lighthouse CI
+      run: npm install -g @lhci/cli@0.12.x
+
+    - name: Build web app
+      run: |
+        source ~/.cargo/env
+        cd apps/web
+        wasm-pack build --target web --out-dir pkg --release
+
+    - name: Start web server
+      run: |
+        cd apps/web
+        npx live-server --port=8080 --no-browser &
+        sleep 5
+
+    - name: Run Lighthouse CI
+      run: |
+        lhci autorun --upload.target=temporary-public-storage || true
+
+    - name: WASM Bundle Analysis
+      run: |
+        echo "## WASM Bundle Analysis" >> $GITHUB_STEP_SUMMARY
+        echo "| File | Size |" >> $GITHUB_STEP_SUMMARY  
+        echo "|------|------|" >> $GITHUB_STEP_SUMMARY
+        ls -la apps/web/pkg/*.wasm | awk '{print "| " $9 " | " $5 " bytes |"}' >> $GITHUB_STEP_SUMMARY
+
+  security-scan:
+    name: Security Scan
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Install Rust
+      uses: dtolnay/rust-toolchain@stable
+
+    - name: Run cargo audit
+      uses: actions-rs/audit-check@v1
+      with:
+        token: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Run cargo deny
+      uses: EmbarkStudios/cargo-deny-action@v1
+      with:
+        log-level: warn
+        command: check
+        arguments: --all-features
+
+  integration-test:
+    name: Integration Test
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_PASSWORD: password
+          POSTGRES_DB: latex_ide_test
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+
+      redis:
+        image: redis:7
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 6379:6379
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Install Rust
+      uses: dtolnay/rust-toolchain@stable
+      with:
+        targets: wasm32-unknown-unknown
+
+    - name: Install wasm-pack
+      run: curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
+
+    - name: Cache cargo
+      uses: actions/cache@v4
+      with:
+        path: |
+          ~/.cargo/registry/index/
+          ~/.cargo/registry/cache/
+          ~/.cargo/git/db/
+          target/
+        key: ${{ runner.os }}-integration-test-${{ hashFiles('**/Cargo.lock') }}
+
+    - name: Run integration tests
+      env:
+        DATABASE_URL: postgresql://postgres:password@localhost:5432/latex_ide_test
+        REDIS_URL: redis://localhost:6379
+      run: |
+        cargo test --workspace --test integration -- --test-threads=1
+
+    - name: Test WebTransport functionality
+      run: |
+        # This would test actual WebTransport connections
+        # For now, we'll just ensure the code compiles
+        cargo check --workspace --all-features

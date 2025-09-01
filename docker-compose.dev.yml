@@ -1,0 +1,121 @@
+version: '3.8'
+
+services:
+  # Web app development server
+  web-dev:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile.dev
+    ports:
+      - "8080:8080"    # Web app
+    volumes:
+      - .:/app
+      - /app/target     # Cache cargo builds
+      - /app/apps/web/pkg  # Cache WASM builds
+    environment:
+      - RUST_LOG=debug
+      - RUST_BACKTRACE=1
+    networks:
+      - latex-ide-dev
+
+  # WebTransport backend server
+  backend-dev:
+    build:
+      context: .
+      dockerfile: crates/webtransport-server/Dockerfile.dev
+    ports:
+      - "3000:3000"    # HTTP/WebSocket fallback
+      - "4433:4433/udp" # WebTransport/QUIC
+    environment:
+      - RUST_LOG=debug
+      - CERT_PATH=/certs/localhost.pem
+      - KEY_PATH=/certs/localhost-key.pem
+      - DATABASE_URL=postgresql://latex_ide:password@postgres:5432/latex_ide_dev
+    volumes:
+      - ./dev-certs:/certs
+      - .:/app
+    depends_on:
+      - postgres
+      - redis
+    networks:
+      - latex-ide-dev
+
+  # PostgreSQL for collaboration state
+  postgres:
+    image: postgres:15-alpine
+    environment:
+      - POSTGRES_DB=latex_ide_dev
+      - POSTGRES_USER=latex_ide
+      - POSTGRES_PASSWORD=password
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./scripts/init-db.sql:/docker-entrypoint-initdb.d/init-db.sql
+    networks:
+      - latex-ide-dev
+
+  # Redis for caching and pub/sub
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - latex-ide-dev
+
+  # LaTeX compilation service
+  latex-compiler:
+    build:
+      context: .
+      dockerfile: docker/latex-compiler.Dockerfile
+    ports:
+      - "8081:8081"
+    environment:
+      - RUST_LOG=debug
+    volumes:
+      - ./temp-latex:/tmp/latex
+    networks:
+      - latex-ide-dev
+
+  # AI model manager service (optional)
+  ai-service:
+    build:
+      context: .
+      dockerfile: crates/model-manager/Dockerfile.dev
+    ports:
+      - "8082:8082"
+    environment:
+      - RUST_LOG=debug
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - GEMINI_API_KEY=${GEMINI_API_KEY:-}
+    volumes:
+      - ai_models:/models
+    networks:
+      - latex-ide-dev
+
+  # Development proxy (optional)
+  nginx-dev:
+    image: nginx:alpine
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./docker/nginx-dev.conf:/etc/nginx/nginx.conf:ro
+      - ./dev-certs:/etc/ssl/certs
+    depends_on:
+      - web-dev
+      - backend-dev
+    networks:
+      - latex-ide-dev
+
+volumes:
+  postgres_data:
+  redis_data:
+  ai_models:
+
+networks:
+  latex-ide-dev:
+    driver: bridge

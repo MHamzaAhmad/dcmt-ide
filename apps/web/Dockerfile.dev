@@ -1,0 +1,43 @@
+FROM rust:1.89 as builder
+
+# Install Node.js and wasm-pack for WASM compilation
+RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - && \
+    apt-get install -y nodejs
+
+RUN curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
+
+# Add WebAssembly target
+RUN rustup target add wasm32-unknown-unknown
+
+WORKDIR /app
+
+# Copy workspace files
+COPY Cargo.toml Cargo.lock ./
+COPY crates/ ./crates/
+COPY apps/web/ ./apps/web/
+
+# Build WASM module with debug symbols for development
+WORKDIR /app/apps/web
+RUN wasm-pack build --target web --out-dir pkg --dev --scope latex-ide
+
+# Development server stage
+FROM node:20-alpine
+
+WORKDIR /app
+
+# Copy built WASM package and web assets
+COPY --from=builder /app/apps/web/pkg ./pkg
+COPY apps/web/index.html .
+COPY apps/web/style.css .
+
+# Install development server
+RUN npm install -g live-server
+
+# Create development certificate for WebTransport
+RUN mkdir -p /certs
+
+# Expose ports
+EXPOSE 8080 3000
+
+# Start development server with live reloading
+CMD ["live-server", "--port=8080", "--host=0.0.0.0", "--entry-file=index.html", "--watch=pkg,*.html,*.css", "--cors"]

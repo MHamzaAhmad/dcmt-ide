@@ -1,0 +1,55 @@
+[package]
+name = "latex-ide-desktop"
+version.workspace = true
+edition.workspace = true
+
+[[bin]]
+name = "latex-ide-desktop"
+path = "src/main.rs"
+
+[dependencies]
+# Dioxus framework with desktop features
+dioxus = { workspace = true, features = ["desktop", "router"] }
+dioxus-desktop = { workspace = true }
+dioxus-router = { workspace = true }
+dioxus-signals = { workspace = true }
+dioxus-hooks = { workspace = true }
+
+# UI components
+latex-ide-ui = { path = "../../crates/ui", features = ["desktop"] }
+latex-ide-editor = { path = "../../crates/editor", features = ["desktop"] }
+latex-ide-yrs-collab = { path = "../../crates/yrs-collab" }
+latex-ide-model-manager = { path = "../../crates/model-manager" }
+latex-ide-latex-compiler = { path = "../../crates/latex-compiler" }
+latex-ide-pdf-viewer = { path = "../../crates/pdf-viewer", features = ["desktop"] }
+
+# Native Yrs CRDT (no WASM overhead)
+yrs = { workspace = true }
+
+# Async runtime
+tokio = { workspace = true }
+futures = { workspace = true }
+
+# Serialization
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+# File system
+notify = { workspace = true }
+
+# Logging
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+
+# Error handling
+anyhow = { workspace = true }
+
+# UUID
+uuid = { workspace = true }
+
+# File dialogs and system integration
+rfd = "0.15"
+
+[features]
+default = ["dev"]
+dev = []

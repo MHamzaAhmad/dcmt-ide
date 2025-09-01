@@ -1,0 +1,71 @@
+[package]
+name = "latex-ide-web"
+version.workspace = true
+edition.workspace = true
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+# Dioxus framework with web features
+dioxus = { workspace = true, features = ["web", "router"] }
+dioxus-web = { workspace = true }
+dioxus-router = { workspace = true }
+dioxus-signals = { workspace = true }
+dioxus-hooks = { workspace = true }
+
+# UI components
+latex-ide-ui = { path = "../../crates/ui", features = ["web"] }
+latex-ide-editor = { path = "../../crates/editor", features = ["web"] }
+
+# WASM-specific Yrs bindings
+ywasm = { workspace = true }
+
+# WebAssembly support
+wasm-bindgen = { workspace = true }
+js-sys = { workspace = true }
+web-sys = { workspace = true, features = [
+    "Window", "Document", "Element", "HtmlElement",
+    "WebTransport", "WebSocket", "EventSource",
+    "ReadableStream", "WritableStream", "Headers",
+    "Request", "Response", "Fetch", "AbortController",
+    "MessageEvent", "CloseEvent", "ErrorEvent",
+    "BinaryType", "Blob", "File", "FileReader",
+    "Storage", "Location", "History", "console"
+]}
+wasm-bindgen-futures = { workspace = true }
+
+# Async utilities for WASM
+gloo-utils = "0.2"
+gloo-timers = "0.3"
+gloo-events = "0.2"
+gloo-storage = "0.3"
+
+# Serialization
+serde = { workspace = true }
+serde_json = { workspace = true }
+serde-wasm-bindgen = "0.6"
+
+# Error handling
+anyhow = { workspace = true }
+
+# Logging for WASM
+tracing = { workspace = true }
+tracing-wasm = "0.2"
+console_error_panic_hook = "0.1"
+
+# UUID
+uuid = { workspace = true, features = ["js"] }
+
+# Base64 for binary data
+base64 = "0.22"
+
+[features]
+default = ["dev"]
+dev = []
+
+[dependencies.wasm-bindgen]
+version = "0.2"
+features = [
+    "serde-serialize",
+]

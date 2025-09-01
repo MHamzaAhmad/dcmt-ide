@@ -1,0 +1,22 @@
+[package]
+name = "latex-ide-editor"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+dioxus = { workspace = true }
+dioxus-signals = { workspace = true }
+dioxus-hooks = { workspace = true }
+latex-ide-ui = { path = "../ui" }
+ropey = { workspace = true }
+tree-sitter = { workspace = true }
+tree-sitter-latex = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+similar = { workspace = true }
+regex = { workspace = true }
+
+[features]
+default = []
+desktop = ["dioxus/desktop", "latex-ide-ui/desktop"]
+web = ["dioxus/web", "latex-ide-ui/web"]

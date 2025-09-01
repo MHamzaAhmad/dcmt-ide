@@ -1,0 +1,50 @@
+[package]
+name = "latex-ide-model-manager"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+# SSE Handler dependency
+latex-ide-sse-handler = { path = "../sse-handler" }
+
+# AI/ML Libraries
+kalosm = { workspace = true }
+ollama-rs = { workspace = true }
+openai-api-rs = { workspace = true }
+async-openai = { workspace = true }
+
+# Async runtime
+tokio = { workspace = true }
+futures = { workspace = true }
+async-trait = { workspace = true }
+tokio-stream = "0.1"
+async-stream = "0.3"
+
+# Serialization
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+# Error handling
+anyhow = { workspace = true }
+thiserror = { workspace = true }
+
+# Logging
+tracing = { workspace = true }
+
+# UUID
+uuid = { workspace = true }
+
+# HTTP client
+reqwest = { workspace = true }
+
+# Configuration
+config = { workspace = true }
+
+# Collections
+dashmap = "6.1"
+
+[features]
+default = []
+kalosm-llama = ["kalosm/llama"]
+kalosm-mistral = ["kalosm/mistral"] 
+kalosm-phi = ["kalosm/phi"]

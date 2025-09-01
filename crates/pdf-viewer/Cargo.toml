@@ -1,0 +1,21 @@
+[package]
+name = "latex-ide-pdf-viewer"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+dioxus = { workspace = true }
+dioxus-signals = { workspace = true }
+dioxus-hooks = { workspace = true }
+latex-ide-ui = { path = "../ui" }
+pdfium-render = { workspace = true }
+anyhow = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true }
+base64 = "0.22"
+
+[features]
+default = []
+desktop = ["dioxus/desktop", "latex-ide-ui/desktop"]
+web = ["dioxus/web", "latex-ide-ui/web"]

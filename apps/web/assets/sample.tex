@@ -1,0 +1,109 @@
+\documentclass{article}
+\usepackage[utf8]{inputenc}
+\usepackage{amsmath}
+\usepackage{amsfonts}
+\usepackage{amssymb}
+\usepackage{graphicx}
+\usepackage{hyperref}
+
+\title{Welcome to LaTeX IDE Web}
+\author{Your Name}
+\date{\today}
+
+\begin{document}
+
+\maketitle
+
+\section{Welcome}
+
+Welcome to the web version of LaTeX IDE! This document is running in your browser using WebAssembly and the Yrs CRDT for real-time collaboration.
+
+\section{Features}
+
+This web-based LaTeX editor includes:
+
+\begin{itemize}
+    \item \textbf{Real-time collaboration} using Yrs CRDT (WebAssembly)
+    \item \textbf{WebTransport} for ultra-low latency (with WebSocket fallback)
+    \item \textbf{AI assistance} with multiple model options
+    \item \textbf{Live PDF preview} with instant compilation
+    \item \textbf{Cross-platform compatibility} - works in any modern browser
+\end{itemize}
+
+\section{Mathematics}
+
+The editor fully supports LaTeX math rendering:
+
+Inline math: $E = mc^2$ and display equations:
+
+\begin{equation}
+    \int_{-\infty}^{\infty} e^{-x^2} dx = \sqrt{\pi}
+\end{equation}
+
+Complex expressions:
+\begin{align}
+    \nabla \times \vec{E} &= -\frac{\partial \vec{B}}{\partial t} \\
+    \nabla \times \vec{B} &= \mu_0 \vec{J} + \mu_0 \epsilon_0 \frac{\partial \vec{E}}{\partial t}
+\end{align}
+
+\section{Code Syntax}
+
+LaTeX code is properly highlighted with syntax recognition:
+
+\begin{verbatim}
+\begin{figure}[h]
+\centering
+\includegraphics[width=0.5\textwidth]{example.png}
+\caption{An example figure}
+\label{fig:example}
+\end{figure}
+\end{verbatim}
+
+\section{Collaboration}
+
+Multiple users can edit this document simultaneously. Changes are synchronized in real-time using:
+
+\begin{enumerate}
+    \item \textbf{Yrs CRDT} - Conflict-free replicated data types ensure consistency
+    \item \textbf{WebTransport} - Modern protocol for minimal latency
+    \item \textbf{Live cursors} - See where other users are editing
+    \item \textbf{Operational transforms} - Smooth collaborative editing
+\end{enumerate}
+
+\section{AI Assistant}
+
+The AI assistant in the sidebar can help with:
+\begin{itemize}
+    \item LaTeX syntax and commands
+    \item Mathematical notation
+    \item Document structure
+    \item Bibliography formatting
+    \item Error diagnosis and fixes
+\end{itemize}
+
+Try asking: "How do I create a bibliography in LaTeX?"
+
+\section{Getting Started}
+
+To start editing:
+\begin{enumerate}
+    \item Click anywhere in this editor to place your cursor
+    \item Start typing to modify the document
+    \item Use the compile button to generate a PDF preview
+    \item Ask the AI assistant for help with LaTeX syntax
+    \item Invite collaborators to edit together in real-time
+\end{enumerate}
+
+\section{Browser Compatibility}
+
+This web application works best with browsers that support:
+\begin{itemize}
+    \item WebAssembly (required)
+    \item WebTransport (optimal performance)
+    \item Server-Sent Events (AI streaming)
+    \item WebSockets (fallback for collaboration)
+\end{itemize}
+
+Modern versions of Chrome, Firefox, Safari, and Edge are all supported.
+
+\end{document}

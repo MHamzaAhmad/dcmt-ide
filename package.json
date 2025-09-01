@@ -1,0 +1,45 @@
+{
+  "name": "latex-ide",
+  "version": "0.1.0",
+  "description": "AI-powered collaborative LaTeX editor with real-time editing",
+  "keywords": ["latex", "editor", "collaborative", "real-time", "AI", "WebAssembly", "rust", "dioxus"],
+  "author": "LaTeX IDE Team",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/yourusername/latex-ide"
+  },
+  "scripts": {
+    "dev:desktop": "./scripts/dev.sh desktop",
+    "dev:web": "./scripts/dev.sh web",
+    "dev:backend": "./scripts/dev.sh backend",
+    "dev:both": "./scripts/dev.sh both",
+    "dev:full": "./scripts/dev.sh full",
+    "build:web": "cd apps/web && wasm-pack build --target web --out-dir pkg",
+    "build:web:release": "cd apps/web && wasm-pack build --target web --out-dir pkg --release",
+    "build:desktop": "cd apps/desktop && cargo build --release",
+    "test": "./scripts/dev.sh test",
+    "test:web": "cd apps/web && wasm-pack test --headless --firefox",
+    "test:desktop": "cd apps/desktop && cargo test",
+    "fmt": "./scripts/dev.sh fmt",
+    "clippy": "./scripts/dev.sh clippy",
+    "clean": "./scripts/dev.sh clean",
+    "docker:up": "docker-compose -f docker-compose.dev.yml up -d",
+    "docker:down": "docker-compose -f docker-compose.dev.yml down",
+    "docker:logs": "docker-compose -f docker-compose.dev.yml logs -f",
+    "serve:web": "cd apps/web && live-server --port=8080 --entry-file=index.html",
+    "watch": "./scripts/dev.sh watch"
+  },
+  "devDependencies": {
+    "live-server": "^1.2.2"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "browserslist": [
+    "last 2 Chrome versions",
+    "last 2 Firefox versions",
+    "last 2 Safari versions",
+    "last 2 Edge versions"
+  ]
+}

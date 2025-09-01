@@ -29,9 +29,9 @@ web-sys = { workspace = true, features = [
     "WebSocket", "EventSource", "BinaryType",
     "MessageEvent", "CloseEvent", "ErrorEvent",
     "Request", "Response", "AbortController",
-    "Blob", "File", "FileReader", "HtmlInputElement",
+    "Blob", "BlobPropertyBag", "File", "FileReader", "HtmlInputElement",
     "Storage", "Location", "History", "console", "KeyboardEvent",
-    "MediaQueryList"
+    "MediaQueryList", "Url", "Headers"
 ]}
 wasm-bindgen-futures = { workspace = true }
 

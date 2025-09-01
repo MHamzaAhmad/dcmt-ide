@@ -8,11 +8,15 @@ pub fn TextEditor(
     #[props(default = true)] show_line_numbers: bool,
     #[props(default = true)] syntax_highlighting: bool,
 ) -> Element {
-    let mut buffer = use_signal(|| {
-        if let Some(content) = initial_content {
-            TextBuffer::from_str(&content)
-        } else {
-            TextBuffer::new()
+    let mut buffer = use_signal(|| TextBuffer::new());
+    
+    // Update buffer when initial_content changes
+    use_effect(move || {
+        if let Some(content) = &initial_content {
+            let current_content = buffer.read().get_text();
+            if current_content != *content {
+                buffer.set(TextBuffer::from_str(content));
+            }
         }
     });
     

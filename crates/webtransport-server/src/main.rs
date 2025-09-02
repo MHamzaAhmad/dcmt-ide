@@ -151,16 +151,23 @@ async fn handle_file_operation(operation: FileOp) -> TransportMessage {
             tracing::info!("Downloading file: {}", name);
             let file_path = workspace.join(&name);
             
-            match fs::read_to_string(&file_path).await {
+            match fs::read(&file_path).await {
                 Ok(content) => {
+                    tracing::info!("Successfully read file: {} ({} bytes)", name, content.len());
                     TransportMessage::FileOperation {
-                        operation: FileOp::Download { name: content }
+                        operation: FileOp::Upload { 
+                            name: "success".to_string(), 
+                            content 
+                        }
                     }
                 }
                 Err(e) => {
                     tracing::error!("Failed to read file {}: {}", name, e);
                     TransportMessage::FileOperation {
-                        operation: FileOp::Download { name: format!("Error: {}", e) }
+                        operation: FileOp::Upload { 
+                            name: format!("Error: {}", e), 
+                            content: vec![] 
+                        }
                     }
                 }
             }
@@ -268,40 +275,75 @@ async fn list_workspace_files(workspace_path: &Path) -> Result<Vec<FileInfo>, Bo
         return Ok(files);
     }
     
-    let mut entries = fs::read_dir(workspace_path).await?;
+    // Recursively scan all files in the workspace
+    scan_directory_recursive(workspace_path, workspace_path, &mut files).await?;
+    
+    // Sort directories first, then files, maintaining hierarchy
+    files.sort_by(|a, b| {
+        // First sort by directory depth to maintain hierarchy
+        let a_depth = a.path.matches('/').count() + a.path.matches('\\').count();
+        let b_depth = b.path.matches('/').count() + b.path.matches('\\').count();
+        
+        match a_depth.cmp(&b_depth) {
+            std::cmp::Ordering::Equal => {
+                // Same depth - sort directories first, then by name
+                match (a.is_directory, b.is_directory) {
+                    (true, false) => std::cmp::Ordering::Less,
+                    (false, true) => std::cmp::Ordering::Greater,
+                    _ => a.name.cmp(&b.name),
+                }
+            }
+            other => other,
+        }
+    });
+    
+    tracing::info!("Found {} total files in workspace (including subdirectories)", files.len());
+    
+    Ok(files)
+}
+
+async fn scan_directory_recursive(
+    current_path: &Path, 
+    workspace_root: &Path, 
+    files: &mut Vec<FileInfo>
+) -> Result<(), Box<dyn std::error::Error>> {
+    let mut entries = fs::read_dir(current_path).await?;
     
     while let Some(entry) = entries.next_entry().await? {
         let path = entry.path();
         let metadata = entry.metadata().await?;
         
         if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
-            // Skip hidden files
+            // Skip hidden files and directories
             if name.starts_with('.') {
                 continue;
             }
             
+            // Create relative path from workspace root
+            let relative_path = path.strip_prefix(workspace_root)
+                .unwrap_or(&path)
+                .display()
+                .to_string()
+                .replace('\\', "/"); // Normalize path separators
+            
             files.push(FileInfo {
                 name: name.to_string(),
-                path: path.display().to_string(),
+                path: relative_path,
                 is_directory: metadata.is_dir(),
                 size: if metadata.is_file() { Some(metadata.len()) } else { None },
                 modified: metadata.modified().ok().and_then(|t| {
                     t.duration_since(std::time::UNIX_EPOCH).ok().map(|d| d.as_millis() as u64)
                 }),
             });
+            
+            // Recursively scan subdirectories
+            if metadata.is_dir() {
+                Box::pin(scan_directory_recursive(&path, workspace_root, files)).await?;
+            }
         }
     }
     
-    // Sort directories first, then files
-    files.sort_by(|a, b| {
-        match (a.is_directory, b.is_directory) {
-            (true, false) => std::cmp::Ordering::Less,
-            (false, true) => std::cmp::Ordering::Greater,
-            _ => a.name.cmp(&b.name),
-        }
-    });
-    
-    Ok(files)
+    Ok(())
 }
 
 async fn compile_latex(tex_file: &Path) -> Result<Vec<u8>, String> {

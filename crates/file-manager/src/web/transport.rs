@@ -209,16 +209,16 @@ pub async fn download_file(name: &str) -> Result<Vec<u8>, String> {
     };
     
     match client.send_operation(operation).await? {
-        TransportMessage::FileOperation { operation: FileOp::Download { name } } => {
+        TransportMessage::FileOperation { operation: FileOp::Upload { name, content } } => {
             if name.starts_with("Error:") {
                 Err(name)
             } else {
-                // In real implementation, the server would return file content
-                // For now, return the name as content (placeholder)
-                Ok(name.into_bytes())
+                // Server returns actual file content as bytes
+                tracing::info!("Downloaded file content: {} bytes", content.len());
+                Ok(content)
             }
         }
-        _ => Err("Unexpected response".to_string())
+        _ => Err("Unexpected response from server".to_string())
     }
 }
 

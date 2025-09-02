@@ -40,6 +40,18 @@ impl WebTransportFileSystem {
     
     
     
+    #[cfg(target_arch = "wasm32")]
+    async fn send_file_operation(&self, operation: FileOp) -> FileSystemResult<TransportMessage> {
+        use super::transport::FileTransportClient;
+        
+        let mut client = FileTransportClient::new();
+        client.connect("ws://localhost:3001").await
+            .map_err(|e| FileSystemError::IoError(format!("Failed to connect to server: {}", e)))?;
+        
+        client.send_operation(operation).await
+            .map_err(|e| FileSystemError::IoError(format!("Transport operation failed: {}", e)))
+    }
+
     #[cfg(not(target_arch = "wasm32"))]
     async fn send_file_operation(&self, _operation: FileOp) -> FileSystemResult<TransportMessage> {
         Err(FileSystemError::IoError("WebTransport not supported on non-WASM platforms".to_string()))
@@ -73,9 +85,15 @@ impl FileSystemBackend for WebTransportFileSystem {
         // If not in cache, we need to fetch via transport
         #[cfg(target_arch = "wasm32")]
         {
-            // For now, return empty list if not cached
-            // In a real implementation, this would be async and fetch from server
-            tracing::warn!("File list not cached, returning empty list. Call refresh_file_list() first.");
+            // Trigger async refresh in background 
+            let fs_clone = self.clone();
+            wasm_bindgen_futures::spawn_local(async move {
+                if let Err(e) = fs_clone.refresh_file_list().await {
+                    tracing::error!("Failed to refresh file list in background: {:?}", e);
+                }
+            });
+            
+            tracing::info!("File list not cached, triggered background refresh. Use refresh_file_list() for immediate results.");
             Ok(vec![])
         }
         
@@ -91,13 +109,50 @@ impl FileSystemBackend for WebTransportFileSystem {
             }
         }
         
-        // If not cached, return error for now
-        // In a real implementation, this would trigger an async download
+        // If not cached, trigger async download in background
+        #[cfg(target_arch = "wasm32")]
+        {
+            let fs_clone = self.clone();
+            let path_clone = path.to_path_buf();
+            wasm_bindgen_futures::spawn_local(async move {
+                if let Err(e) = fs_clone.download_file(&path_clone).await {
+                    tracing::error!("Failed to download file in background: {:?}", e);
+                }
+            });
+            
+            tracing::info!("File not cached, triggered background download: {}. Use download_file() for immediate results.", path.display());
+            Err(FileSystemError::NotFound(format!("File not cached: {}", path.display())))
+        }
+        
+        #[cfg(not(target_arch = "wasm32"))]
         Err(FileSystemError::NotFound(path.display().to_string()))
     }
     
     fn read_file_bytes(&self, path: &Path) -> FileSystemResult<Vec<u8>> {
-        self.read_file(path).map(|s| s.into_bytes())
+        // First try to get from cache as string
+        if let Ok(cache) = self.file_cache.lock() {
+            if let Some(content) = cache.get(path) {
+                return Ok(content.as_bytes().to_vec());
+            }
+        }
+        
+        // If not cached, trigger async download similar to read_file
+        #[cfg(target_arch = "wasm32")]
+        {
+            let fs_clone = self.clone();
+            let path_clone = path.to_path_buf();
+            wasm_bindgen_futures::spawn_local(async move {
+                if let Err(e) = fs_clone.download_file(&path_clone).await {
+                    tracing::error!("Failed to download binary file in background: {:?}", e);
+                }
+            });
+            
+            tracing::info!("Binary file not cached, triggered background download: {}", path.display());
+            Err(FileSystemError::NotFound(format!("Binary file not cached: {}", path.display())))
+        }
+        
+        #[cfg(not(target_arch = "wasm32"))]
+        Err(FileSystemError::NotFound(path.display().to_string()))
     }
     
     fn write_file(&self, path: &Path, content: &str) -> FileSystemResult<()> {
@@ -127,14 +182,32 @@ impl FileSystemBackend for WebTransportFileSystem {
     }
     
     fn write_file_bytes(&self, path: &Path, content: &[u8]) -> FileSystemResult<()> {
-        // Convert to string for now (assuming text files)
-        match String::from_utf8(content.to_vec()) {
-            Ok(string_content) => self.write_file(path, &string_content),
-            Err(_) => {
-                // For binary files, we'd need to handle differently
-                Err(FileSystemError::IoError("Binary file upload not yet supported".to_string()))
+        // Update cache first
+        if let Ok(mut cache) = self.file_cache.lock() {
+            // Try to cache as string if it's valid UTF-8, otherwise skip caching
+            if let Ok(string_content) = String::from_utf8(content.to_vec()) {
+                cache.insert(path.to_path_buf(), string_content);
             }
         }
+        
+        #[cfg(target_arch = "wasm32")]
+        {
+            // Upload binary file via transport
+            use super::transport::upload_file;
+            
+            let file_name = path.display().to_string();
+            let file_content = content.to_vec();
+            
+            // Spawn async task for upload
+            wasm_bindgen_futures::spawn_local(async move {
+                match upload_file(&file_name, file_content).await {
+                    Ok(_) => tracing::info!("Binary file uploaded successfully: {}", file_name),
+                    Err(e) => tracing::error!("Failed to upload binary file {}: {}", file_name, e),
+                }
+            });
+        }
+        
+        Ok(())
     }
     
     fn create_file(&self, path: &Path) -> FileSystemResult<()> {

@@ -10,7 +10,7 @@ pub mod file_tree;
 pub mod webtransport_fs;
 
 // Re-export new modular components
-pub use components::{WebFileTree, WebFileTreeAdvanced, WebFileItem};
+pub use components::{WebFileTree, WebFileTreeAdvanced};
 pub use transport::{TransportMessage, FileOp, FileInfo, FileTransportClient};
 pub use file_operations::{
     upload_file_from_browser, download_file_content, delete_file_on_server,

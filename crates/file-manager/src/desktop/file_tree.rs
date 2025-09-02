@@ -210,8 +210,10 @@ fn DesktopFileItem(
     file_item: FileItem,
     onclick: EventHandler<String>
 ) -> Element {
-    let is_selected = false; // TODO: Add selection state management
     let file_path_display = file_item.path.display().to_string();
+    // Add selection state management
+    let mut selected_file = use_signal(|| None::<String>);
+    let is_selected = selected_file.read().as_ref() == Some(&file_path_display);
     let file_path_for_click = file_path_display.clone();
     let file_icon = file_item.icon();
     let file_name = file_item.name.clone();
@@ -226,6 +228,8 @@ fn DesktopFileItem(
                 "flex items-center space-x-2 px-2 py-1 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded cursor-pointer transition-colors"
             },
             onclick: move |_| {
+                // Update selection state
+                selected_file.set(Some(file_path_for_click.clone()));
                 onclick.call(file_path_for_click.clone());
             },
             

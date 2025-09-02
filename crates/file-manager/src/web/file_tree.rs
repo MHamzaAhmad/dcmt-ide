@@ -7,7 +7,7 @@
 // This file is kept for backward compatibility only.
 
 // Re-export all functionality from the new modular components
-pub use super::components::{WebFileTree, WebFileTreeAdvanced, WebFileItem};
+pub use super::components::{WebFileTree, WebFileTreeAdvanced};
 pub use super::transport::{TransportMessage, FileOp, FileInfo, FileTransportClient};
 pub use super::file_operations::{
     upload_file_from_browser, download_file_content, delete_file_on_server,

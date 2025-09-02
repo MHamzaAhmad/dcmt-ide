@@ -27,16 +27,16 @@ pub fn Button(
     let base_classes = "inline-flex items-center justify-center font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 rounded-md";
     
     let variant_classes = match variant {
-        ButtonVariant::Primary => "bg-blue-600 text-white hover:bg-blue-700 focus-visible:ring-blue-500",
-        ButtonVariant::Secondary => "bg-gray-200 text-gray-900 hover:bg-gray-300 focus-visible:ring-gray-500 dark:bg-gray-700 dark:text-gray-100 dark:hover:bg-gray-600",
-        ButtonVariant::Ghost => "hover:bg-gray-100 hover:text-gray-900 dark:hover:bg-gray-800 dark:hover:text-gray-100",
-        ButtonVariant::Danger => "bg-red-600 text-white hover:bg-red-700 focus-visible:ring-red-500",
+        ButtonVariant::Primary => "bg-zinc-900 text-zinc-50 hover:bg-zinc-900/90 dark:bg-zinc-50 dark:text-zinc-900 dark:hover:bg-zinc-50/90 focus-visible:ring-zinc-900 dark:focus-visible:ring-zinc-300",
+        ButtonVariant::Secondary => "bg-zinc-100 text-zinc-900 hover:bg-zinc-100/80 dark:bg-zinc-800 dark:text-zinc-50 dark:hover:bg-zinc-800/80 focus-visible:ring-zinc-900 dark:focus-visible:ring-zinc-300",
+        ButtonVariant::Ghost => "hover:bg-zinc-100 hover:text-zinc-900 dark:hover:bg-zinc-800 dark:hover:text-zinc-50",
+        ButtonVariant::Danger => "bg-red-500 text-zinc-50 hover:bg-red-500/90 dark:bg-red-900 dark:text-zinc-50 dark:hover:bg-red-900/90 focus-visible:ring-red-500 dark:focus-visible:ring-red-900",
     };
     
     let size_classes = match size {
-        ButtonSize::Small => "h-8 px-3 text-sm",
-        ButtonSize::Medium => "h-10 px-4 py-2",
-        ButtonSize::Large => "h-12 px-6 text-lg",
+        ButtonSize::Small => "h-8 px-3 text-xs rounded-md",
+        ButtonSize::Medium => "h-9 px-4 py-2 text-sm",
+        ButtonSize::Large => "h-11 px-8 text-base",
     };
     
     let class_str = format!(

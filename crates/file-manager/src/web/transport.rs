@@ -6,7 +6,6 @@ use {
     wasm_bindgen::closure::Closure,
     web_sys::{WebSocket, MessageEvent, BinaryType},
     js_sys::Uint8Array,
-    wasm_bindgen_futures::spawn_local,
     gloo_timers,
 };
 

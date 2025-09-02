@@ -7,8 +7,6 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 // Removed unused Serialize, Deserialize imports
 
-#[cfg(target_arch = "wasm32")]
-use wasm_bindgen_futures::spawn_local;
 
 // Re-export transport types for backward compatibility
 pub use super::transport::{TransportMessage, FileOp};

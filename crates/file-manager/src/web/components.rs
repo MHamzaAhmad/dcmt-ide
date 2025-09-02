@@ -3,7 +3,6 @@ use dioxus_signals::{Signal, Readable, Writable};
 use dioxus_hooks::{use_signal, use_effect};
 use crate::{ProjectManager, FileItem};
 use latex_ide_ui::*;
-use latex_ide_ui::button::{ButtonVariant, ButtonSize};
 
 use super::file_operations::{
     fetch_file_list, format_file_size
@@ -51,81 +50,54 @@ pub fn WebFileTree(
     });
     
     rsx! {
-        div { class: "h-full overflow-auto p-2 flex flex-col",
-            WebFileTreeHeader {
-                project_manager,
-                loading,
-                error_message,
-                current_files,
+        div { class: "h-full flex flex-col",
+            // Simple header with title and refresh
+            div { 
+                class: "h-10 border-b border-zinc-200 dark:border-zinc-800 flex items-center justify-between px-3 bg-white dark:bg-zinc-900",
+                
+                span { 
+                    class: "text-xs font-medium text-zinc-700 dark:text-zinc-300 uppercase tracking-wider",
+                    "Explorer"
+                }
+                
+                // Refresh button
+                button {
+                    class: "p-1 rounded hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors",
+                    onclick: move |_| {
+                        refresh_file_list(loading, error_message, current_files);
+                    },
+                    disabled: *loading.read(),
+                    title: "Refresh Files",
+                    
+                    svg {
+                        class: if *loading.read() { "w-3.5 h-3.5 text-zinc-400 animate-spin" } else { "w-3.5 h-3.5 text-zinc-600 dark:text-zinc-400" },
+                        fill: "none",
+                        stroke: "currentColor",
+                        stroke_width: "2",
+                        view_box: "0 0 24 24",
+                        path { d: "M23 4v6h-6M1 20v-6h6M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" }
+                    }
+                }
             }
             
-            WebFileTreeContent {
-                current_files,
-                loading,
-                error_message,
-                onfile_select,
-            }
-            
-            WebFileTreeActions {
-                current_files,
-                error_message,
+            // File tree content
+            div { class: "flex-1 overflow-auto",
+                WebFileTreeContent {
+                    current_files,
+                    loading,
+                    error_message,
+                    onfile_select,
+                }
+                
+                WebFileTreeActions {
+                    current_files,
+                    error_message,
+                }
             }
         }
     }
 }
 
-/// File tree header with project info and refresh button
-#[component]
-fn WebFileTreeHeader(
-    project_manager: Signal<ProjectManager>,
-    loading: Signal<bool>,
-    error_message: Signal<Option<String>>,
-    current_files: Signal<Vec<FileItem>>,
-) -> Element {
-    rsx! {
-        div { class: "flex items-center justify-between mb-2",
-            div { class: "text-sm font-medium text-gray-700 dark:text-gray-300",
-                if let Some(project) = project_manager.read().get_current_project() {
-                    "{project.name}"
-                } else {
-                    "Workspace Files"
-                }
-            }
-            
-            Button {
-                variant: ButtonVariant::Ghost,
-                size: ButtonSize::Small,
-                disabled: *loading.read(),
-                onclick: move |_| {
-                    refresh_file_list(loading, error_message, current_files);
-                },
-                if *loading.read() { "🔄 Loading..." } else { "🔄 Refresh" }
-            }
-        }
-        
-        // Main file indicator
-        if let Some(main_file) = project_manager.read().get_current_project()
-            .and_then(|p| p.main_file.as_ref()) {
-            div { class: "p-2 mb-2 text-sm text-blue-600 bg-blue-50 dark:bg-blue-900 dark:text-blue-200 rounded",
-                "📝 Main: {main_file.display()}"
-            }
-        }
-        
-        // Error display
-        if let Some(error) = error_message.read().as_ref() {
-            div { class: "p-2 mb-2 text-sm text-red-600 bg-red-50 dark:bg-red-900 dark:text-red-200 rounded",
-                "{error}"
-                Button {
-                    variant: ButtonVariant::Ghost,
-                    size: ButtonSize::Small,
-                    onclick: move |_| error_message.set(None),
-                    class: "ml-2 text-xs",
-                    "✕"
-                }
-            }
-        }
-    }
-}
 
 /// Main content area displaying file list
 #[component]
@@ -136,28 +108,38 @@ fn WebFileTreeContent(
     onfile_select: Option<EventHandler<String>>,
 ) -> Element {
     rsx! {
-        div { class: "flex-1 space-y-1",
+        div { class: "flex-1 px-2 py-3",
             if *loading.read() {
-                div { class: "text-center text-gray-500 py-8",
-                    div { class: "inline-block animate-spin rounded-full h-6 w-6 border-b-2 border-gray-500 mb-2" }
-                    div { "Loading workspace..." }
+                div { class: "flex flex-col items-center justify-center py-8",
+                    div { class: "w-6 h-6 border-2 border-zinc-300 dark:border-zinc-600 border-t-transparent rounded-full animate-spin mb-3" }
+                    div { class: "text-sm text-zinc-500 dark:text-zinc-400", "Loading workspace..." }
                 }
             } else if current_files.read().is_empty() {
-                div { class: "text-center text-gray-500 py-8",
-                    div { class: "mb-2", "📁 No files found" }
-                    div { class: "text-sm", "Upload files or create new ones to get started" }
+                div { class: "flex flex-col items-center justify-center py-8 text-zinc-500 dark:text-zinc-400",
+                    svg {
+                        class: "w-12 h-12 mb-3 text-zinc-300 dark:text-zinc-700",
+                        fill: "none",
+                        stroke: "currentColor",
+                        stroke_width: "2",
+                        view_box: "0 0 24 24",
+                        path { d: "M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" }
+                    }
+                    div { class: "text-sm font-medium mb-1", "No files found" }
+                    div { class: "text-xs", "Create or upload files to get started" }
                 }
             } else {
-                for (index, file) in current_files.read().iter().enumerate() {
-                    WebFileItem {
-                        key: "{index}",
-                        file_item: file.clone(),
-                        error_message,
-                        current_files,
-                        onclick: move |file_path: String| {
-                            tracing::info!("Selected file: {}", file_path);
-                            if let Some(handler) = &onfile_select {
-                                handler.call(file_path);
+                div { class: "space-y-0.5",
+                    for (index, file) in current_files.read().iter().enumerate() {
+                        WebFileItem {
+                            key: "{index}",
+                            file_item: file.clone(),
+                            error_message,
+                            current_files,
+                            onclick: move |file_path: String| {
+                                tracing::info!("Selected file: {}", file_path);
+                                if let Some(handler) = &onfile_select {
+                                    handler.call(file_path);
+                                }
                             }
                         }
                     }
@@ -174,43 +156,39 @@ fn WebFileTreeActions(
     error_message: Signal<Option<String>>,
 ) -> Element {
     rsx! {
-        div { class: "mt-2 pt-2 border-t border-gray-200 dark:border-gray-700",
+        div { class: "p-3 border-t border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900",
             div { class: "grid grid-cols-2 gap-2",
-                Button {
-                    variant: ButtonVariant::Ghost,
-                    size: ButtonSize::Small,
+                button {
+                    class: "px-3 py-2 text-xs font-medium text-zinc-700 dark:text-zinc-300 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-md hover:bg-zinc-50 dark:hover:bg-zinc-700 transition-colors",
                     onclick: move |_| {
                         create_new_latex_file(current_files, error_message);
                     },
-                    "📄 New .tex"
+                    "New .tex"
                 }
                 
-                Button {
-                    variant: ButtonVariant::Ghost,
-                    size: ButtonSize::Small,
+                button {
+                    class: "px-3 py-2 text-xs font-medium text-zinc-700 dark:text-zinc-300 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-md hover:bg-zinc-50 dark:hover:bg-zinc-700 transition-colors",
                     onclick: move |_| {
                         create_new_bibliography_file(current_files, error_message);
                     },
-                    "📚 New .bib"
+                    "New .bib"
                 }
                 
-                Button {
-                    variant: ButtonVariant::Ghost,
-                    size: ButtonSize::Small,
+                button {
+                    class: "px-3 py-2 text-xs font-medium text-zinc-700 dark:text-zinc-300 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-md hover:bg-zinc-50 dark:hover:bg-zinc-700 transition-colors",
                     onclick: move |_| {
                         upload_file_from_local(current_files, error_message);
                     },
-                    "📤 Upload"
+                    "Upload"
                 }
                 
-                Button {
-                    variant: ButtonVariant::Ghost,
-                    size: ButtonSize::Small,
+                button {
+                    class: "px-3 py-2 text-xs font-medium text-zinc-700 dark:text-zinc-300 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-md hover:bg-zinc-50 dark:hover:bg-zinc-700 transition-colors",
                     onclick: move |_| {
                         // TODO: Implement workspace download
                         tracing::info!("Download workspace clicked");
                     },
-                    "📥 Download"
+                    "Download"
                 }
             }
         }
@@ -228,36 +206,82 @@ pub fn WebFileItem(
     let is_selected = false; // TODO: Add selection state management
     let file_path_display = file_item.path.display().to_string();
     let file_path_for_click = file_path_display.clone();
-    let file_icon = file_item.icon();
     let file_name = file_item.name.clone();
     let file_size = file_item.size;
     let is_file = file_item.is_file();
+    let is_tex = file_name.ends_with(".tex");
+    let is_bib = file_name.ends_with(".bib");
     
     rsx! {
         div { 
             class: if is_selected {
-                "flex items-center space-x-2 px-2 py-1 text-sm bg-blue-100 dark:bg-blue-800 text-blue-900 dark:text-blue-100 rounded cursor-pointer transition-colors group"
+                "flex items-center px-3 py-1.5 text-sm bg-zinc-100 dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 rounded-md cursor-pointer transition-colors group"
             } else {
-                "flex items-center space-x-2 px-2 py-1 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded cursor-pointer transition-colors group"
+                "flex items-center px-3 py-1.5 text-sm text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-md cursor-pointer transition-colors group"
             },
             
             div {
-                class: "flex items-center space-x-2 flex-1",
+                class: "flex items-center space-x-2 flex-1 min-w-0",
                 onclick: move |_| {
                     onclick.call(file_path_for_click.clone());
                 },
                 
-                span { "{file_icon}" }
+                // File icon
+                if is_file {
+                    if is_tex {
+                        svg {
+                            class: "w-4 h-4 flex-shrink-0 text-zinc-500 dark:text-zinc-400",
+                            fill: "none",
+                            stroke: "currentColor",
+                            stroke_width: "2",
+                            view_box: "0 0 24 24",
+                            path { d: "M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" }
+                            polyline { points: "14 2 14 8 20 8" }
+                            line { x1: "16", y1: "13", x2: "8", y2: "13" }
+                            line { x1: "16", y1: "17", x2: "8", y2: "17" }
+                        }
+                    } else if is_bib {
+                        svg {
+                            class: "w-4 h-4 flex-shrink-0 text-zinc-500 dark:text-zinc-400",
+                            fill: "none",
+                            stroke: "currentColor",
+                            stroke_width: "2",
+                            view_box: "0 0 24 24",
+                            path { d: "M4 19.5A2.5 2.5 0 0 1 6.5 17H20" }
+                            path { d: "M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" }
+                        }
+                    } else {
+                        svg {
+                            class: "w-4 h-4 flex-shrink-0 text-zinc-500 dark:text-zinc-400",
+                            fill: "none",
+                            stroke: "currentColor",
+                            stroke_width: "2",
+                            view_box: "0 0 24 24",
+                            path { d: "M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z" }
+                            polyline { points: "13 2 13 9 20 9" }
+                        }
+                    }
+                } else {
+                    svg {
+                        class: "w-4 h-4 flex-shrink-0 text-zinc-500 dark:text-zinc-400",
+                        fill: "none",
+                        stroke: "currentColor",
+                        stroke_width: "2",
+                        view_box: "0 0 24 24",
+                        path { d: "M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" }
+                    }
+                }
+                
                 span { 
                     title: "{file_path_display}", 
-                    class: "truncate flex-1",
+                    class: "truncate",
                     "{file_name}" 
                 }
                 
                 // Show file size for files
                 if is_file {
                     if let Some(size) = file_size {
-                        span { class: "text-xs text-gray-400 ml-auto",
+                        span { class: "text-xs text-zinc-400 dark:text-zinc-500 ml-auto",
                             "{format_file_size(size)}"
                         }
                     }
@@ -265,15 +289,20 @@ pub fn WebFileItem(
             }
             
             // Delete button (appears on hover)
-            div { class: "opacity-0 group-hover:opacity-100 transition-opacity",
-                Button {
-                    variant: ButtonVariant::Ghost,
-                    size: ButtonSize::Small,
-                    onclick: move |_| {
-                        delete_file_item(file_name.clone(), current_files, error_message);
-                    },
-                    class: "text-red-500 hover:text-red-700 p-1",
-                    "🗑️"
+            button {
+                class: "opacity-0 group-hover:opacity-100 p-1 rounded hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-all",
+                onclick: move |_| {
+                    delete_file_item(file_name.clone(), current_files, error_message);
+                },
+                
+                svg {
+                    class: "w-3.5 h-3.5 text-zinc-500 dark:text-zinc-400",
+                    fill: "none",
+                    stroke: "currentColor",
+                    stroke_width: "2",
+                    view_box: "0 0 24 24",
+                    polyline { points: "3 6 5 6 21 6" }
+                    path { d: "M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" }
                 }
             }
         }

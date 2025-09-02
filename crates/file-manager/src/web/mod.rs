@@ -4,8 +4,6 @@
 pub mod transport;
 pub mod file_operations;
 pub mod components;
-pub mod git_transport;
-pub mod git_panel;
 
 // Legacy modules (deprecated)
 pub mod file_tree;
@@ -19,8 +17,6 @@ pub use file_operations::{
     fetch_file_list, create_latex_file, create_bibliography_file,
     format_file_size, validate_file_name, is_latex_file, is_bibliography_file
 };
-pub use git_transport::{WebGitClient, GitStatusResponse};
-pub use git_panel::WebGitPanel;
 
 // Legacy exports for backward compatibility
 pub use webtransport_fs::WebTransportFileSystem;

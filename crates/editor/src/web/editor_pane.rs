@@ -148,7 +148,7 @@ pub fn WebEditorPane(
                                                         use latex_ide_file_manager::web::transport::{upload_file, FileTransportClient, TransportMessage as FileTransportMessage, FileOp};
                                                         
                                                         // First, save the file
-                                                        match upload_file(&file_path_clone, new_content.clone().into_bytes()).await {
+                                                        match upload_file(file_path_clone.clone(), new_content.clone().into_bytes()).await {
                                                             Ok(_) => {
                                                                 tracing::info!("Auto-saved file: {}", file_path_clone);
                                                                 

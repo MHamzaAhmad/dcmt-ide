@@ -171,7 +171,7 @@ impl FileSystemBackend for WebTransportFileSystem {
             
             // Spawn async task for upload
             wasm_bindgen_futures::spawn_local(async move {
-                match upload_file(&file_name, file_content).await {
+                match upload_file(file_name.clone(), file_content).await {
                     Ok(_) => tracing::info!("File uploaded successfully: {}", file_name),
                     Err(e) => tracing::error!("Failed to upload file {}: {}", file_name, e),
                 }
@@ -200,7 +200,7 @@ impl FileSystemBackend for WebTransportFileSystem {
             
             // Spawn async task for upload
             wasm_bindgen_futures::spawn_local(async move {
-                match upload_file(&file_name, file_content).await {
+                match upload_file(file_name.clone(), file_content).await {
                     Ok(_) => tracing::info!("Binary file uploaded successfully: {}", file_name),
                     Err(e) => tracing::error!("Failed to upload binary file {}: {}", file_name, e),
                 }
@@ -242,7 +242,7 @@ impl FileSystemBackend for WebTransportFileSystem {
             
             // Spawn async task for deletion
             wasm_bindgen_futures::spawn_local(async move {
-                match delete_file(&file_name).await {
+                match delete_file(file_name.clone()).await {
                     Ok(_) => tracing::info!("File deleted successfully: {}", file_name),
                     Err(e) => tracing::error!("Failed to delete file {}: {}", file_name, e),
                 }

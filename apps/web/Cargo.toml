@@ -19,6 +19,7 @@ latex-ide-ui = { path = "../../crates/ui", features = ["web"] }
 latex-ide-editor = { path = "../../crates/editor", features = ["web"] }
 latex-ide-chat = { path = "../../crates/chat", features = ["web"] }
 latex-ide-file-manager = { path = "../../crates/file-manager", features = ["web"] }
+latex-ide-git-transport = { path = "../../crates/git-transport" }
 latex-ide-pdf-viewer = { path = "../../crates/pdf-viewer", features = ["web"] }
 latex-ide-git-manager = { path = "../../crates/git-manager", optional = true }
 

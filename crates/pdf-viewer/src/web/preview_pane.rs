@@ -3,6 +3,7 @@ use dioxus_signals::{Signal, Readable, Writable};
 use dioxus_hooks::{use_signal, use_effect};
 use latex_ide_ui::*;
 use latex_ide_ui::button::{ButtonVariant, ButtonSize};
+use crate::controls::PDFControls;
 #[cfg(feature = "native-git")]
 use latex_ide_git_manager::{SessionManager, GitRepository, HistoryViewer};
 use chrono::{DateTime, Utc};
@@ -15,6 +16,15 @@ use {
     js_sys,
     web_sys,
 };
+
+// Fallback spawn_local for non-wasm32 targets
+#[cfg(not(target_arch = "wasm32"))]
+fn spawn_local<F>(_future: F) 
+where
+    F: std::future::Future<Output = ()> + 'static,
+{
+    tracing::info!("spawn_local called on non-wasm32 target - no-op");
+}
 
 #[derive(Clone, Debug)]
 pub enum CompilationStatus {
@@ -42,6 +52,8 @@ pub fn WebPreviewPane(
     let mut compilation_status = use_signal(|| CompilationStatus::Ready);
     let pdf_url = use_signal(|| None::<String>);
     let mut auto_compiled = use_signal(|| false);
+    let available_versions = use_signal(|| Vec::<String>::new());
+    let current_version = use_signal(|| None::<String>);
     
     let has_content = !document_content.read().is_empty();
     let current_file_name = current_file
@@ -52,6 +64,41 @@ pub fn WebPreviewPane(
     // Clone the file name for use in closures
     let current_file_name_for_closures = current_file_name.clone();
     let current_file_name_for_trigger = current_file_name.clone();
+    
+    // Load available versions when session manager is ready
+    use_effect(move || {
+        if session_manager.is_some() {
+            let mut versions = available_versions.clone();
+            let mut current_ver = current_version.clone();
+            
+            spawn_local(async move {
+                #[cfg(target_arch = "wasm32")]
+                {
+                    use latex_ide_git_transport::web::WebGitTransport;
+                    
+                    let git_transport = WebGitTransport::new();
+                    match git_transport.get_all_versions().await {
+                        Ok(version_list) => {
+                            versions.set(version_list.clone());
+                            // Set current version to latest if available
+                            if let Some(latest) = version_list.last() {
+                                current_ver.set(Some(latest.clone()));
+                            }
+                            tracing::info!("Loaded {} available versions", version_list.len());
+                        }
+                        Err(e) => {
+                            tracing::error!("Failed to load versions: {}", e);
+                        }
+                    }
+                }
+                
+                #[cfg(not(target_arch = "wasm32"))]
+                {
+                    tracing::info!("Version loading not implemented for non-wasm32 target");
+                }
+            });
+        }
+    });
     
     // Auto-compile on startup when content is available
     use_effect(move || {
@@ -66,7 +113,7 @@ pub fn WebPreviewPane(
             let content = document_content.read().clone();
             let file_name = current_file_name_for_closures.clone().unwrap_or_else(|| "document".to_string());
             
-            compile_latex(content, file_name, status, pdf);
+            compile_latex(content, file_name, status, pdf, available_versions.clone(), current_version.clone());
         }
     });
     
@@ -82,7 +129,7 @@ pub fn WebPreviewPane(
                 let content = document_content.read().clone();
                 let file_name = current_file_name_for_trigger.clone().unwrap_or_else(|| "document".to_string());
                 
-                compile_latex(content, file_name, status, pdf);
+                compile_latex(content, file_name, status, pdf, available_versions.clone(), current_version.clone());
             }
         });
     }
@@ -96,48 +143,112 @@ pub fn WebPreviewPane(
                 session_manager: session_manager,
             }
             
-            // PDF controls
-            div { class: "h-12 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between px-4 bg-white dark:bg-gray-800",
-                div { class: "flex items-center space-x-2",
-                    Button {
-                        variant: ButtonVariant::Primary,
-                        size: ButtonSize::Small,
-                        disabled: matches!(*compilation_status.read(), CompilationStatus::Compiling) || !has_content,
-                        onclick: move |_| {
-                            if !has_content {
-                                return;
+            // PDF controls with version management
+            div { class: "border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800",
+                div { class: "flex items-center justify-between px-4 py-2",
+                    div { class: "flex items-center space-x-2",
+                        Button {
+                            variant: ButtonVariant::Primary,
+                            size: ButtonSize::Small,
+                            disabled: matches!(*compilation_status.read(), CompilationStatus::Compiling) || !has_content,
+                            onclick: move |_| {
+                                if !has_content {
+                                    return;
+                                }
+                                
+                                compilation_status.set(CompilationStatus::Compiling);
+                                
+                                let _content = document_content.read().clone();
+                                let status = compilation_status.clone();
+                                let pdf = pdf_url.clone();
+                                let file_name = current_file_name_for_closure.clone().unwrap_or_else(|| "document".to_string());
+                                
+                                compile_latex(_content, file_name, status, pdf, available_versions.clone(), current_version.clone());
+                            },
+                            match *compilation_status.read() {
+                                CompilationStatus::Compiling => "⏳ Compiling...",
+                                CompilationStatus::Success => "✅ Compiled",
+                                CompilationStatus::Error => "❌ Error",
+                                CompilationStatus::Ready => if has_content { "▶️ Compile" } else { "📄 No Content" }
                             }
-                            
-                            compilation_status.set(CompilationStatus::Compiling);
-                            
-                            let _content = document_content.read().clone();
-                            let status = compilation_status.clone();
-                            let pdf = pdf_url.clone();
-                            let file_name = current_file_name_for_closure.clone().unwrap_or_else(|| "document".to_string());
-                            
-                            compile_latex(_content, file_name, status, pdf);
-                        },
-                        match *compilation_status.read() {
-                            CompilationStatus::Compiling => "⏳ Compiling...",
-                            CompilationStatus::Success => "✅ Compiled",
-                            CompilationStatus::Error => "❌ Error",
-                            CompilationStatus::Ready => if has_content { "▶️ Compile" } else { "📄 No Content" }
+                        }
+                        
+                        Button {
+                            variant: ButtonVariant::Ghost,
+                            size: ButtonSize::Small,
+                            onclick: move |_| {
+                                // Download PDF
+                                tracing::info!("Download PDF clicked");
+                            },
+                            "📥"
+                        }
+                        
+                        // Version controls
+                        if !available_versions.read().is_empty() {
+                            div {
+                                class: "flex items-center gap-2 ml-4 border-l border-gray-200 dark:border-gray-700 pl-4",
+                                span {
+                                    class: "text-sm text-gray-600 dark:text-gray-400",
+                                    "Version:"
+                                }
+                                
+                                if let Some(version) = current_version.read().as_ref() {
+                                    span {
+                                        class: "text-sm font-mono text-blue-600 dark:text-blue-400",
+                                        "{version}"
+                                    }
+                                }
+                                
+                                Dropdown {
+                                    items: available_versions.read().iter().map(|version| {
+                                        DropdownItem::new(version.clone(), version.clone())
+                                            .with_description(format!("PDF version {}", version))
+                                    }).collect(),
+                                    selected: current_version.read().clone(),
+                                    onselect: move |version: String| {
+                                        let mut current_ver = current_version.clone();
+                                        spawn_local(async move {
+                                            #[cfg(target_arch = "wasm32")]
+                                            {
+                                                use latex_ide_git_transport::web::WebGitTransport;
+                                                
+                                                let git_transport = WebGitTransport::new();
+                                                match git_transport.rollback_to_version(version.clone()).await {
+                                                    Ok(_) => {
+                                                        current_ver.set(Some(version));
+                                                        tracing::info!("Successfully reverted to version");
+                                                        // Trigger PDF refresh by recompiling
+                                                        // TODO: Get the LaTeX content for this version and recompile
+                                                    }
+                                                    Err(e) => {
+                                                        tracing::error!("Failed to revert to version: {}", e);
+                                                    }
+                                                }
+                                            }
+                                            
+                                            #[cfg(not(target_arch = "wasm32"))]
+                                            {
+                                                tracing::info!("Version rollback not implemented for non-wasm32 target");
+                                            }
+                                        });
+                                    },
+                                    placeholder: "Select version".to_string(),
+                                    size: Some(DropdownSize::Small),
+                                    variant: Some(DropdownVariant::Default),
+                                }
+                            }
                         }
                     }
                     
-                    Button {
-                        variant: ButtonVariant::Ghost,
-                        size: ButtonSize::Small,
-                        onclick: move |_| {
-                            // Download PDF
-                            tracing::info!("Download PDF clicked");
-                        },
-                        "📥"
+                    div { class: "flex items-center space-x-2 text-sm text-gray-600 dark:text-gray-400",
+                        span { "PDF Preview" }
+                        if let Some(version) = current_version.read().as_ref() {
+                            span {
+                                class: "text-xs font-mono bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200 px-2 py-1 rounded",
+                                "{version}"
+                            }
+                        }
                     }
-                }
-                
-                div { class: "flex items-center space-x-2 text-sm text-gray-600 dark:text-gray-400",
-                    span { "PDF Preview" }
                 }
             }
             
@@ -183,14 +294,15 @@ pub fn WebPreviewPane(
                             div { class: "h-full flex items-center justify-center text-red-500 dark:text-red-400",
                                 div { class: "text-center max-w-md",
                                     div { class: "text-6xl mb-4", "❌" }
-                                    div { class: "text-lg mb-2", "Compilation Not Available" }
-                                    div { class: "text-sm mb-4", "WebTransport compilation not implemented yet" }
+                                    div { class: "text-lg mb-2", "Backend Server Required" }
+                                    div { class: "text-sm mb-4", "LaTeX compilation requires the backend server" }
                                     div { class: "text-xs text-left bg-red-50 dark:bg-red-900 p-3 rounded",
-                                        "Required implementation:"
+                                        "To enable PDF compilation:"
                                         ul { class: "list-disc list-inside mt-2 space-y-1",
-                                            li { "WebTransport CompilationRequest messages" }
-                                            li { "Server-side LaTeX compilation service" }
-                                            li { "PDF result streaming via transport" }
+                                            li { "Run: ./scripts/dev.sh web" }
+                                            li { "Or: ./scripts/dev.sh backend" }
+                                            li { "Server provides LaTeX compilation service" }
+                                            li { "Includes file operations and git integration" }
                                         }
                                     }
                                 }
@@ -262,7 +374,9 @@ fn compile_latex(
     content: String,
     file_name: String,
     mut status: Signal<CompilationStatus>,
-    mut pdf_url: Signal<Option<String>>
+    mut pdf_url: Signal<Option<String>>,
+    mut available_versions: Signal<Vec<String>>,
+    mut current_version: Signal<Option<String>>
 ) {
     use serde::{Serialize, Deserialize};
     
@@ -295,6 +409,7 @@ fn compile_latex(
                 // Set up response handler
                 let mut status_clone = status.clone();
                 let mut pdf_clone = pdf_url.clone();
+                let file_name_for_message = file_name.clone(); // Clone for the message handler
                 let onmessage = wasm_bindgen::closure::Closure::wrap(Box::new(move |e: web_sys::MessageEvent| {
                     if let Ok(array_buffer) = e.data().dyn_into::<js_sys::ArrayBuffer>() {
                         let uint8_array = js_sys::Uint8Array::new(&array_buffer);
@@ -308,9 +423,53 @@ fn compile_latex(
                                         if let Some(url) = create_pdf_url(pdf_bytes) {
                                             pdf_clone.set(Some(url));
                                             
-                                            // TODO: Auto-commit with versioning after successful compilation
-                                            // This will require integrating with git-manager SessionManager
-                                            tracing::info!("PDF compiled successfully, ready for version commit");
+                                            // Auto-commit with versioning after successful compilation
+                                            tracing::info!("PDF compiled successfully, creating version commit");
+                                            
+                                            // Clone variables for the closure
+                                            let file_name = file_name_for_message.clone(); // Clone file_name for the closure
+                                            let mut versions = available_versions.clone();
+                                            let mut current_ver = current_version.clone();
+                                            
+                                            spawn_local(async move {
+                                                #[cfg(target_arch = "wasm32")]
+                                                {
+                                                    use latex_ide_git_transport::web::WebGitTransport;
+                                                    
+                                                    let git_transport = WebGitTransport::new();
+                                                    match git_transport.commit_pdf_version(
+                                                        format!("output.pdf"),
+                                                        format!("Generated from {}", file_name)
+                                                    ).await {
+                                                        Ok(commit) => {
+                                                            tracing::info!("Successfully created PDF version commit: {} - {}", 
+                                                                commit.short_id, commit.message);
+                                                            
+                                                            // Refresh the available versions list
+                                                            match git_transport.get_all_versions().await {
+                                                                Ok(version_list) => {
+                                                                    versions.set(version_list.clone());
+                                                                    // Set current version to the latest
+                                                                    if let Some(latest) = version_list.last() {
+                                                                        current_ver.set(Some(latest.clone()));
+                                                                    }
+                                                                }
+                                                                Err(e) => {
+                                                                    tracing::error!("Failed to refresh version list: {}", e);
+                                                                }
+                                                            }
+                                                        }
+                                                        Err(e) => {
+                                                            tracing::error!("Failed to create PDF version commit: {}", e);
+                                                        }
+                                                    }
+                                                }
+                                                
+                                                #[cfg(not(target_arch = "wasm32"))]
+                                                {
+                                                    tracing::info!("PDF version commit not implemented for non-wasm32 target");
+                                                }
+                                            });
                                         }
                                     }
                                     status_clone.set(CompilationStatus::Success);
@@ -378,7 +537,9 @@ fn compile_latex(
     _content: String,
     _file_name: String,
     mut status: Signal<CompilationStatus>,
-    _pdf_url: Signal<Option<String>>
+    _pdf_url: Signal<Option<String>>,
+    _available_versions: Signal<Vec<String>>,
+    _current_version: Signal<Option<String>>
 ) {
     // Desktop implementation would use local LaTeX compiler
     status.set(CompilationStatus::Error);
@@ -407,37 +568,40 @@ fn SessionHistoryBar(
                 let mut commits = commits.clone();
                 
                 spawn_local(async move {
-                    // Try to get commit history via transport layer
-                    use latex_ide_file_manager::web::transport;
+                    #[cfg(target_arch = "wasm32")]
+                    {
+                        // Try to get commit history via git transport
+                        use latex_ide_git_transport::web::WebGitTransport;
+                        
+                        let git_transport = WebGitTransport::new();
+                        match git_transport.get_commit_history(Some(session_name), Some(10)).await {
+                            Ok(history) => {
+                                let session_commits: Vec<SessionCommit> = history.into_iter()
+                                    .map(|commit| {
+                                        let message = commit.message.clone();
+                                        SessionCommit {
+                                            short_hash: commit.short_id,
+                                            version: if message.contains("PDF version") {
+                                                Some(message.split("PDF version ").nth(1).unwrap_or("v1.0.0").to_string())
+                                            } else {
+                                                None
+                                            },
+                                            message,
+                                            timestamp: format_timestamp_from_iso(&commit.timestamp),
+                                        }
+                                    })
+                                    .collect();
+                                commits.set(session_commits);
+                            }
+                            Err(e) => {
+                                tracing::error!("Failed to fetch commit history: {}", e);
+                            }
+                        }
+                    }
                     
-                    match transport::send_git_operation(transport::GitOp::GetCommitHistory {
-                        branch_name: Some(session_name),
-                        limit: Some(10)
-                    }).await {
-                        Ok(transport::GitResponseData::CommitHistory(history)) => {
-                            let session_commits: Vec<SessionCommit> = history.into_iter()
-                                .map(|commit| {
-                                    let message = commit.message.clone();
-                                    SessionCommit {
-                                        short_hash: commit.short_id,
-                                        version: if message.contains("PDF version") {
-                                            Some(message.split("PDF version ").nth(1).unwrap_or("v1.0.0").to_string())
-                                        } else {
-                                            None
-                                        },
-                                        message,
-                                        timestamp: format_timestamp_from_iso(&commit.timestamp),
-                                    }
-                                })
-                                .collect();
-                            commits.set(session_commits);
-                        }
-                        Ok(_) => {
-                            tracing::warn!("Unexpected response for commit history");
-                        }
-                        Err(e) => {
-                            tracing::error!("Failed to fetch commit history: {}", e);
-                        }
+                    #[cfg(not(target_arch = "wasm32"))]
+                    {
+                        tracing::info!("Commit history loading not implemented for non-wasm32 target");
                     }
                 });
             }
@@ -481,18 +645,25 @@ fn SessionHistoryBar(
                         onclick: move |_| {
                             let commit_hash = hash.clone();
                             spawn_local(async move {
-                                use latex_ide_file_manager::web::transport;
+                                #[cfg(target_arch = "wasm32")]
+                                {
+                                    use latex_ide_git_transport::web::WebGitTransport;
+                                    
+                                    let git_transport = WebGitTransport::new();
+                                    match git_transport.safe_rollback_to_commit(commit_hash).await {
+                                        Ok(_) => {
+                                            tracing::info!("Successfully rolled back to commit");
+                                            // Could trigger PDF refresh here
+                                        }
+                                        Err(e) => {
+                                            tracing::error!("Rollback failed: {}", e);
+                                        }
+                                    }
+                                }
                                 
-                                match transport::send_git_operation(transport::GitOp::SafeRollbackToCommit {
-                                    commit_id: commit_hash
-                                }).await {
-                                    Ok(_) => {
-                                        tracing::info!("Successfully rolled back to commit");
-                                        // Could trigger PDF refresh here
-                                    }
-                                    Err(e) => {
-                                        tracing::error!("Rollback failed: {}", e);
-                                    }
+                                #[cfg(not(target_arch = "wasm32"))]
+                                {
+                                    tracing::info!("Rollback not implemented for non-wasm32 target");
                                 }
                             });
                         },

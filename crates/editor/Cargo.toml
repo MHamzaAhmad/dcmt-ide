@@ -42,7 +42,7 @@ tree-sitter-latex = { workspace = true, optional = true }
 [features]
 default = []
 desktop = ["dioxus/desktop", "latex-ide-ui/desktop", "tree-sitter", "tree-sitter-latex", "tokio"]
-web = ["dioxus/web", "latex-ide-ui/web"]
+web = ["dioxus/web", "latex-ide-ui/web", "latex-ide-chat/web", "latex-ide-file-manager/web"]
 
 # Desktop-specific dependencies with enhanced integration
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]

@@ -175,7 +175,8 @@ fn sort_children(items: &mut Vec<FileItem>) {
 #[component]
 pub fn WebFileTree(
     project_manager: Signal<ProjectManager>,
-    onfile_select: Option<EventHandler<String>>
+    onfile_select: Option<EventHandler<String>>,
+    backend_connected: Option<Signal<bool>>
 ) -> Element {
     let mut file_tree = use_signal(|| Vec::<FileItem>::new());
     let mut error_message = use_signal(|| None::<String>);
@@ -201,6 +202,11 @@ pub fn WebFileTree(
                         );
                     }
                     
+                    // Update connection status
+                    if let Some(mut connected) = backend_connected {
+                        connected.set(true);
+                    }
+                    
                     let tree = build_file_tree(files.clone());
                     file_tree.set(tree);
                     loading.set(false);
@@ -216,7 +222,20 @@ pub fn WebFileTree(
                 Err(e) => {
                     tracing::error!("Failed to load files: {}", e);
                     loading.set(false);
-                    error_message.set(Some(format!("Failed to load files: {}", e)));
+                    
+                    // Update connection status
+                    if let Some(mut connected) = backend_connected {
+                        connected.set(false);
+                    }
+                    
+                    // Provide helpful error message for server connection issues
+                    let helpful_message = if e.contains("Failed to connect") || e.contains("Connection refused") || e.contains("NetworkError") {
+                        "❌ Backend server not running!\n\nTo start the server, run:\n./scripts/dev.sh web\n\nOr:\n./scripts/dev.sh backend\n\nThis will start the LaTeX IDE backend services including file operations, git integration, and PDF compilation.".to_string()
+                    } else {
+                        format!("Failed to load files: {}", e)
+                    };
+                    
+                    error_message.set(Some(helpful_message));
                 }
             }
         });

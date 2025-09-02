@@ -332,6 +332,24 @@ impl GitServerManager {
                 Err(anyhow::anyhow!("Remote operations not yet implemented"))
             }
             
+            GitOp::GetAllVersions => {
+                if let Some(ref session_mgr) = self.session_manager {
+                    let versions = session_mgr.get_all_versions()?;
+                    Ok(Some(GitResponseData::VersionList(versions)))
+                } else {
+                    Err(anyhow::anyhow!("Session manager not available"))
+                }
+            }
+            
+            GitOp::RollbackToVersion { version } => {
+                if let Some(ref mut session_mgr) = self.session_manager {
+                    session_mgr.rollback_to_version(&version)?;
+                    Ok(None)
+                } else {
+                    Err(anyhow::anyhow!("Session manager not available"))
+                }
+            }
+            
             // Operations that don't need implementation
             GitOp::SearchCommits { query: _, limit: _ } => {
                 Err(anyhow::anyhow!("Search commits not yet implemented"))

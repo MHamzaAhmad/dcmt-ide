@@ -79,7 +79,7 @@ pub async fn upload_file_from_browser(file: web_sys::File) -> UploadResult {
             onerror.forget();
             
             // Upload the file content
-            return upload_file(&file_name, content).await;
+            return upload_file(file_name.clone(), content).await;
         }
         gloo_timers::future::sleep(std::time::Duration::from_millis(50)).await;
         attempts += 1;
@@ -153,7 +153,7 @@ pub async fn download_file_content(file_name: &str) -> DownloadResult {
 
 /// Delete file on server
 pub async fn delete_file_on_server(file_name: &str) -> Result<(), String> {
-    delete_file(file_name).await
+    delete_file(file_name.to_string()).await
 }
 
 /// Fetch file list from server and convert to FileItem format
@@ -203,7 +203,7 @@ Your conclusions go here.
 \end{document}
 "#;
 
-    upload_file(file_name, template_content.as_bytes().to_vec()).await
+    upload_file(file_name.to_string(), template_content.as_bytes().to_vec()).await
 }
 
 /// Create a new bibliography file
@@ -228,7 +228,7 @@ pub async fn create_bibliography_file(file_name: &str) -> Result<(), String> {
 }
 "#;
 
-    upload_file(file_name, bib_content.as_bytes().to_vec()).await
+    upload_file(file_name.to_string(), bib_content.as_bytes().to_vec()).await
 }
 
 /// Format file size in human-readable format

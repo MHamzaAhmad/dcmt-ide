@@ -7,7 +7,8 @@ use wasm_bindgen::prelude::*;
 // Import components from shared crates
 use latex_ide_editor::web::WebEditorPane;
 use latex_ide_chat::web::BrowserCapabilities;
-use latex_ide_file_manager::{web::{WebFileTree, WebGitClient, GitStatusResponse, WebGitPanel}, ProjectManager};
+use latex_ide_file_manager::{web::WebFileTree, ProjectManager};
+use latex_ide_git_transport::{GitTransport as WebGitClient, GitStatusResponse};
 use latex_ide_pdf_viewer::web::WebPreviewPane;
 use latex_ide_ui::web::{AppHeader, hooks::use_browser_capabilities, GitStatus, SidebarView};
 // Session manager now handled via transport layer
@@ -62,6 +63,9 @@ fn App() -> Element {
     // Session manager now works via transport layer for all builds
     let session_manager = use_signal(|| None::<String>);
     
+    // Connection status for backend server
+    let backend_connected = use_signal(|| false);
+    
     // Initialize workspace project in background
     use_effect(move || {
         let mut pm = project_manager.write();
@@ -81,16 +85,13 @@ fn App() -> Element {
         
         #[cfg(target_arch = "wasm32")]
         wasm_bindgen_futures::spawn_local(async move {
-            // Try to start a git session via transport layer
-            use latex_ide_file_manager::web::transport;
+            // Try to start a git session via git transport
+            let mut git_client = WebGitClient::new();
             
-            match transport::send_git_operation(transport::GitOp::StartSession).await {
-                Ok(transport::GitResponseData::SessionBranch(branch_name)) => {
+            match git_client.start_session().await {
+                Ok(branch_name) => {
                     session_manager.set(Some(branch_name.clone()));
                     tracing::info!("Git session started: {}", branch_name);
-                }
-                Ok(_) => {
-                    tracing::warn!("Unexpected response for start session");
                 }
                 Err(e) => {
                     tracing::warn!("Failed to start git session: {}", e);
@@ -101,11 +102,12 @@ fn App() -> Element {
     
     // Initialize Git integration
     use_effect(move || {
-        let git_client = git_client.clone();
+        let mut git_client = git_client.clone();
         let mut git_status = git_status.clone();
         
         wasm_bindgen_futures::spawn_local(async move {
-            match git_client.read().init_repository(".".to_string()).await {
+            let mut git_transport = git_client.write();
+            match git_transport.init_repository(".".to_string()).await {
                 Ok(status) => {
                     git_status.set(Some(status));
                     tracing::info!("Git integration initialized successfully");
@@ -124,9 +126,34 @@ fn App() -> Element {
                 class: "h-screen w-screen bg-white dark:bg-zinc-950 flex flex-col",
                 
                 // Enhanced header with sidebar controls
-                AppHeader {
-                    sidebar_view: sidebar_view,
-                    git_status: use_signal(move || git_status.read().as_ref().map(convert_git_status)),
+                div { class: "flex items-center justify-between",
+                    AppHeader {
+                        sidebar_view: sidebar_view,
+                        git_status: use_signal(move || git_status.read().as_ref().map(convert_git_status)),
+                    }
+                    
+                    // Connection status indicator
+                    div { class: "px-4 py-2 text-xs flex items-center space-x-2",
+                        div { 
+                            class: if *backend_connected.read() { 
+                                "w-2 h-2 bg-green-500 rounded-full" 
+                            } else { 
+                                "w-2 h-2 bg-red-500 rounded-full" 
+                            }
+                        }
+                        span { 
+                            class: if *backend_connected.read() { 
+                                "text-green-600 dark:text-green-400" 
+                            } else { 
+                                "text-red-600 dark:text-red-400" 
+                            },
+                            if *backend_connected.read() { 
+                                "Backend Connected" 
+                            } else { 
+                                "Backend Disconnected - Run ./scripts/dev.sh web" 
+                            }
+                        }
+                    }
                 }
                 
                 div { class: "flex-1 flex overflow-hidden",
@@ -137,6 +164,7 @@ fn App() -> Element {
                                 SidebarView::Explorer => rsx! {
                                     WebFileTree { 
                                         project_manager: project_manager,
+                                        backend_connected: Some(backend_connected),
                                         onfile_select: move |file_path: String| {
                                             tracing::info!("Loading file: {}", file_path);
                                             current_file_path.set(Some(file_path.clone()));
@@ -162,10 +190,9 @@ fn App() -> Element {
                                     }
                                 },
                                 SidebarView::Git => rsx! {
-                                    WebGitPanel {
-                                        git_client: git_client,
-                                        git_status: git_status,
-                                        pdf_refresh_trigger: pdf_refresh_trigger,
+                                    div {
+                                        class: "p-4 text-center text-gray-500",
+                                        "Git Panel moved to dedicated crate"
                                     }
                                 },
                                 SidebarView::None => rsx! { div {} }

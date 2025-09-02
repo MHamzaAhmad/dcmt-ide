@@ -1,0 +1,34 @@
+[package]
+name = "latex-ide-git-transport"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+# Workspace dependencies
+anyhow.workspace = true
+thiserror.workspace = true
+serde = { workspace = true }
+serde_json.workspace = true
+tracing.workspace = true
+chrono = { workspace = true }
+
+# Git manager for direct operations
+latex-ide-git-manager = { path = "../git-manager", optional = true }
+
+# Web-specific dependencies
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+wasm-bindgen = { workspace = true }
+wasm-bindgen-futures = { workspace = true }
+web-sys = { workspace = true, features = [
+    "WebSocket", "MessageEvent", "BinaryType", "Blob", "Window", 
+    "console", "Response", "Headers"
+]}
+js-sys = { workspace = true }
+gloo-timers = { workspace = true }
+
+[features]
+default = []
+native-git = ["latex-ide-git-manager"]

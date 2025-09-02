@@ -119,6 +119,10 @@ pub enum GitOp {
     SearchCommits { query: String, limit: Option<usize> },
     SafeRollbackToCommit { commit_id: String },
     
+    // Version management
+    GetAllVersions,
+    RollbackToVersion { version: String },
+    
     // Remote operations
     PushToRemote { remote_name: String, branch_name: String },
     PullFromRemote { remote_name: String, branch_name: String },
@@ -152,6 +156,7 @@ pub enum GitResponseData {
     FileHistory(Vec<GitCommitInfo>),
     SearchResults(Vec<GitCommitInfo>),
     RollbackResult(GitRollbackResult),
+    VersionList(Vec<String>),
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]

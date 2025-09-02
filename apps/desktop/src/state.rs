@@ -2,6 +2,7 @@ use dioxus_hooks::use_signal;
 use dioxus_signals::{Signal, Readable, Writable};
 use latex_ide_yrs_collab::{CollaborationEngine, LaTeXDocument};
 use latex_ide_model_manager::ModelManager;
+use latex_ide_file_manager::ProjectManager;
 use std::sync::Arc;
 use std::collections::HashMap;
 use uuid::Uuid;
@@ -9,7 +10,7 @@ use uuid::Uuid;
 /// Global application state for the desktop app
 #[derive(Clone, PartialEq)]
 pub struct AppState {
-    pub current_project: Signal<Option<Project>>,
+    pub project_manager: Signal<ProjectManager>,
     pub open_documents: Signal<HashMap<Uuid, LaTeXDocument>>,
     pub active_document: Signal<Option<Uuid>>,
     pub collaboration_engine: Signal<Option<Arc<CollaborationEngine>>>,
@@ -52,7 +53,7 @@ impl Default for UIState {
 impl AppState {
     pub fn new() -> Self {
         Self {
-            current_project: use_signal(|| None),
+            project_manager: use_signal(|| ProjectManager::new()),
             open_documents: use_signal(|| HashMap::new()),
             active_document: use_signal(|| None),
             collaboration_engine: use_signal(|| None),

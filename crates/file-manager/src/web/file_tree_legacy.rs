@@ -1,12 +1,11 @@
-// DEPRECATED: This file has been split into modular components
-// Please use the new modules instead:
+// This file has been deprecated and split into modular components.
+// Please use the new modular approach:
 // - transport.rs for WebSocket communication
-// - file_operations.rs for file handling  
+// - file_operations.rs for file handling
 // - components.rs for UI components
 //
-// This file is kept for backward compatibility only.
+// For backward compatibility, these exports are maintained:
 
-// Re-export all functionality from the new modular components
 pub use super::components::{WebFileTree, WebFileTreeAdvanced, WebFileItem};
 pub use super::transport::{TransportMessage, FileOp, FileInfo, FileTransportClient};
 pub use super::file_operations::{
@@ -14,3 +13,11 @@ pub use super::file_operations::{
     fetch_file_list, create_latex_file, create_bibliography_file,
     format_file_size, validate_file_name, is_latex_file, is_bibliography_file
 };
+
+// Legacy type aliases
+pub type FileTransportClient = super::transport::FileTransportClient;
+
+// Helper functions for backward compatibility
+pub fn format_file_size(size: u64) -> String {
+    super::file_operations::format_file_size(size)
+}

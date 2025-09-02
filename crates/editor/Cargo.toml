@@ -23,6 +23,7 @@ thiserror = { workspace = true }
 wasm-bindgen = { workspace = true, features = ["serde-serialize"] }
 wasm-bindgen-futures = { workspace = true }
 js-sys = { workspace = true }
+gloo-timers = { workspace = true, features = ["futures"] }
 web-sys = { workspace = true, features = [
     "HtmlTextAreaElement", "Element", "Document", "Window", "HtmlElement",
     "console", "AbortController", "BinaryType", "MessageEvent", 

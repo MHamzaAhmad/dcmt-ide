@@ -16,7 +16,7 @@ use {
     wasm_bindgen::closure::Closure,
     web_sys::{WebSocket, MessageEvent, ErrorEvent, CloseEvent, BinaryType},
     js_sys::Uint8Array,
-    std::collections::HashMap,
+    gloo_timers,
     std::rc::Rc,
     std::cell::RefCell,
 };
@@ -171,7 +171,6 @@ impl Transport {
 pub struct Transport {
     websocket: Option<WebSocket>,
     connection_state: ConnectionState,
-    message_handlers: HashMap<String, Rc<dyn Fn(TransportMessage)>>,
     _closures: Vec<Box<dyn AsRef<JsValue>>>,
 }
 
@@ -182,7 +181,6 @@ impl Transport {
         Self {
             websocket: None,
             connection_state: ConnectionState::Disconnected,
-            message_handlers: HashMap::new(),
             _closures: Vec::new(),
         }
     }
@@ -192,18 +190,23 @@ impl Transport {
         
         // Convert to WebSocket URL
         let ws_url = if url.starts_with("wss://") || url.starts_with("ws://") {
-            url.to_string()
+            if url.ends_with("/ws") {
+                url.to_string()
+            } else {
+                format!("{}/ws", url)
+            }
         } else if url.starts_with("https://") {
-            url.replace("https://", "wss://")
+            format!("{}/ws", url.replace("https://", "wss://"))
+        } else if url.starts_with("http://") {
+            format!("{}/ws", url.replace("http://", "ws://"))
         } else {
-            format!("wss://{}/ws", url)
+            format!("ws://{}/ws", url)
         };
         
         let ws = WebSocket::new(&ws_url)?;
         ws.set_binary_type(BinaryType::Arraybuffer);
         
         let state = Rc::new(RefCell::new(ConnectionState::Connecting));
-        let handlers = Rc::new(RefCell::new(HashMap::<String, Rc<dyn Fn(TransportMessage)>>::new()));
         
         // Connection opened
         let state_clone = state.clone();
@@ -229,8 +232,7 @@ impl Transport {
         }) as Box<dyn FnMut(CloseEvent)>);
         ws.set_onclose(Some(onclose.as_ref().unchecked_ref()));
         
-        // Message received
-        let handlers_clone = handlers.clone();
+        // Message received - simplified to just log for now
         let onmessage = Closure::wrap(Box::new(move |e: MessageEvent| {
             if let Ok(array_buffer) = e.data().dyn_into::<js_sys::ArrayBuffer>() {
                 let uint8_array = Uint8Array::new(&array_buffer);
@@ -238,22 +240,8 @@ impl Transport {
                 
                 match serde_json::from_slice::<TransportMessage>(&data) {
                     Ok(message) => {
-                        let message_type = match &message {
-                            TransportMessage::YrsUpdate { .. } => "yrs_update",
-                            TransportMessage::Awareness { .. } => "awareness",
-                            TransportMessage::AiMessage { .. } => "ai_message",
-                            TransportMessage::FileOperation { .. } => "file_operation",
-                            TransportMessage::CompilationRequest { .. } => "compilation_request",
-                            TransportMessage::CompilationResult { .. } => "compilation_result",
-                        };
-                        
-                        if let Some(handler) = handlers_clone.borrow().get(message_type) {
-                            handler(message.clone());
-                        }
-                        
-                        if let Some(global_handler) = handlers_clone.borrow().get("*") {
-                            global_handler(message);
-                        }
+                        tracing::info!("Received WebSocket message: {:?}", message);
+                        // TODO: Handle message routing without complex closures
                     }
                     Err(e) => {
                         tracing::error!("Failed to deserialize message: {:?}", e);
@@ -305,14 +293,48 @@ impl Transport {
         }
     }
     
-    pub fn on_message<F>(&mut self, message_type: &str, handler: F)
-    where
-        F: Fn(TransportMessage) + 'static,
-    {
-        self.message_handlers.insert(
-            message_type.to_string(),
-            Rc::new(handler)
-        );
+    // Simplified send and receive pattern using polling
+    pub async fn send_and_wait_for_response(&mut self, message: TransportMessage) -> Result<TransportMessage, JsValue> {
+        if let Some(ws) = &self.websocket {
+            // Send the message
+            self.send_message(message).await?;
+            
+            // Set up response storage
+            let response = Rc::new(RefCell::new(None::<TransportMessage>));
+            let response_clone = response.clone();
+            
+            let onmessage = Closure::wrap(Box::new(move |e: MessageEvent| {
+                if let Ok(array_buffer) = e.data().dyn_into::<js_sys::ArrayBuffer>() {
+                    let uint8_array = Uint8Array::new(&array_buffer);
+                    let data = uint8_array.to_vec();
+                    
+                    if let Ok(message) = serde_json::from_slice::<TransportMessage>(&data) {
+                        *response_clone.borrow_mut() = Some(message);
+                    }
+                }
+            }) as Box<dyn FnMut(MessageEvent)>);
+            
+            ws.set_onmessage(Some(onmessage.as_ref().unchecked_ref()));
+            
+            // Wait for response with timeout using polling
+            let mut attempts = 0;
+            while attempts < 100 { // 10 second timeout with 100ms intervals
+                if let Some(resp) = response.borrow().as_ref() {
+                    let result = resp.clone();
+                    // Clean up
+                    drop(onmessage);
+                    return Ok(result);
+                }
+                gloo_timers::future::sleep(std::time::Duration::from_millis(100)).await;
+                attempts += 1;
+            }
+            
+            // Clean up on timeout
+            drop(onmessage);
+            Err("Response timeout".into())
+        } else {
+            Err("No WebSocket connection".into())
+        }
     }
     
     pub fn connection_state(&self) -> &ConnectionState {

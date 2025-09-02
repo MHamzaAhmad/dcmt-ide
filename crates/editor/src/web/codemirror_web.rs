@@ -1,5 +1,7 @@
 use latex_ide_ui::*;
-use crate::codemirror::{CodeMirrorProps, DecorationType, CodeMirrorOps};
+use crate::codemirror::{CodeMirrorProps, CodeMirrorOps};
+#[cfg(target_arch = "wasm32")]
+use crate::codemirror::DecorationType;
 #[cfg(target_arch = "wasm32")]
 use crate::codemirror::wrapper::{CodeMirrorEditor as Editor};
 
@@ -7,7 +9,9 @@ use crate::codemirror::wrapper::{CodeMirrorEditor as Editor};
 use {
     wasm_bindgen_futures::spawn_local,
     web_sys,
+    js_sys,
     std::rc::Rc,
+    gloo_timers,
 };
 
 #[component]
@@ -39,8 +43,37 @@ pub fn WebCodeMirrorEditor(mut props: CodeMirrorProps) -> Element {
                                     editor_instance.set(Some(editor_rc.clone()));
                                     initialization_error.set(None);
                                     
-                                    // Set up content change listener
-                                    // This would typically involve JS callbacks
+                                    // Set up content change listener if callback provided
+                                    if let Some(on_change) = &props.on_change {
+                                        let on_change_clone = on_change.clone();
+                                        let editor_clone = editor_rc.clone();
+                                        
+                                        // Set up debounced content checking for auto-save
+                                        let mut last_content = props.content.read().clone();
+                                        let mut last_change_time = None::<js_sys::Date>;
+                                        spawn_local(async move {
+                                            loop {
+                                                gloo_timers::future::sleep(std::time::Duration::from_millis(1000)).await; // Check every 1 second
+                                                let current_content = editor_clone.get_content();
+                                                
+                                                if current_content != last_content {
+                                                    last_change_time = Some(js_sys::Date::new_0());
+                                                    last_content = current_content.clone();
+                                                } else if let Some(change_time) = &last_change_time {
+                                                    // If content hasn't changed for 2 seconds after last change, trigger save
+                                                    let now = js_sys::Date::new_0();
+                                                    let time_since_change = now.get_time() - change_time.get_time();
+                                                    
+                                                    if time_since_change >= 2000.0 { // 2 seconds debounce
+                                                        last_change_time = None;
+                                                        on_change_clone.call(last_content.clone());
+                                                        tracing::info!("Auto-save triggered after 2s delay");
+                                                    }
+                                                }
+                                            }
+                                        });
+                                    }
+                                    
                                     tracing::info!("CodeMirror editor initialized successfully");
                                 },
                                 Err(e) => {
@@ -132,6 +165,35 @@ pub fn WebCodeMirrorEditor(mut props: CodeMirrorProps) -> Element {
             // Toolbar with enhanced functionality
             div {
                 class: "flex items-center gap-2 p-2 border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800",
+                
+                // Save button with status indication
+                button {
+                    class: format!("px-3 py-1 text-sm rounded focus:outline-none focus:ring-2 focus:ring-opacity-50 {}",
+                        if editor_instance.read().is_some() {
+                            "bg-green-500 text-white hover:bg-green-600 focus:ring-green-500"
+                        } else {
+                            "bg-gray-300 text-gray-500 cursor-not-allowed"
+                        }
+                    ),
+                    onclick: move |_| {
+                        #[cfg(target_arch = "wasm32")]
+                        if let Some(editor) = editor_instance.read().as_ref() {
+                            let content = editor.get_content();
+                            
+                            // Update the content signal
+                            props.content.set(content.clone());
+                            
+                            // Call the on_change callback if provided (this will trigger save and compilation)
+                            if let Some(on_change) = &props.on_change {
+                                on_change.call(content);
+                            }
+                            
+                            tracing::info!("Manual save triggered");
+                        }
+                    },
+                    disabled: editor_instance.read().is_none(),
+                    "💾 Save"
+                }
                 
                 // Format button with status indication
                 button {

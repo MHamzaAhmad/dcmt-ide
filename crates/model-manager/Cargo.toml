@@ -57,5 +57,8 @@ dashmap = "6.1"
 # Time
 chrono = { workspace = true }
 
+# Regular expressions
+regex = "1.10"
+
 [features]
 default = []

@@ -1,7 +1,7 @@
 //! File tree management
 
 use crate::file::FileItem;
-use std::path::PathBuf;
+use std::path::{PathBuf, Path};
 
 #[derive(Clone, Debug)]
 pub struct FileTree {
@@ -24,6 +24,61 @@ impl FileTree {
             root,
             selected_item: None,
         }
+    }
+    
+    pub fn from_directory(directory_path: &Path) -> Result<Self, String> {
+        if !directory_path.exists() {
+            return Err("Directory does not exist".to_string());
+        }
+        
+        if !directory_path.is_dir() {
+            return Err("Path is not a directory".to_string());
+        }
+        
+        let root_name = directory_path
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("Project")
+            .to_string();
+        
+        let mut root = FileItem::new_directory(root_name, directory_path.to_path_buf());
+        root.set_expanded(true);
+        
+        // Recursively scan directory structure
+        Self::scan_directory(&mut root, directory_path)?;
+        
+        Ok(Self {
+            root,
+            selected_item: None,
+        })
+    }
+    
+    fn scan_directory(parent: &mut FileItem, dir_path: &Path) -> Result<(), String> {
+        let entries = std::fs::read_dir(dir_path)
+            .map_err(|e| format!("Failed to read directory: {}", e))?;
+            
+        for entry in entries {
+            let entry = entry.map_err(|e| format!("Failed to read directory entry: {}", e))?;
+            let path = entry.path();
+            let name = entry.file_name().to_string_lossy().to_string();
+            
+            // Skip hidden files and directories
+            if name.starts_with('.') {
+                continue;
+            }
+            
+            if path.is_dir() {
+                let dir_item = FileItem::new_directory(name, path.clone());
+                // Only scan first level to avoid performance issues
+                // Can be expanded on demand later
+                parent.add_child(dir_item);
+            } else {
+                let file_item = FileItem::new_file(name, path);
+                parent.add_child(file_item);
+            }
+        }
+        
+        Ok(())
     }
     
     pub fn add_file(&mut self, path: PathBuf, name: String) {

@@ -45,7 +45,7 @@ chrono = { workspace = true }
 dashmap = "6.1"
 
 # HTTP for fallback
-axum = "0.7"
+axum = { version = "0.7", features = ["ws"] }
 tower = { workspace = true }
 tower-http = { workspace = true }
 

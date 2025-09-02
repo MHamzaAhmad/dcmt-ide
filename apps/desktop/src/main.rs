@@ -93,9 +93,14 @@ fn App() -> Element {
                         collapsed: false,
                         width: 250,
                         DesktopFileTree { 
-                            onfile_select: move |file_path| {
-                                info!("Selected file: {:?}", file_path);
-                                // Handle file selection
+                            project_manager: app_state.project_manager,
+                            onfile_select: {
+                                let mut app_state = app_state.clone();
+                                move |file_path: String| {
+                                    info!("Selected file: {:?}", file_path);
+                                    // TODO: Open the selected file in the editor
+                                    let _ = app_state.open_document(&file_path);
+                                }
                             }
                         }
                     }
@@ -230,6 +235,22 @@ fn StatusBar(app_state: AppState) -> Element {
         div { class: "h-6 bg-blue-600 text-white text-xs flex items-center justify-between px-4",
             div { class: "flex items-center space-x-4",
                 span { "Ready" }
+                
+                // Workspace info
+                span { 
+                    if let Some(project) = app_state.project_manager.read().get_current_project() {
+                        "📁 {project.name}"
+                    } else {
+                        "📁 No workspace"
+                    }
+                }
+                
+                // Main file info
+                if let Some(main_file) = app_state.project_manager.read().get_current_project()
+                    .and_then(|p| p.main_file.as_ref()) {
+                    span { "📝 {main_file.display()}" }
+                }
+                
                 span { "UTF-8" }
                 span { "LaTeX" }
                 span { 

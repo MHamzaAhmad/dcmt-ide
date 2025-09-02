@@ -127,8 +127,52 @@ impl ModelManager {
         Ok(response_stream)
     }
     
-    async fn enhance_latex_context(&self, _request: &mut ModelRequest) {
-        // TODO: Implement LaTeX context enhancement
+    async fn enhance_latex_context(&self, request: &mut ModelRequest) {
+        // Enhance LaTeX context for AI models
+        if let Some(context) = &mut request.context {
+            // Analyze existing LaTeX context
+            let doc_class = detect_document_class(&context.document_content).unwrap_or("article".to_string());
+            let packages = detect_packages(&context.document_content);
+            let current_section = detect_current_section(&context.document_content).unwrap_or("Unknown".to_string());
+            let math_mode_active = context.document_content.contains("$") || context.document_content.contains("\\[");
+            
+            // Update packages list and document class in context
+            context.packages = packages.clone();
+            context.document_class = Some(doc_class.clone());
+            
+            // Enhance document content with analysis
+            let enhanced_content = format!(
+                r#"LaTeX Document Analysis:
+- Document class: {}
+- Packages in use: {}
+- Current section: {}
+- Math mode: {}
+
+Instructions: You are helping with LaTeX document editing. 
+Provide suggestions that are syntactically correct and follow LaTeX best practices.
+When suggesting code, use proper LaTeX commands and environments.
+
+Document content:
+{}"#,
+                doc_class,
+                packages.join(", "),
+                current_section,
+                if math_mode_active { "Active" } else { "Inactive" },
+                context.document_content
+            );
+            
+            context.document_content = enhanced_content;
+        } else {
+            // Create default LaTeX context if none exists
+            use latex_ide_sse_handler::LaTeXContext;
+            request.context = Some(LaTeXContext {
+                document_content: "LaTeX Document Context: You are helping with LaTeX document editing. Provide suggestions that are syntactically correct and follow LaTeX best practices.".to_string(),
+                current_position: None,
+                selected_text: None,
+                packages: vec![],
+                document_class: Some("article".to_string()),
+            });
+        }
     }
     
     async fn update_metrics(&self, model_id: &str, requests: u64, tokens: u64) {
@@ -149,4 +193,38 @@ pub struct ModelInfo {
     pub status: ModelStatus,
     pub context_window: u32,
     pub supports_latex: bool,
+}
+
+// Helper functions for LaTeX context analysis
+fn detect_document_class(latex: &str) -> Option<String> {
+    let re = regex::Regex::new(r"\\documentclass(?:\[[^\]]*\])?\{([^}]+)\}").ok()?;
+    re.captures(latex)?.get(1).map(|m| m.as_str().to_string())
+}
+
+fn detect_packages(latex: &str) -> Vec<String> {
+    let re = regex::Regex::new(r"\\usepackage(?:\[[^\]]*\])?\{([^}]+)\}").unwrap();
+    re.captures_iter(latex)
+        .filter_map(|cap| cap.get(1))
+        .map(|m| m.as_str().to_string())
+        .collect()
+}
+
+fn detect_current_section(latex: &str) -> Option<String> {
+    let patterns = [
+        r"\\chapter\{([^}]+)\}",
+        r"\\section\{([^}]+)\}",
+        r"\\subsection\{([^}]+)\}",
+        r"\\subsubsection\{([^}]+)\}",
+    ];
+    
+    for pattern in &patterns {
+        if let Ok(re) = regex::Regex::new(pattern) {
+            if let Some(last_match) = re.captures_iter(latex).last() {
+                if let Some(title) = last_match.get(1) {
+                    return Some(title.as_str().to_string());
+                }
+            }
+        }
+    }
+    None
 }

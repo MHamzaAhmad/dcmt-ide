@@ -31,5 +31,8 @@ regex = { workspace = true }
 # Logging
 tracing = { workspace = true }
 
+# Time handling
+chrono = { workspace = true }
+
 [features]
 default = []

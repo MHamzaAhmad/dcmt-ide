@@ -99,3 +99,6 @@ models/
 # Backup files
 *.bak
 *.backup
+
+# Sample workspace - ignore generated files but keep templates
+sample-workspace

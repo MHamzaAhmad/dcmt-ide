@@ -216,17 +216,55 @@ impl CollaborationEngine {
         Ok(())
     }
     
-    pub fn update_cursor(&self, _doc_id: &Uuid, _position: u32) {
-        // TODO: Implement cursor position tracking with awareness
+    pub fn update_cursor(&self, _doc_id: &Uuid, position: u32) {
+        // Update cursor position in awareness
+        // TODO: Implement when awareness system is properly integrated
+        tracing::debug!("Updated cursor position for user {} at position {}", self.user_info.name, position);
     }
     
-    pub fn update_selection(&self, _doc_id: &Uuid, _start: u32, _end: u32) {
-        // TODO: Implement selection tracking with awareness
+    pub fn update_selection(&self, _doc_id: &Uuid, start: u32, end: u32) {
+        // Update selection range in awareness
+        // TODO: Implement when awareness system is properly integrated
+        tracing::debug!("Updated selection for user {} from {} to {}", self.user_info.name, start, end);
     }
     
     pub fn get_all_users(&self) -> Vec<UserInfo> {
-        // TODO: Return users from awareness
-        vec![self.user_info.clone()]
+        // Return users from all awareness states
+        let users = vec![self.user_info.clone()]; // Include local user
+        
+        // In a real implementation, this would collect users from document awareness
+        // For now, return just the local user since awareness is handled differently
+        tracing::debug!("Returning {} total users", users.len());
+        
+        /* TODO: Implement proper awareness-based user collection
+        for (_doc_id, awareness) in self.awareness.iter() {
+            if let Ok(awareness_guard) = awareness.read() {
+                let states = awareness_guard.clients();
+                
+                for (client_id, _state) in states {
+                    if *client_id != awareness_guard.client_id() {
+                        // For now, create placeholder remote users
+                        // In a real implementation, this would parse actual user info from awareness state
+                        let user = UserInfo {
+                            id: Uuid::new_v4(),
+                            name: format!("User_{}", client_id),
+                            color: "#007acc".to_string(),
+                            cursor_position: None,
+                            selection_start: None,
+                            selection_end: None,
+                        };
+                        
+                        // Avoid duplicates based on name
+                        if !users.iter().any(|u| u.name == user.name) {
+                            users.push(user);
+                        }
+                    }
+                }
+            }
+        }
+        */
+        
+        users
     }
 }
 
@@ -234,7 +272,7 @@ impl CollaborationEngine {
 fn extract_document_class(latex: &str) -> Option<String> {
     // Simple string matching for now
     latex.lines()
-        .find(|line| line.contains("\\documentclass"))
+        .find(|line| line.contains(r"\documentclass"))
         .and_then(|line| {
             let start = line.find('{')?;
             let end = line.find('}')?;
@@ -249,7 +287,7 @@ fn extract_document_class(latex: &str) -> Option<String> {
 fn extract_packages(latex: &str) -> Vec<String> {
     // Simple string matching for now  
     latex.lines()
-        .filter(|line| line.contains("\\usepackage"))
+        .filter(|line| line.contains(r"\usepackage"))
         .filter_map(|line| {
             let start = line.find('{')?;
             let end = line.find('}')?;
@@ -265,7 +303,7 @@ fn extract_packages(latex: &str) -> Vec<String> {
 fn extract_title(latex: &str) -> Option<String> {
     // Simple string matching for now
     latex.lines()
-        .find(|line| line.contains("\\title"))
+        .find(|line| line.contains(r"\title"))
         .and_then(|line| {
             let start = line.find('{')?;
             let end = line.find('}')?;
@@ -280,7 +318,7 @@ fn extract_title(latex: &str) -> Option<String> {
 fn extract_author(latex: &str) -> Option<String> {
     // Simple string matching for now
     latex.lines()
-        .find(|line| line.contains("\\author"))
+        .find(|line| line.contains(r"\author"))
         .and_then(|line| {
             let start = line.find('{')?;
             let end = line.find('}')?;

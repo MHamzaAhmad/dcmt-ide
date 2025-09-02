@@ -126,34 +126,9 @@ fn App() -> Element {
                 class: "h-screen w-screen bg-white dark:bg-zinc-950 flex flex-col",
                 
                 // Enhanced header with sidebar controls
-                div { class: "flex items-center justify-between",
-                    AppHeader {
-                        sidebar_view: sidebar_view,
-                        git_status: use_signal(move || git_status.read().as_ref().map(convert_git_status)),
-                    }
-                    
-                    // Connection status indicator
-                    div { class: "px-4 py-2 text-xs flex items-center space-x-2",
-                        div { 
-                            class: if *backend_connected.read() { 
-                                "w-2 h-2 bg-green-500 rounded-full" 
-                            } else { 
-                                "w-2 h-2 bg-red-500 rounded-full" 
-                            }
-                        }
-                        span { 
-                            class: if *backend_connected.read() { 
-                                "text-green-600 dark:text-green-400" 
-                            } else { 
-                                "text-red-600 dark:text-red-400" 
-                            },
-                            if *backend_connected.read() { 
-                                "Backend Connected" 
-                            } else { 
-                                "Backend Disconnected - Run ./scripts/dev.sh web" 
-                            }
-                        }
-                    }
+                AppHeader {
+                    sidebar_view: sidebar_view,
+                    git_status: use_signal(move || git_status.read().as_ref().map(convert_git_status)),
                 }
                 
                 div { class: "flex-1 flex overflow-hidden",

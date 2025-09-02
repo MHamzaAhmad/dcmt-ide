@@ -54,62 +54,87 @@ impl FileTransportClient {
     }
     
     pub async fn connect(&mut self, _url: &str) -> Result<(), String> {
+        self.connect_with_retry().await
+    }
+    
+    async fn connect_with_retry(&mut self) -> Result<(), String> {
         let ws_url = "ws://localhost:3001/ws";
+        let max_retries = 3;
         
-        tracing::info!("Attempting to connect to WebSocket server: {}", ws_url);
-        
-        match WebSocket::new(ws_url) {
-            Ok(ws) => {
-                ws.set_binary_type(BinaryType::Arraybuffer);
-                
-                // Wait for connection to open
-                let connected_ref = std::rc::Rc::new(std::cell::RefCell::new(false));
-                let error_ref = std::rc::Rc::new(std::cell::RefCell::new(None::<String>));
-                
-                // Setup onopen handler
-                let connected_clone = connected_ref.clone();
-                let onopen = Closure::wrap(Box::new(move || {
-                    *connected_clone.borrow_mut() = true;
-                    tracing::info!("WebSocket connected to file server");
-                }) as Box<dyn FnMut()>);
-                ws.set_onopen(Some(onopen.as_ref().unchecked_ref()));
-                
-                // Setup onerror handler
-                let error_clone = error_ref.clone();
-                let onerror = Closure::wrap(Box::new(move |_e| {
-                    *error_clone.borrow_mut() = Some("Connection error".to_string());
-                    tracing::error!("WebSocket connection error");
-                }) as Box<dyn FnMut(web_sys::Event)>);
-                ws.set_onerror(Some(onerror.as_ref().unchecked_ref()));
-                
-                // Wait for connection
-                let mut attempts = 0;
-                while attempts < 50 {
-                    if *connected_ref.borrow() {
-                        break;
-                    }
-                    if let Some(error) = error_ref.borrow().as_ref() {
-                        return Err(error.clone());
-                    }
-                    gloo_timers::future::sleep(std::time::Duration::from_millis(100)).await;
-                    attempts += 1;
-                }
-                
-                if *connected_ref.borrow() {
-                    self.websocket = Some(ws);
-                    self.connected = true;
+        for retry_count in 0..max_retries {
+            if retry_count > 0 {
+                let delay = std::cmp::min(1000 * (1 << retry_count), 5000); // Exponential backoff, max 5 seconds
+                tracing::info!("Retry attempt {} after {}ms delay", retry_count + 1, delay);
+                gloo_timers::future::sleep(std::time::Duration::from_millis(delay as u64)).await;
+            }
+            
+            tracing::info!("Attempting to connect to WebSocket server: {} (attempt {}/{})", ws_url, retry_count + 1, max_retries);
+            
+            match WebSocket::new(ws_url) {
+                Ok(ws) => {
+                    ws.set_binary_type(BinaryType::Arraybuffer);
                     
-                    // Prevent closures from being dropped
+                    // Wait for connection to open
+                    let connected_ref = std::rc::Rc::new(std::cell::RefCell::new(false));
+                    let error_ref = std::rc::Rc::new(std::cell::RefCell::new(None::<String>));
+                    
+                    // Setup onopen handler
+                    let connected_clone = connected_ref.clone();
+                    let onopen = Closure::wrap(Box::new(move || {
+                        *connected_clone.borrow_mut() = true;
+                        tracing::info!("WebSocket connected to file server");
+                    }) as Box<dyn FnMut()>);
+                    ws.set_onopen(Some(onopen.as_ref().unchecked_ref()));
+                    
+                    // Setup onerror handler
+                    let error_clone = error_ref.clone();
+                    let onerror = Closure::wrap(Box::new(move |_e| {
+                        *error_clone.borrow_mut() = Some("Connection error".to_string());
+                        tracing::error!("WebSocket connection error");
+                    }) as Box<dyn FnMut(web_sys::Event)>);
+                    ws.set_onerror(Some(onerror.as_ref().unchecked_ref()));
+                    
+                    // Wait for connection with timeout
+                    let mut attempts = 0;
+                    let timeout_attempts = 30; // Reduced from 50 to fail faster
+                    while attempts < timeout_attempts {
+                        if *connected_ref.borrow() {
+                            self.websocket = Some(ws);
+                            self.connected = true;
+                            
+                            // Prevent closures from being dropped
+                            onopen.forget();
+                            onerror.forget();
+                            
+                            tracing::info!("Successfully connected to WebSocket server");
+                            return Ok(());
+                        }
+                        if let Some(error) = error_ref.borrow().as_ref() {
+                            tracing::warn!("Connection error on attempt {}: {}", retry_count + 1, error);
+                            break;
+                        }
+                        gloo_timers::future::sleep(std::time::Duration::from_millis(100)).await;
+                        attempts += 1;
+                    }
+                    
+                    // Clean up closures if connection failed
                     onopen.forget();
                     onerror.forget();
                     
-                    Ok(())
-                } else {
-                    Err("Connection timeout - Backend server may not be running. Please run './scripts/dev.sh web' to start the server.".to_string())
+                    if retry_count == max_retries - 1 {
+                        return Err("Connection timeout - Backend server may not be running. Please run './scripts/dev.sh web' to start the server.".to_string());
+                    }
+                }
+                Err(e) => {
+                    tracing::warn!("Failed to create WebSocket on attempt {}: {:?}", retry_count + 1, e);
+                    if retry_count == max_retries - 1 {
+                        return Err(format!("Failed to create WebSocket after {} attempts: {:?}", max_retries, e));
+                    }
                 }
             }
-            Err(e) => Err(format!("Failed to create WebSocket: {:?}", e))
         }
+        
+        Err("All connection attempts failed".to_string())
     }
     
     pub async fn send_operation(&self, operation: FileOp) -> Result<TransportMessage, String> {

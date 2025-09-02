@@ -183,44 +183,63 @@ pub fn WebFileTree(
     let mut loading = use_signal(|| true);
     let mut expanded_folders = use_signal(|| HashMap::<String, bool>::new());
     
-    // Load files from workspace via transport
+    // Load files from workspace via transport with proper connection handling
     use_effect(move || {
         loading.set(true);
         error_message.set(None);
         
         #[cfg(target_arch = "wasm32")]
         spawn_local(async move {
+            use super::transport::FileTransportClient;
             use super::file_operations::fetch_file_list;
-            match fetch_file_list().await {
-                Ok(files) => {
-                    tracing::info!("Received {} files from server", files.len());
-                    for file in &files {
-                        tracing::debug!("  - {} (path: {}, is_dir: {})", 
-                            file.name, 
-                            file.path.display(), 
-                            file.is_directory()
-                        );
-                    }
+            
+            // First, test if we can establish a connection
+            let mut test_client = FileTransportClient::new();
+            match test_client.connect("ws://localhost:3001/ws").await {
+                Ok(_) => {
+                    tracing::info!("WebSocket connection established, fetching files...");
                     
-                    // Update connection status
-                    if let Some(mut connected) = backend_connected {
-                        connected.set(true);
-                    }
-                    
-                    let tree = build_file_tree(files.clone());
-                    file_tree.set(tree);
-                    loading.set(false);
-                    
-                    // Auto-select the first .tex file if available
-                    if let Some(onfile_select) = &onfile_select {
-                        if let Some(tex_file) = files.iter().find(|f| f.name.ends_with(".tex")) {
-                            tracing::info!("Auto-selecting first .tex file: {}", tex_file.name);
-                            onfile_select.call(tex_file.name.clone());
+                    // Now try to fetch files
+                    match fetch_file_list().await {
+                        Ok(files) => {
+                            tracing::info!("Received {} files from server", files.len());
+                            for file in &files {
+                                tracing::debug!("  - {} (path: {}, is_dir: {})", 
+                                    file.name, 
+                                    file.path.display(), 
+                                    file.is_directory()
+                                );
+                            }
+                            
+                            // Update connection status
+                            if let Some(mut connected) = backend_connected {
+                                connected.set(true);
+                            }
+                            
+                            let tree = build_file_tree(files.clone());
+                            file_tree.set(tree);
+                            loading.set(false);
+                            
+                            // Auto-select the first .tex file if available
+                            if let Some(onfile_select) = &onfile_select {
+                                if let Some(tex_file) = files.iter().find(|f| f.name.ends_with(".tex")) {
+                                    tracing::info!("Auto-selecting first .tex file: {}", tex_file.name);
+                                    onfile_select.call(tex_file.name.clone());
+                                }
+                            }
+                        }
+                        Err(e) => {
+                            tracing::error!("Failed to fetch files after connection established: {}", e);
+                            loading.set(false);
+                            if let Some(mut connected) = backend_connected {
+                                connected.set(false);
+                            }
+                            error_message.set(Some(format!("File fetch error: {}", e)));
                         }
                     }
                 }
                 Err(e) => {
-                    tracing::error!("Failed to load files: {}", e);
+                    tracing::error!("Failed to establish WebSocket connection: {}", e);
                     loading.set(false);
                     
                     // Update connection status
@@ -229,10 +248,10 @@ pub fn WebFileTree(
                     }
                     
                     // Provide helpful error message for server connection issues
-                    let helpful_message = if e.contains("Failed to connect") || e.contains("Connection refused") || e.contains("NetworkError") {
+                    let helpful_message = if e.contains("Connection timeout") || e.contains("Failed to connect") || e.contains("Connection refused") || e.contains("NetworkError") {
                         "❌ Backend server not running!\n\nTo start the server, run:\n./scripts/dev.sh web\n\nOr:\n./scripts/dev.sh backend\n\nThis will start the LaTeX IDE backend services including file operations, git integration, and PDF compilation.".to_string()
                     } else {
-                        format!("Failed to load files: {}", e)
+                        format!("Connection failed: {}", e)
                     };
                     
                     error_message.set(Some(helpful_message));
@@ -630,7 +649,7 @@ fn FileTreeNode(
 fn refresh_file_tree(
     mut loading: Signal<bool>,
     mut error_message: Signal<Option<String>>,
-    _file_tree: Signal<Vec<FileItem>>,
+    mut file_tree: Signal<Vec<FileItem>>,
     _expanded_folders: Signal<HashMap<String, bool>>,
 ) {
     tracing::info!("Refreshing file tree");
@@ -640,16 +659,37 @@ fn refresh_file_tree(
     #[cfg(target_arch = "wasm32")]
     {
         spawn_local(async move {
+            use super::transport::FileTransportClient;
             use super::file_operations::fetch_file_list;
-            match fetch_file_list().await {
-                Ok(files) => {
-                    let _tree = build_file_tree(files);
-                    loading.set(false);
-                    tracing::info!("File tree refreshed successfully");
+            
+            // First, test if we can establish a connection
+            let mut test_client = FileTransportClient::new();
+            match test_client.connect("ws://localhost:3001/ws").await {
+                Ok(_) => {
+                    tracing::info!("WebSocket connection established for refresh, fetching files...");
+                    
+                    match fetch_file_list().await {
+                        Ok(files) => {
+                            let tree = build_file_tree(files);
+                            file_tree.set(tree);
+                            loading.set(false);
+                            tracing::info!("File tree refreshed successfully");
+                        }
+                        Err(e) => {
+                            loading.set(false);
+                            error_message.set(Some(format!("File fetch error: {}", e)));
+                            tracing::error!("Failed to refresh file tree: {}", e);
+                        }
+                    }
                 }
                 Err(e) => {
                     loading.set(false);
-                    error_message.set(Some(format!("Refresh failed: {}", e)));
+                    let helpful_message = if e.contains("Connection timeout") || e.contains("Failed to connect") {
+                        "Connection failed: Backend server may not be running".to_string()
+                    } else {
+                        format!("Refresh failed: {}", e)
+                    };
+                    error_message.set(Some(helpful_message));
                     tracing::error!("Failed to refresh file tree: {}", e);
                 }
             }

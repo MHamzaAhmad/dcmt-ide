@@ -1,20 +1,20 @@
 name: Desktop Development Build
 
-on:
-  push:
-    branches: [ main, develop ]
-    paths: 
-      - 'apps/desktop/**'
-      - 'crates/**'
-      - 'Cargo.toml'
-      - 'Cargo.lock'
-  pull_request:
-    branches: [ main ]
-    paths: 
-      - 'apps/desktop/**'
-      - 'crates/**'
-      - 'Cargo.toml'
-      - 'Cargo.lock'
+# on:
+#   push:
+#     branches: [ main, develop ]
+#     paths: 
+#       - 'apps/desktop/**'
+#       - 'crates/**'
+#       - 'Cargo.toml'
+#       - 'Cargo.lock'
+#   pull_request:
+#     branches: [ main ]
+#     paths: 
+#       - 'apps/desktop/**'
+#       - 'crates/**'
+#       - 'Cargo.toml'
+#       - 'Cargo.lock'
 
 env:
   CARGO_TERM_COLOR: always

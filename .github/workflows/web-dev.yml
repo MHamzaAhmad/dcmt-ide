@@ -1,21 +1,21 @@
 name: Web Development Build
 
-on:
-  push:
-    branches: [ main, develop ]
-    paths:
-      - 'apps/web/**'
-      - 'crates/**'
-      - 'Cargo.toml'
-      - 'Cargo.lock'
-      - 'docker-compose.dev.yml'
-  pull_request:
-    branches: [ main ]
-    paths:
-      - 'apps/web/**'
-      - 'crates/**'
-      - 'Cargo.toml'
-      - 'Cargo.lock'
+# on:
+#   push:
+#     branches: [ main, develop ]
+#     paths:
+#       - 'apps/web/**'
+#       - 'crates/**'
+#       - 'Cargo.toml'
+#       - 'Cargo.lock'
+#       - 'docker-compose.dev.yml'
+#   pull_request:
+#     branches: [ main ]
+#     paths:
+#       - 'apps/web/**'
+#       - 'crates/**'
+#       - 'Cargo.toml'
+#       - 'Cargo.lock'
 
 env:
   CARGO_TERM_COLOR: always

@@ -89,6 +89,8 @@ pub struct CompilationWarning {
 pub struct LaTeXCompiler {
     options: CompilationOptions,
     working_dir: PathBuf,
+    #[cfg(feature = "git-integration")]
+    session_manager: Option<latex_ide_git_manager::SessionManager>,
 }
 
 impl LaTeXCompiler {
@@ -96,7 +98,15 @@ impl LaTeXCompiler {
         Self {
             options: CompilationOptions::default(),
             working_dir,
+            #[cfg(feature = "git-integration")]
+            session_manager: None,
         }
+    }
+
+    #[cfg(feature = "git-integration")]
+    pub fn with_git_integration(mut self, session_manager: latex_ide_git_manager::SessionManager) -> Self {
+        self.session_manager = Some(session_manager);
+        self
     }
     
     pub fn with_options(mut self, options: CompilationOptions) -> Self {
@@ -173,13 +183,33 @@ impl LaTeXCompiler {
             None
         };
         
-        Ok(CompilationResult {
+        let result = CompilationResult {
             success: output.status.success(),
-            pdf_path,
+            pdf_path: pdf_path.clone(),
             log,
             errors,
             warnings,
-        })
+        };
+
+        // Auto-commit on successful compilation if Git integration is enabled
+        #[cfg(feature = "git-integration")]
+        if result.success && result.pdf_path.is_some() {
+            if let Some(ref session_manager) = self.session_manager {
+                let tex_file_str = tex_file.to_string_lossy();
+                let pdf_path_str = result.pdf_path.as_ref().unwrap().to_string_lossy();
+                
+                match session_manager.commit_pdf_version(&pdf_path_str, &tex_file_str) {
+                    Ok(commit_id) => {
+                        info!("Auto-committed PDF compilation: {}", commit_id);
+                    }
+                    Err(e) => {
+                        debug!("Failed to auto-commit PDF: {}", e);
+                    }
+                }
+            }
+        }
+
+        Ok(result)
     }
     
     pub async fn compile_string(&self, content: &str) -> Result<CompilationResult> {

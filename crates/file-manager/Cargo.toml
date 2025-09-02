@@ -12,18 +12,25 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 tracing = { workspace = true }
 uuid = { workspace = true }
+anyhow = { workspace = true }
+chrono = { workspace = true }
 
 # Platform-specific dependencies
 js-sys = { workspace = true, optional = true }
 wasm-bindgen = { workspace = true, optional = true }
-web-sys = { workspace = true, optional = true }
+web-sys = { workspace = true, optional = true, features = ["console"] }
 notify = { version = "6.0", optional = true }
 rfd = { version = "0.14", optional = true }
 dirs = { version = "5.0", optional = true }
 wasm-bindgen-futures = { version = "0.4", optional = true }
 gloo-timers = { version = "0.3", optional = true }
 
+# Git integration
+latex-ide-git-manager = { path = "../git-manager", optional = true }
+latex-ide-webtransport-server = { path = "../webtransport-server", optional = true }
+
 [features]
 default = []
 desktop = ["dioxus/desktop", "latex-ide-ui/desktop", "notify", "rfd", "dirs"]
 web = ["dioxus/web", "latex-ide-ui/web", "js-sys", "wasm-bindgen", "web-sys", "wasm-bindgen-futures", "gloo-timers"]
+git-integration = ["latex-ide-git-manager"]

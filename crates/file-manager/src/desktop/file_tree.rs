@@ -18,11 +18,25 @@ pub fn DesktopFileTree(
     
     // Update file tree when project changes
     use_effect(move || {
-        if let Some(workspace_root) = project_manager.read().get_workspace_root() {
-            match fs_backend.read().read_dir(workspace_root) {
+        let workspace_root = project_manager.read().get_workspace_root().cloned();
+        
+        if let Some(workspace_root) = workspace_root {
+            match fs_backend.read().read_dir(&workspace_root) {
                 Ok(files) => {
                     current_files.set(files);
                     error_message.set(None);
+                    
+                    // Update Git status for files if Git integration is available
+                    #[cfg(feature = "git-integration")]
+                    {
+                        // Clone the signal to avoid borrowing issues
+                        let project_manager_clone = project_manager.clone();
+                        spawn(async move {
+                            if let Err(e) = project_manager_clone.write().update_git_status() {
+                                tracing::debug!("Failed to update Git status: {}", e);
+                            }
+                        });
+                    }
                 }
                 Err(e) => {
                     error_message.set(Some(format!("Error reading directory: {}", e)));
@@ -235,6 +249,15 @@ fn DesktopFileItem(
             
             span { "{file_icon}" }
             span { title: "{file_path_display}", "{file_name}" }
+            
+            // Git status indicator
+            if !file_item.git_status_icon().is_empty() {
+                span { 
+                    class: format!("ml-1 text-xs {}", file_item.git_status_color()),
+                    title: "Git status",
+                    "{file_item.git_status_icon()}"
+                }
+            }
             
             // Show file size for files
             if is_file {

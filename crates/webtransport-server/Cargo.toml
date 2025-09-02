@@ -22,6 +22,9 @@ async-trait = { workspace = true }
 # Collaboration
 latex-ide-yrs-collab = { path = "../yrs-collab" }
 
+# Git integration
+latex-ide-git-manager = { path = "../git-manager" }
+
 # Serialization
 serde = { workspace = true }
 serde_json = { workspace = true }

@@ -13,6 +13,7 @@ pub mod tabs;
 pub mod theme;
 pub mod icons;
 pub mod layout;
+pub mod version_control;
 
 // Platform-specific modules
 pub mod web;
@@ -28,3 +29,4 @@ pub use tabs::{Tabs, Tab};
 pub use theme::{Theme, ThemeProvider, use_theme};
 pub use icons::Icon;
 pub use layout::{SplitView, Sidebar};
+pub use version_control::{GitStatusIndicator, GitPanelToggle};

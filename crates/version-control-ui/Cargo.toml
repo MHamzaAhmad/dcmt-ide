@@ -1,0 +1,22 @@
+[package]
+name = "latex-ide-version-control-ui"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+# Workspace dependencies
+dioxus.workspace = true
+dioxus-signals.workspace = true
+dioxus-hooks.workspace = true
+serde = { workspace = true }
+serde_json.workspace = true
+chrono = { workspace = true }
+anyhow.workspace = true
+tracing.workspace = true
+
+# Internal dependencies
+latex-ide-ui = { path = "../ui" }
+latex-ide-git-manager = { path = "../git-manager" }

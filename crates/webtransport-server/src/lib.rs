@@ -1,5 +1,6 @@
 use wtransport::{Endpoint, Connection, ServerConfig, RecvStream, Identity, tls::{Certificate, CertificateChain, PrivateKey}};
 use latex_ide_yrs_collab::{CollaborationEngine, UserInfo};
+use latex_ide_git_manager::{GitRepository, SessionManager, GitOperations, HistoryViewer, ConflictResolver};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -57,6 +58,17 @@ pub enum WebTransportMessage {
         errors: Vec<String>,
     },
     
+    // Stream 5: Git version control operations
+    GitOperation {
+        operation: GitOp,
+    },
+    
+    GitResponse {
+        success: bool,
+        data: Option<GitResponseData>,
+        error: Option<String>,
+    },
+    
     // Connection management
     Connect {
         user_info: UserInfo,
@@ -77,6 +89,164 @@ pub enum FileOp {
     List,
 }
 
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub enum GitOp {
+    // Repository management
+    InitRepository { path: String },
+    GetStatus,
+    GetBranches,
+    GetCurrentBranch,
+    
+    // Session management
+    StartSession,
+    EndSession { save_changes: bool },
+    
+    // File operations
+    StageFile { file_path: String },
+    UnstageFile { file_path: String },
+    StageAllChanges,
+    DiscardFileChanges { file_path: String },
+    DiscardAllChanges,
+    
+    // Branch operations
+    CreateBranch { branch_name: String, from_current: bool },
+    DeleteBranch { branch_name: String, force: bool },
+    CheckoutBranch { branch_name: String },
+    MergeBranch { branch_name: String, message: Option<String> },
+    
+    // Commit operations
+    Commit { message: String },
+    CommitPdfVersion { pdf_path: String, latex_content: String },
+    GetCommitHistory { branch_name: Option<String>, limit: Option<usize> },
+    GetCommitDetails { commit_id: String },
+    
+    // Conflict resolution
+    GetConflicts,
+    ResolveConflicts { resolutions: Vec<GitResolutionChoice> },
+    AbortMerge,
+    
+    // History and rollback
+    GetFileHistory { file_path: String, limit: Option<usize> },
+    SearchCommits { query: String, limit: Option<usize> },
+    SafeRollbackToCommit { commit_id: String },
+    
+    // Remote operations
+    PushToRemote { remote_name: String, branch_name: String },
+    PullFromRemote { remote_name: String, branch_name: String },
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct GitResolutionChoice {
+    pub file_path: String,
+    pub resolution: GitResolution,
+    pub custom_content: Option<String>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub enum GitResolution {
+    TakeOurs,
+    TakeTheirs,
+    TakeBase,
+    Custom,
+    Manual,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub enum GitResponseData {
+    Status(GitStatusResponse),
+    Branches(Vec<String>),
+    CurrentBranch(String),
+    SessionBranch(String),
+    CommitHistory(Vec<GitCommitInfo>),
+    CommitDetails(GitCommitInfo),
+    Conflicts(Vec<GitConflictInfo>),
+    FileHistory(Vec<GitCommitInfo>),
+    SearchResults(Vec<GitCommitInfo>),
+    RollbackResult(GitRollbackResult),
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct GitStatusResponse {
+    pub current_branch: String,
+    pub session_branch: Option<String>,
+    pub has_changes: bool,
+    pub staged_files: Vec<String>,
+    pub modified_files: Vec<String>,
+    pub untracked_files: Vec<String>,
+    pub commits_ahead: usize,
+    pub commits_behind: usize,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct GitCommitInfo {
+    pub id: String,
+    pub short_id: String,
+    pub message: String,
+    pub author_name: String,
+    pub author_email: String,
+    pub timestamp: String, // ISO format string for web compatibility
+    pub parents: Vec<String>,
+    pub is_merge: bool,
+    pub files_changed: Vec<String>,
+    pub insertions: u32,
+    pub deletions: u32,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct GitConflictInfo {
+    pub file_path: String,
+    pub conflict_type: GitConflictType,
+    pub our_content: Option<String>,
+    pub their_content: Option<String>,
+    pub base_content: Option<String>,
+    pub merged_content: Option<String>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub enum GitConflictType {
+    Content,
+    ModifyDelete,
+    DeleteModify,
+    AddAdd,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub enum GitRollbackResult {
+    Success {
+        commit_id: String,
+        commit_message: String,
+    },
+    HasUncommittedChanges(GitStatusResponse),
+    ConflictsDetected(Vec<GitConflictInfo>),
+}
+
+/// Git server manager that wraps all Git operations for a workspace
+pub struct GitServerManager {
+    pub git_repo: GitRepository,
+    pub session_manager: Option<SessionManager>,
+    pub git_operations: GitOperations,
+    pub history_viewer: HistoryViewer,
+    pub conflict_resolver: ConflictResolver,
+}
+
+impl GitServerManager {
+    pub fn new(workspace_path: std::path::PathBuf) -> Result<Self> {
+        let git_repo = GitRepository::new(workspace_path)?;
+        let session_manager = Some(SessionManager::new(git_repo.clone()));
+        let git_operations = GitOperations::new(git_repo.clone());
+        let history_viewer = HistoryViewer::new(git_repo.clone());
+        let conflict_resolver = ConflictResolver::new(git_repo.clone());
+
+        Ok(Self {
+            git_repo,
+            session_manager,
+            git_operations,
+            history_viewer,
+            conflict_resolver,
+        })
+    }
+}
+
 /// Stream types for WebTransport multiplexing
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum StreamType {
@@ -85,6 +255,7 @@ pub enum StreamType {
     AiChat = 2,
     FileOps = 3,
     Compilation = 4,
+    GitOps = 5,
 }
 
 impl StreamType {
@@ -95,6 +266,7 @@ impl StreamType {
             2 => Some(StreamType::AiChat), 
             3 => Some(StreamType::FileOps),
             4 => Some(StreamType::Compilation),
+            5 => Some(StreamType::GitOps),
             _ => None,
         }
     }
@@ -105,6 +277,7 @@ pub struct WebTransportServer {
     server: Endpoint<wtransport::endpoint::endpoint_side::Server>,
     sessions: Arc<RwLock<HashMap<Uuid, UserInfo>>>,
     documents: Arc<RwLock<HashMap<Uuid, Arc<Mutex<CollaborationEngine>>>>>,
+    git_managers: Arc<RwLock<HashMap<String, Arc<Mutex<GitServerManager>>>>>, // keyed by workspace path
     event_sender: broadcast::Sender<ServerEvent>,
 }
 
@@ -132,6 +305,7 @@ impl WebTransportServer {
             server,
             sessions: Arc::new(RwLock::new(HashMap::new())),
             documents: Arc::new(RwLock::new(HashMap::new())),
+            git_managers: Arc::new(RwLock::new(HashMap::new())),
             event_sender,
         };
         
@@ -156,10 +330,11 @@ impl WebTransportServer {
             // Spawn task to handle this session
             let sessions = Arc::clone(&self.sessions);
             let documents = Arc::clone(&self.documents);
+            let git_managers = Arc::clone(&self.git_managers);
             let event_sender = self.event_sender.clone();
             
             tokio::spawn(async move {
-                if let Err(e) = Self::handle_session(session_request, sessions, documents, event_sender).await {
+                if let Err(e) = Self::handle_session(session_request, sessions, documents, git_managers, event_sender).await {
                     error!("Session error: {}", e);
                 }
             });
@@ -170,6 +345,7 @@ impl WebTransportServer {
         session_request: wtransport::endpoint::SessionRequest,
         sessions: Arc<RwLock<HashMap<Uuid, UserInfo>>>,
         documents: Arc<RwLock<HashMap<Uuid, Arc<Mutex<CollaborationEngine>>>>>,
+        git_managers: Arc<RwLock<HashMap<String, Arc<Mutex<GitServerManager>>>>>,
         event_sender: broadcast::Sender<ServerEvent>,
     ) -> Result<()> {
         let session = session_request.accept().await?;
@@ -219,6 +395,7 @@ impl WebTransportServer {
             session.clone(),
             sessions.clone(),
             documents.clone(),
+            git_managers.clone(),
             event_sender.clone(),
             user_id,
             collab_engine,
@@ -240,6 +417,7 @@ impl WebTransportServer {
         session: Connection,
         _sessions: Arc<RwLock<HashMap<Uuid, UserInfo>>>,
         _documents: Arc<RwLock<HashMap<Uuid, Arc<Mutex<CollaborationEngine>>>>>,
+        git_managers: Arc<RwLock<HashMap<String, Arc<Mutex<GitServerManager>>>>>,
         event_sender: broadcast::Sender<ServerEvent>,
         _user_id: Uuid,
         collab_engine: Arc<Mutex<CollaborationEngine>>,
@@ -282,6 +460,10 @@ impl WebTransportServer {
                 
                 StreamType::Compilation => {
                     Self::handle_compilation_stream(&mut stream).await?;
+                }
+                
+                StreamType::GitOps => {
+                    Self::handle_git_ops_stream(&mut stream, git_managers.clone()).await?;
                 }
             }
         }
@@ -386,6 +568,173 @@ impl WebTransportServer {
         }
         
         Ok(())
+    }
+    
+    async fn handle_git_ops_stream(
+        stream: &mut RecvStream,
+        git_managers: Arc<RwLock<HashMap<String, Arc<Mutex<GitServerManager>>>>>,
+    ) -> Result<()> {
+        let message = Self::read_message(stream).await?;
+        
+        match message {
+            WebTransportMessage::GitOperation { operation } => {
+                debug!("Git operation request: {:?}", operation);
+                
+                let response = Self::execute_git_operation(operation, git_managers).await;
+                
+                // Send response back (for now we'll just log it)
+                match response {
+                    Ok(data) => {
+                        debug!("Git operation completed successfully: {:?}", data);
+                        // TODO: Send GitResponse back to client
+                    }
+                    Err(e) => {
+                        error!("Git operation failed: {}", e);
+                        // TODO: Send error GitResponse back to client
+                    }
+                }
+            }
+            _ => {
+                warn!("Unexpected message on git ops stream: {:?}", message);
+            }
+        }
+        
+        Ok(())
+    }
+    
+    async fn execute_git_operation(
+        operation: GitOp,
+        git_managers: Arc<RwLock<HashMap<String, Arc<Mutex<GitServerManager>>>>>,
+    ) -> Result<Option<GitResponseData>> {
+        use std::path::PathBuf;
+        
+        // For now, we'll use current directory as workspace. In production, 
+        // this should be determined from the client session context.
+        let workspace_path = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+        let workspace_key = workspace_path.to_string_lossy().to_string();
+        
+        // Get or create git manager for this workspace
+        let git_manager = {
+            let mut managers = git_managers.write().await;
+            managers.entry(workspace_key.clone())
+                .or_insert_with(|| {
+                    match GitServerManager::new(workspace_path.clone()) {
+                        Ok(manager) => Arc::new(Mutex::new(manager)),
+                        Err(e) => {
+                            error!("Failed to create git manager: {}", e);
+                            // Return a dummy manager that will fail operations
+                            Arc::new(Mutex::new(GitServerManager {
+                                git_repo: GitRepository::new(workspace_path).unwrap_or_else(|_| 
+                                    GitRepository::new(PathBuf::from(".")).unwrap()
+                                ),
+                                session_manager: None,
+                                git_operations: GitOperations::new(GitRepository::new(PathBuf::from(".")).unwrap()),
+                                history_viewer: HistoryViewer::new(GitRepository::new(PathBuf::from(".")).unwrap()),
+                                conflict_resolver: ConflictResolver::new(GitRepository::new(PathBuf::from(".")).unwrap()),
+                            }))
+                        }
+                    }
+                })
+                .clone()
+        };
+        
+        let mut manager = git_manager.lock().await;
+        
+        match operation {
+            GitOp::InitRepository { path: _ } => {
+                // Repository should already be initialized in GitServerManager::new
+                let status = manager.git_repo.get_status()?;
+                Ok(Some(GitResponseData::Status(Self::convert_git_status(status))))
+            }
+            
+            GitOp::GetStatus => {
+                let status = manager.git_repo.get_status()?;
+                Ok(Some(GitResponseData::Status(Self::convert_git_status(status))))
+            }
+            
+            GitOp::GetBranches => {
+                let branches = manager.git_operations.list_branches()?;
+                Ok(Some(GitResponseData::Branches(branches)))
+            }
+            
+            GitOp::GetCurrentBranch => {
+                let current = manager.git_operations.get_current_branch()?;
+                Ok(Some(GitResponseData::CurrentBranch(current)))
+            }
+            
+            GitOp::StartSession => {
+                if let Some(ref mut session_mgr) = manager.session_manager {
+                    let session_branch = session_mgr.start_session()?;
+                    Ok(Some(GitResponseData::SessionBranch(session_branch)))
+                } else {
+                    Err(anyhow::anyhow!("Session manager not available"))
+                }
+            }
+            
+            GitOp::EndSession { save_changes } => {
+                if let Some(ref mut session_mgr) = manager.session_manager {
+                    session_mgr.end_session(save_changes)?;
+                    Ok(None)
+                } else {
+                    Err(anyhow::anyhow!("Session manager not available"))
+                }
+            }
+            
+            GitOp::StageFile { file_path } => {
+                manager.git_operations.stage_file(&file_path)?;
+                Ok(None)
+            }
+            
+            GitOp::UnstageFile { file_path } => {
+                manager.git_operations.unstage_file(&file_path)?;
+                Ok(None)
+            }
+            
+            GitOp::StageAllChanges => {
+                manager.git_operations.stage_all_changes()?;
+                Ok(None)
+            }
+            
+            GitOp::Commit { message } => {
+                if let Some(ref session_mgr) = manager.session_manager {
+                    let commit_id = session_mgr.commit_session_changes(&message)?;
+                    Ok(Some(GitResponseData::CommitDetails(GitCommitInfo {
+                        id: commit_id.to_string(),
+                        short_id: format!("{:.7}", commit_id.to_string()),
+                        message,
+                        author_name: "Server".to_string(),
+                        author_email: "server@localhost".to_string(),
+                        timestamp: chrono::Utc::now().to_rfc3339(),
+                        parents: vec![],
+                        is_merge: false,
+                        files_changed: vec![],
+                        insertions: 0,
+                        deletions: 0,
+                    })))
+                } else {
+                    Err(anyhow::anyhow!("Session manager not available"))
+                }
+            }
+            
+            // Add more operations as needed...
+            _ => {
+                warn!("Git operation not yet implemented: {:?}", operation);
+                Err(anyhow::anyhow!("Operation not implemented"))
+            }
+        }
+    }
+    
+    fn convert_git_status(status: latex_ide_git_manager::GitStatus) -> GitStatusResponse {
+        GitStatusResponse {
+            current_branch: status.current_branch,
+            session_branch: status.session_branch,
+            has_changes: status.has_changes,
+            staged_files: status.staged_files,
+            modified_files: status.modified_files,
+            untracked_files: status.untracked_files,
+            commits_ahead: status.commits_ahead,
+            commits_behind: status.commits_behind,
+        }
     }
     
     async fn read_message(stream: &mut RecvStream) -> Result<WebTransportMessage> {

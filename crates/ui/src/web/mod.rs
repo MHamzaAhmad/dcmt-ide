@@ -1,3 +1,6 @@
 //! Web-specific UI component implementations
 
-// Future web-specific UI component variants will go here
+mod app_header;
+pub mod hooks;
+
+pub use app_header::{AppHeader, GitStatus, SidebarView};

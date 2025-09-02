@@ -4,6 +4,49 @@ use serde::{Serialize, Deserialize};
 use std::path::PathBuf;
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub enum GitFileStatus {
+    Untracked,
+    Modified,
+    Added,
+    Deleted,
+    Renamed,
+    Copied,
+    UpdatedButUnmerged,
+    Ignored,
+    Clean,
+}
+
+impl GitFileStatus {
+    pub fn icon(&self) -> &'static str {
+        match self {
+            Self::Untracked => "❓",
+            Self::Modified => "📝",
+            Self::Added => "➕",
+            Self::Deleted => "🗑️",
+            Self::Renamed => "📝",
+            Self::Copied => "📋",
+            Self::UpdatedButUnmerged => "⚠️",
+            Self::Ignored => "🙈",
+            Self::Clean => "",
+        }
+    }
+    
+    pub fn color_class(&self) -> &'static str {
+        match self {
+            Self::Untracked => "text-blue-600 dark:text-blue-400",
+            Self::Modified => "text-orange-600 dark:text-orange-400",
+            Self::Added => "text-green-600 dark:text-green-400",
+            Self::Deleted => "text-red-600 dark:text-red-400",
+            Self::Renamed => "text-purple-600 dark:text-purple-400",
+            Self::Copied => "text-indigo-600 dark:text-indigo-400",
+            Self::UpdatedButUnmerged => "text-red-700 dark:text-red-300",
+            Self::Ignored => "text-gray-400 dark:text-gray-500",
+            Self::Clean => "",
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum FileType {
     File,
     Directory,
@@ -62,6 +105,7 @@ pub struct FileItem {
     pub modified: Option<u64>,
     pub children: Option<Vec<FileItem>>,
     pub expanded: bool,
+    pub git_status: Option<GitFileStatus>,
 }
 
 impl FileItem {
@@ -78,6 +122,7 @@ impl FileItem {
             modified: None,
             children: if is_directory { Some(Vec::new()) } else { None },
             expanded: false,
+            git_status: None,
         }
     }
     
@@ -118,6 +163,18 @@ impl FileItem {
         if self.is_directory() {
             self.expanded = expanded;
         }
+    }
+    
+    pub fn set_git_status(&mut self, status: Option<GitFileStatus>) {
+        self.git_status = status;
+    }
+    
+    pub fn git_status_icon(&self) -> &'static str {
+        self.git_status.as_ref().map_or("", |status| status.icon())
+    }
+    
+    pub fn git_status_color(&self) -> &'static str {
+        self.git_status.as_ref().map_or("", |status| status.color_class())
     }
 }
 

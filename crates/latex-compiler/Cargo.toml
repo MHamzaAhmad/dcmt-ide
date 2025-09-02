@@ -14,5 +14,9 @@ regex = { workspace = true }
 tracing = { workspace = true }
 tempfile = "3.21"
 
+# Optional Git integration
+latex-ide-git-manager = { path = "../git-manager", optional = true }
+
 [features]
 default = []
+git-integration = ["latex-ide-git-manager"]

@@ -19,11 +19,13 @@ dioxus-hooks = { workspace = true }
 latex-ide-ui = { path = "../../crates/ui", features = ["desktop"] }
 latex-ide-editor = { path = "../../crates/editor", features = ["desktop"] }
 latex-ide-chat = { path = "../../crates/chat", features = ["desktop"] }
-latex-ide-file-manager = { path = "../../crates/file-manager", features = ["desktop"] }
+latex-ide-file-manager = { path = "../../crates/file-manager", features = ["desktop", "git-integration"] }
 latex-ide-yrs-collab = { path = "../../crates/yrs-collab" }
 latex-ide-model-manager = { path = "../../crates/model-manager" }
-dcmt-ide-latex-compiler = { path = "../../crates/latex-compiler" }
+dcmt-ide-latex-compiler = { path = "../../crates/latex-compiler", features = ["git-integration"] }
 latex-ide-pdf-viewer = { path = "../../crates/pdf-viewer", features = ["desktop"] }
+latex-ide-git-manager = { path = "../../crates/git-manager" }
+latex-ide-version-control-ui = { path = "../../crates/version-control-ui" }
 
 # Native Yrs CRDT (no WASM overhead)
 yrs = { workspace = true }

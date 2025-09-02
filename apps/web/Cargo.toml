@@ -60,6 +60,9 @@ console_error_panic_hook = "0.1"
 # UUID
 uuid = { workspace = true, features = ["js"] }
 
+# Time handling
+chrono = { workspace = true, features = ["wasmbind"] }
+
 # Base64 for binary data
 base64 = "0.22"
 

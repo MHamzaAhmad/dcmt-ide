@@ -10,7 +10,7 @@ pub mod fs_backend;
 pub mod web;
 pub mod desktop;
 
-pub use file::{FileItem, FileType};
+pub use file::{FileItem, FileType, GitFileStatus};
 pub use tree::FileTree;
 pub use project::{ProjectManager, Project};
 pub use fs_backend::{FileSystemBackend, FileSystemError, FileSystemResult, NativeFileSystem};

@@ -3,6 +3,7 @@ use dioxus_signals::{Signal, Readable, Writable};
 use latex_ide_yrs_collab::{CollaborationEngine, LaTeXDocument};
 use latex_ide_model_manager::ModelManager;
 use latex_ide_file_manager::ProjectManager;
+use latex_ide_version_control_ui::VersionControlState;
 use std::sync::Arc;
 use std::collections::HashMap;
 use uuid::Uuid;
@@ -16,6 +17,7 @@ pub struct AppState {
     pub collaboration_engine: Signal<Option<Arc<CollaborationEngine>>>,
     pub model_manager: Signal<Option<Arc<ModelManager>>>,
     pub ui_state: Signal<UIState>,
+    pub version_control: Signal<VersionControlState>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -34,6 +36,7 @@ pub struct UIState {
     pub editor_split: f32,
     pub ai_chat_visible: bool,
     pub pdf_preview_visible: bool,
+    pub git_panel_visible: bool,
     pub current_theme: latex_ide_ui::Theme,
 }
 
@@ -45,6 +48,7 @@ impl Default for UIState {
             editor_split: 60.0,
             ai_chat_visible: true,
             pdf_preview_visible: true,
+            git_panel_visible: false,
             current_theme: latex_ide_ui::Theme::Light,
         }
     }
@@ -59,6 +63,7 @@ impl AppState {
             collaboration_engine: use_signal(|| None),
             model_manager: use_signal(|| None),
             ui_state: use_signal(|| UIState::default()),
+            version_control: use_signal(|| VersionControlState::new()),
         }
     }
 

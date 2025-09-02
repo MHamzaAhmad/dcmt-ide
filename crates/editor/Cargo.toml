@@ -8,6 +8,8 @@ dioxus = { workspace = true, features = ["macro", "html"] }
 dioxus-signals = { workspace = true }
 dioxus-hooks = { workspace = true }
 latex-ide-ui = { path = "../ui" }
+latex-ide-chat = { path = "../chat" }
+latex-ide-file-manager = { path = "../file-manager" }
 ropey = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }

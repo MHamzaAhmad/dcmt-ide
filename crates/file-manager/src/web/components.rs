@@ -30,9 +30,17 @@ pub fn WebFileTree(
         spawn_local(async move {
             match fetch_file_list().await {
                 Ok(files) => {
-                    current_files.set(files);
+                    current_files.set(files.clone());
                     loading.set(false);
-                    tracing::info!("Successfully loaded {} files", current_files.read().len());
+                    tracing::info!("Successfully loaded {} files", files.len());
+                    
+                    // Auto-select the first .tex file if available
+                    if let Some(onfile_select) = &onfile_select {
+                        if let Some(tex_file) = files.iter().find(|f| f.name.ends_with(".tex")) {
+                            tracing::info!("Auto-selecting first .tex file: {}", tex_file.name);
+                            onfile_select.call(tex_file.name.clone());
+                        }
+                    }
                 }
                 Err(e) => {
                     tracing::error!("Failed to load files: {}", e);

@@ -45,77 +45,24 @@ pub fn run() {
 
 #[component]
 fn App() -> Element {
-    let document_content = use_signal(|| String::new());
+    let mut document_content = use_signal(|| String::new());
     let mut current_file_path = use_signal(|| None::<String>);
     let mut project_manager = use_signal(|| ProjectManager::new());
     let local_capabilities = hooks::use_browser_capabilities();
-    let browser_capabilities = use_signal(|| convert_capabilities(&local_capabilities.read()));
+    let _browser_capabilities = use_signal(|| convert_capabilities(&local_capabilities.read()));
     
     // Sidebar visibility states
     let show_file_explorer = use_signal(|| true);
     
-    // Initialize workspace project and load main file
+    // Initialize workspace project in background
     use_effect(move || {
         let mut pm = project_manager.write();
-        match pm.open_workspace(std::path::PathBuf::from("/workspace")) {
+        match pm.open_workspace(std::path::PathBuf::from(".")) {
             Ok(_) => {
-                tracing::info!("Opened workspace project");
-                
-                // Auto-load main.tex file if it exists
-                if let Some(project) = pm.get_current_project() {
-                    if let Some(main_file) = &project.main_file {
-                        let main_file_path = main_file.display().to_string();
-                        tracing::info!("Auto-loading main file: {}", main_file_path);
-                        current_file_path.set(Some(main_file_path.clone()));
-                        
-                        // Load the main file content via WebTransport
-                        let _content_signal = document_content.clone();
-                        #[cfg(target_arch = "wasm32")]
-                        wasm_bindgen_futures::spawn_local(async move {
-                            use latex_ide_file_manager::web::transport::download_file;
-                            
-                            let mut content_signal_clone = document_content.clone();
-                            
-                            match download_file("main.tex").await {
-                                Ok(content_bytes) => {
-                                    let content = String::from_utf8_lossy(&content_bytes).to_string();
-                                    content_signal_clone.set(content);
-                                    tracing::info!("Auto-loaded main file content");
-                                }
-                                Err(e) => {
-                                    tracing::error!("Failed to auto-load main file: {}", e);
-                                    content_signal_clone.set(format!("// Error auto-loading main file: {}", e));
-                                }
-                            }
-                        });
-                    }
-                } else {
-                    // Fallback: try to auto-load main.tex anyway
-                    tracing::info!("No project main file configured, attempting to load main.tex");
-                    current_file_path.set(Some("main.tex".to_string()));
-                    
-                    #[cfg(target_arch = "wasm32")]
-                    wasm_bindgen_futures::spawn_local(async move {
-                        use latex_ide_file_manager::web::transport::download_file;
-                        
-                        let mut content_signal_clone = document_content.clone();
-                        
-                        match download_file("main.tex").await {
-                            Ok(content_bytes) => {
-                                let content = String::from_utf8_lossy(&content_bytes).to_string();
-                                content_signal_clone.set(content);
-                                tracing::info!("Auto-loaded fallback main.tex");
-                            }
-                            Err(e) => {
-                                tracing::error!("Failed to auto-load fallback main.tex: {}", e);
-                                content_signal_clone.set(format!("// Error loading main.tex: {}", e));
-                            }
-                        }
-                    });
-                }
+                tracing::info!("Opened workspace project successfully");
             }
             Err(e) => {
-                tracing::error!("Failed to open workspace: {}", e);
+                tracing::warn!("Could not open workspace: {}. File tree will still work via WebTransport.", e);
             }
         }
     });
@@ -142,7 +89,6 @@ fn App() -> Element {
                                     current_file_path.set(Some(file_path.clone()));
                                     
                                     // Load file content via WebTransport FileOp::Download
-                                    let mut content_signal_clone = document_content.clone();
                                     #[cfg(target_arch = "wasm32")]
                                     wasm_bindgen_futures::spawn_local(async move {
                                         use latex_ide_file_manager::web::transport::download_file;
@@ -150,12 +96,12 @@ fn App() -> Element {
                                         match download_file(&file_path).await {
                                             Ok(content_bytes) => {
                                                 let content = String::from_utf8_lossy(&content_bytes).to_string();
-                                                content_signal_clone.set(content);
+                                                document_content.set(content);
                                                 tracing::info!("Received file content for: {}", file_path);
                                             }
                                             Err(e) => {
                                                 tracing::error!("Failed to download file {}: {}", file_path, e);
-                                                content_signal_clone.set(format!("// Error loading file: {}", e));
+                                                document_content.set(format!("// Error loading file: {}", e));
                                             }
                                         }
                                     });
@@ -178,7 +124,7 @@ fn App() -> Element {
                         div { class: "flex-1",
                             WebPreviewPane { 
                                 document_content: document_content,
-                                current_file: current_file_path
+                                current_file: Some(current_file_path)
                             }
                         }
                     }

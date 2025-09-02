@@ -8,6 +8,7 @@ use latex_ide_ui::button::{ButtonVariant, ButtonSize};
 use {
     wasm_bindgen::prelude::*,
     wasm_bindgen_futures::spawn_local,
+    gloo_timers,
     js_sys,
     web_sys,
 };

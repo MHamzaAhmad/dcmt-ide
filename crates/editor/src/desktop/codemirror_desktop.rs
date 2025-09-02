@@ -53,7 +53,7 @@ impl CodeMirrorOps for DesktopCodeMirrorState {
         String::new()
     }
     
-    fn set_content(&self, _content: &str) {
+    fn set_content(&self, content: &str) {
         #[cfg(all(not(target_arch = "wasm32"), feature = "desktop"))]
         {
             let script = format!(
@@ -156,7 +156,7 @@ impl CodeMirrorOps for DesktopCodeMirrorState {
         }
     }
     
-    fn add_decoration(&self, _from: usize, _to: usize, _decoration_type: DecorationType) -> String {
+    fn add_decoration(&self, from: usize, to: usize, decoration_type: DecorationType) -> String {
         let decoration_id = Uuid::new_v4().to_string();
         
         #[cfg(all(not(target_arch = "wasm32"), feature = "desktop"))]
@@ -203,7 +203,7 @@ impl CodeMirrorOps for DesktopCodeMirrorState {
         decoration_id
     }
     
-    fn remove_decoration(&self, _decoration_id: &str) {
+    fn remove_decoration(&self, decoration_id: &str) {
         #[cfg(all(not(target_arch = "wasm32"), feature = "desktop"))]
         {
             let script = format!(
@@ -231,7 +231,7 @@ impl CodeMirrorOps for DesktopCodeMirrorState {
         }
     }
     
-    fn scroll_to_line(&self, _line: usize) {
+    fn scroll_to_line(&self, line: usize) {
         #[cfg(all(not(target_arch = "wasm32"), feature = "desktop"))]
         {
             let script = format!(
@@ -271,7 +271,7 @@ impl CodeMirrorOps for DesktopCodeMirrorState {
     
     fn highlight_line(&self, line: usize) {
         // Add temporary highlight decoration
-        let _decoration_id = self.add_decoration(
+        let decoration_id = self.add_decoration(
             line * 80, // Approximate line start position
             (line + 1) * 80, // Approximate line end position
             DecorationType::SyncHighlight
@@ -300,10 +300,10 @@ impl CodeMirrorOps for DesktopCodeMirrorState {
 }
 
 #[component]
-pub fn DesktopCodeMirrorEditor(props: CodeMirrorProps) -> Element {
+pub fn DesktopCodeMirrorEditor(mut props: CodeMirrorProps) -> Element {
     let editor_state = use_signal(|| DesktopCodeMirrorState::new());
-    let initialization_error = use_signal(|| None::<String>);
-    let editor_ready = use_signal(|| false);
+    let mut initialization_error = use_signal(|| None::<String>);
+    let mut editor_ready = use_signal(|| false);
     
     // Initialize CodeMirror via enhanced webview integration
     use_effect(move || {

@@ -23,7 +23,7 @@ async-trait = { workspace = true }
 latex-ide-yrs-collab = { path = "../yrs-collab" }
 
 # Git integration - temporarily disabled for Docker compatibility  
-# latex-ide-git-manager = { path = "../git-manager", optional = true }
+latex-ide-git-manager = { path = "../git-manager", optional = true }
 
 # Serialization
 serde = { workspace = true }

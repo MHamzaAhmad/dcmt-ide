@@ -12,8 +12,8 @@ LaTeX IDE is a modern, AI-powered collaborative LaTeX editor built with Rust and
 ```
 latex-ide/
 ├── apps/
-│   ├── desktop/          # Dioxus desktop app (native performance)
-│   └── web/              # Dioxus web app (WASM compilation)
+│   ├── desktop/          # Minimal Dioxus desktop app entry point
+│   └── web/              # Minimal Dioxus web app entry point
 ├── crates/
 │   ├── ui/               # Shared UI components with TailwindCSS
 │   ├── editor/           # Text editor with LaTeX syntax highlighting
@@ -28,6 +28,20 @@ latex-ide/
 │   ├── model-manager/    # Multi-model AI management
 │   └── latex-compiler/   # LaTeX compilation service
 ```
+
+**CRITICAL: App Organization Philosophy**
+
+The `/apps/` directory contains **ONLY minimal entry points** - never add business logic directly to these apps:
+
+- `apps/desktop/` and `apps/web/` should contain **ONLY**:
+  - `main.rs` / `lib.rs` entry point
+  - Basic app configuration and setup
+  - Platform-specific initialization code
+  - Dioxus app mounting logic
+
+- **ALL FUNCTIONALITY** must be implemented in `/crates/` and imported into the apps
+- **NO BUSINESS LOGIC** should exist directly in the app directories
+- **MAXIMUM CODE SHARING** - identical functionality must use the same crate implementations
 
 ### Key Technologies
 - **Frontend**: Dioxus (Rust UI framework), TailwindCSS
@@ -207,11 +221,59 @@ pub struct DesktopFileManager;
 impl FileManager for DesktopFileManager { /* Direct file system access */ }
 ```
 
+### App Development Rules
+
+**NEVER add functionality directly to `/apps/` directories:**
+
+❌ **What NOT to do:**
+```rust
+// apps/desktop/src/main.rs - WRONG!
+fn main() {
+    let editor_content = String::new();
+    let git_status = check_git_status(); // Business logic in app - BAD!
+    
+    LaunchBuilder::desktop()
+        .with_cfg(Config::new().with_window(WindowBuilder::new().with_title("LaTeX IDE")))
+        .launch(app);
+}
+
+fn app() -> Element {
+    rsx! {
+        div { class: "main-container",  // UI in app - BAD!
+            Editor { content: editor_content }
+            GitPanel { status: git_status }
+        }
+    }
+}
+```
+
+✅ **Correct approach:**
+```rust
+// apps/desktop/src/main.rs - CORRECT!
+use latex_ide_ui::LaTeXApp;
+
+fn main() {
+    LaunchBuilder::desktop()
+        .with_cfg(Config::new().with_window(WindowBuilder::new().with_title("LaTeX IDE")))
+        .launch(LaTeXApp); // All logic in shared crate
+}
+```
+
+```rust
+// crates/ui/src/lib.rs - CORRECT!
+#[component]
+pub fn LaTeXApp() -> Element {
+    // All app logic, state management, and UI here
+    // Shared between desktop and web platforms
+}
+```
+
 ### Dioxus Components
 - Components use `#[component]` attribute and return `Element`
 - State management with `use_signal()` for reactive updates
 - Async operations with `wasm_bindgen_futures::spawn_local()` on web
-- Cross-platform components in shared crates (`/crates/ui/`)
+- **ALL components must be in shared crates (`/crates/ui/`, etc.)**
+- **Apps only import and mount components - never define them**
 
 ### Transport Layer Usage
 ```rust
@@ -335,6 +397,9 @@ When encountering issues:
 ❌ "Simplified implementation without error handling" 
 ❌ "Disable this feature for now"
 ❌ "Quick fix - will improve later"
+❌ "Add this component directly to apps/desktop/src/main.rs"
+❌ "Put business logic in the app entry point"
+❌ "Create separate implementations for web and desktop apps"
 
 ### Examples of Proper Approach
 
@@ -342,6 +407,9 @@ When encountering issues:
 ✅ Implement proper feature flags and conditional compilation
 ✅ Test that git functionality works in all environments where it should
 ✅ Provide meaningful error messages when git is unavailable
+✅ "Create shared component in crates/ui and import it in both apps"
+✅ "Move business logic to appropriate crate and expose through public API"
+✅ "Implement functionality once in crates/ and share between platforms"
 
 ### Platform Compatibility Requirements
 
@@ -354,4 +422,16 @@ When encountering issues:
 - Platform-specific features must have appropriate fallbacks or error handling
 - Shared functionality must work identically across platforms
 
-When working on this codebase, prefer using the transport layer for backend communication, maintain cross-platform compatibility, leverage the existing development scripts for efficient workflows, and always implement complete, robust solutions rather than temporary fixes.
+## Code Architecture Summary
+
+When working on this codebase:
+
+1. **Keep apps minimal** - Only entry points and platform-specific initialization in `/apps/`
+2. **Share maximum code** - All functionality implemented in `/crates/` and imported by both apps
+3. **Use transport layer** - Backend communication through unified transport protocol
+4. **Maintain cross-platform compatibility** - Both desktop and web must work identically
+5. **Leverage development scripts** - Use existing build and development workflows
+6. **Implement complete solutions** - No temporary fixes or simplified implementations
+7. **Never duplicate logic** - If web and desktop need the same feature, create it once in a shared crate
+
+**Remember: The apps should be so minimal that they're essentially just different compilation targets for the same shared codebase.**

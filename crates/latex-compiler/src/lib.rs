@@ -199,8 +199,8 @@ impl LaTeXCompiler {
                 let pdf_path_str = result.pdf_path.as_ref().unwrap().to_string_lossy();
                 
                 match session_manager.commit_pdf_version(&pdf_path_str, &tex_file_str) {
-                    Ok(commit_id) => {
-                        info!("Auto-committed PDF compilation: {}", commit_id);
+                    Ok((commit_id, version)) => {
+                        info!("Auto-committed PDF compilation: {} ({})", commit_id, version);
                     }
                     Err(e) => {
                         debug!("Failed to auto-commit PDF: {}", e);

@@ -163,26 +163,30 @@ impl HistoryViewer {
     }
 
     pub fn get_branches_info(&self) -> Result<Vec<BranchInfo>> {
-        let repo = self.git_repo.get_repository()?;
+        self.get_main_branches_info()
+    }
 
+    pub fn get_main_branches_info(&self) -> Result<Vec<BranchInfo>> {
+        let repo = self.git_repo.get_repository()?;
         let mut branches_info = Vec::new();
-        let branches = repo.branches(Some(BranchType::Local))?;
         let current_branch = self.get_current_branch_name(&repo)?;
 
-        for branch_result in branches {
-            let (branch, _) = branch_result?;
-            if let Some(branch_name) = branch.name()? {
+        // Get only main branches (filtered)
+        let main_branches = self.git_repo.get_main_branches()?;
+        
+        for branch_name in main_branches {
+            if let Ok(branch) = repo.find_branch(&branch_name, BranchType::Local) {
                 let branch_commit = branch.get().peel_to_commit()?;
                 let commit_info = self.convert_commit_to_info(&branch_commit, &repo)?;
                 
-                let is_current = Some(branch_name) == current_branch.as_deref();
+                let is_current = current_branch.as_ref().map(|s| s.as_str()) == Some(branch_name.as_str());
                 
                 // Calculate ahead/behind (simplified implementation)
                 let ahead = 0; // Would need to implement proper ahead/behind calculation
                 let behind = 0;
 
                 let branch_info = BranchInfo {
-                    name: branch_name.to_string(),
+                    name: branch_name,
                     is_current,
                     last_commit: commit_info,
                     ahead,
@@ -194,6 +198,58 @@ impl HistoryViewer {
         }
 
         Ok(branches_info)
+    }
+
+    pub fn get_session_branches_info(&self) -> Result<Vec<BranchInfo>> {
+        let repo = self.git_repo.get_repository()?;
+        let mut branches_info = Vec::new();
+        let current_branch = self.get_current_branch_name(&repo)?;
+
+        // Get only session branches
+        let session_branches = self.git_repo.get_session_branches()?;
+        
+        for branch_name in session_branches {
+            if let Ok(branch) = repo.find_branch(&branch_name, BranchType::Local) {
+                let branch_commit = branch.get().peel_to_commit()?;
+                let commit_info = self.convert_commit_to_info(&branch_commit, &repo)?;
+                
+                let is_current = current_branch.as_ref().map(|s| s.as_str()) == Some(branch_name.as_str());
+                
+                // Calculate ahead/behind (simplified implementation)
+                let ahead = 0; 
+                let behind = 0;
+
+                let branch_info = BranchInfo {
+                    name: branch_name,
+                    is_current,
+                    last_commit: commit_info,
+                    ahead,
+                    behind,
+                };
+
+                branches_info.push(branch_info);
+            }
+        }
+
+        Ok(branches_info)
+    }
+
+    pub fn get_main_branch_history(&self, limit: Option<usize>) -> Result<Vec<CommitInfo>> {
+        let base_branch = self.git_repo.get_base_branch();
+        self.get_commit_history(Some(base_branch), limit)
+    }
+
+    pub fn get_session_history(&self, _limit: Option<usize>) -> Result<Vec<CommitInfo>> {
+        let current_branch = self.git_repo.get_repository()?.head()?.shorthand().unwrap_or("HEAD").to_string();
+        
+        // If current branch is a session branch, get its history
+        if crate::GitRepository::is_session_branch(&current_branch) {
+            let base_branch = self.git_repo.get_base_branch();
+            self.get_branch_history(&current_branch, Some(base_branch))
+        } else {
+            // If not on session branch, return empty history
+            Ok(Vec::new())
+        }
     }
 
     pub fn get_file_history(&self, file_path: &str, limit: Option<usize>) -> Result<Vec<CommitInfo>> {

@@ -228,4 +228,44 @@ impl GitRepository {
     pub fn get_repository(&self) -> Result<Repository> {
         Ok(Repository::open(&self.repo_path)?)
     }
+
+    pub fn is_session_branch(branch_name: &str) -> bool {
+        branch_name.starts_with("session-")
+    }
+
+    pub fn get_main_branches(&self) -> Result<Vec<String>> {
+        let repo = self.get_repository()?;
+        let mut branches = Vec::new();
+
+        let branch_iter = repo.branches(Some(git2::BranchType::Local))?;
+        for branch_result in branch_iter {
+            let (branch, _) = branch_result?;
+            if let Some(name) = branch.name()? {
+                // Filter out session branches
+                if !Self::is_session_branch(name) {
+                    branches.push(name.to_string());
+                }
+            }
+        }
+
+        Ok(branches)
+    }
+
+    pub fn get_session_branches(&self) -> Result<Vec<String>> {
+        let repo = self.get_repository()?;
+        let mut branches = Vec::new();
+
+        let branch_iter = repo.branches(Some(git2::BranchType::Local))?;
+        for branch_result in branch_iter {
+            let (branch, _) = branch_result?;
+            if let Some(name) = branch.name()? {
+                // Only include session branches
+                if Self::is_session_branch(name) {
+                    branches.push(name.to_string());
+                }
+            }
+        }
+
+        Ok(branches)
+    }
 }

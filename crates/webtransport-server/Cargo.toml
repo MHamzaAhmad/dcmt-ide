@@ -22,8 +22,8 @@ async-trait = { workspace = true }
 # Collaboration
 latex-ide-yrs-collab = { path = "../yrs-collab" }
 
-# Git integration
-latex-ide-git-manager = { path = "../git-manager" }
+# Git integration - temporarily disabled for Docker compatibility  
+# latex-ide-git-manager = { path = "../git-manager", optional = true }
 
 # Serialization
 serde = { workspace = true }
@@ -61,3 +61,4 @@ rustls = "0.23"
 
 [features]
 default = []
+native-git = ["latex-ide-git-manager"]

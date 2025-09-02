@@ -32,11 +32,15 @@ COPY apps/web/ ./apps/web/
 # Create web-only workspace (exclude desktop app for Docker build)
 RUN sed '/apps\/desktop/d' Cargo.toml > Cargo.web.toml && mv Cargo.web.toml Cargo.toml
 
-# Build backend services for development
+# Build backend services for development (excluding git functionality for compatibility)
 RUN cargo build \
-    --bin webtransport-server \
     --bin sse-handler \
     --bin model-manager
+
+# Build webtransport-server without native git features 
+RUN cargo build \
+    --bin webtransport-server \
+    --no-default-features
 
 # Build WASM module for development
 WORKDIR /app/apps/web

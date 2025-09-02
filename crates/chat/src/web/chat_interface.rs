@@ -45,11 +45,7 @@ pub fn WebAIChatInterface(capabilities: Signal<BrowserCapabilities>) -> Element 
                 // Model selection
                 Dropdown {
                     items: chat_engine.read().available_models.iter().enumerate().map(|(_i, model)| {
-                        DropdownItem { 
-                            id: model.id.clone(), 
-                            label: model.name.clone(),
-                            icon: None 
-                        }
+                        DropdownItem::new(model.id.clone(), model.name.clone())
                     }).collect(),
                     selected: chat_engine.read().selected_model.clone(),
                     onselect: move |model_id: String| {

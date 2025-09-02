@@ -21,7 +21,7 @@ pub mod desktop;
 
 pub use button::Button;
 pub use card::Card;
-pub use dropdown::{Dropdown, DropdownItem};
+pub use dropdown::{Dropdown, DropdownItem, DropdownSize, DropdownVariant};
 pub use input::Input;
 pub use modal::Modal;
 pub use panel::{ResizablePanel, PanelGroup};

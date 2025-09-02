@@ -119,6 +119,11 @@ impl GitOperations {
     }
 
     pub fn list_branches(&self) -> Result<Vec<String>> {
+        // Return only main branches (filtering out session branches)
+        self.git_repo.get_main_branches()
+    }
+
+    pub fn list_all_branches(&self) -> Result<Vec<String>> {
         let repo = self.git_repo.get_repository()?;
 
         let branches = repo.branches(Some(BranchType::Local))?;
@@ -132,6 +137,10 @@ impl GitOperations {
         }
 
         Ok(branch_names)
+    }
+
+    pub fn list_session_branches(&self) -> Result<Vec<String>> {
+        self.git_repo.get_session_branches()
     }
 
     pub fn get_current_branch(&self) -> Result<String> {

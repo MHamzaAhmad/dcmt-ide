@@ -10,6 +10,7 @@ use latex_ide_chat::web::BrowserCapabilities;
 use latex_ide_file_manager::{web::{WebFileTree, WebGitClient, GitStatusResponse, WebGitPanel}, ProjectManager};
 use latex_ide_pdf_viewer::web::WebPreviewPane;
 use latex_ide_ui::web::{AppHeader, hooks::use_browser_capabilities, GitStatus, SidebarView};
+// Session manager now handled via transport layer
 
 mod transport;
 
@@ -57,6 +58,9 @@ fn App() -> Element {
     // Git integration
     let git_client = use_signal(|| WebGitClient::new());
     let git_status = use_signal(|| None::<GitStatusResponse>);
+    let mut pdf_refresh_trigger = use_signal(|| 0u32);
+    // Session manager now works via transport layer for all builds
+    let session_manager = use_signal(|| None::<String>);
     
     // Initialize workspace project in background
     use_effect(move || {
@@ -69,6 +73,30 @@ fn App() -> Element {
                 tracing::warn!("Could not open workspace: {}. File tree will still work via WebTransport.", e);
             }
         }
+    });
+
+    // Initialize session manager via transport layer
+    use_effect(move || {
+        let mut session_manager = session_manager.clone();
+        
+        #[cfg(target_arch = "wasm32")]
+        wasm_bindgen_futures::spawn_local(async move {
+            // Try to start a git session via transport layer
+            use latex_ide_file_manager::web::transport;
+            
+            match transport::send_git_operation(transport::GitOp::StartSession).await {
+                Ok(transport::GitResponseData::SessionBranch(branch_name)) => {
+                    session_manager.set(Some(branch_name.clone()));
+                    tracing::info!("Git session started: {}", branch_name);
+                }
+                Ok(_) => {
+                    tracing::warn!("Unexpected response for start session");
+                }
+                Err(e) => {
+                    tracing::warn!("Failed to start git session: {}", e);
+                }
+            }
+        });
     });
     
     // Initialize Git integration
@@ -137,6 +165,7 @@ fn App() -> Element {
                                     WebGitPanel {
                                         git_client: git_client,
                                         git_status: git_status,
+                                        pdf_refresh_trigger: pdf_refresh_trigger,
                                     }
                                 },
                                 SidebarView::None => rsx! { div {} }
@@ -158,7 +187,9 @@ fn App() -> Element {
                         div { class: "flex-1",
                             WebPreviewPane { 
                                 document_content: document_content,
-                                current_file: Some(current_file_path)
+                                current_file: Some(current_file_path),
+                                refresh_trigger: Some(pdf_refresh_trigger),
+                                session_manager: Some(session_manager)
                             }
                         }
                     }

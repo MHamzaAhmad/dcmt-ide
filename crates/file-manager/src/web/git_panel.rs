@@ -2,6 +2,7 @@ use dioxus::prelude::*;
 use dioxus_signals::{Signal, Readable, Writable, GlobalSignal, Owner};
 use dioxus_hooks::{use_signal, use_effect};
 use super::git_transport::{WebGitClient, GitStatusResponse};
+use latex_ide_ui::{Dropdown, DropdownItem, DropdownSize, DropdownVariant};
 
 #[cfg(target_arch = "wasm32")]
 use wasm_bindgen_futures;
@@ -27,9 +28,13 @@ where
 pub fn WebGitPanel(
     git_client: Signal<WebGitClient>,
     mut git_status: Signal<Option<GitStatusResponse>>,
+    #[props(default)] pdf_refresh_trigger: Option<Signal<u32>>,
 ) -> Element {
     let mut commit_message = use_signal(|| String::new());
     let mut is_loading = use_signal(|| false);
+    let mut available_versions = use_signal(|| Vec::<String>::new());
+    let mut selected_version = use_signal(|| None::<String>);
+    let mut current_version = use_signal(|| None::<String>);
     
     // Refresh status when panel opens
     use_effect(move || {
@@ -155,6 +160,82 @@ pub fn WebGitPanel(
                                                 {file.clone()}
                                             }
                                         }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    
+                    // Version Control Section
+                    div { class: "space-y-3 border-t border-zinc-200 dark:border-zinc-700 pt-4",
+                        div { class: "text-xs font-medium text-zinc-500 dark:text-zinc-400 uppercase tracking-wide",
+                            "PDF Versions"
+                        }
+                        
+                        // Current Version Display
+                        if let Some(version) = current_version.read().as_ref() {
+                            div { class: "text-sm font-mono text-zinc-700 dark:text-zinc-300 bg-blue-50 dark:bg-blue-950/20 px-2 py-1 rounded border-l-2 border-blue-500",
+                                "Current: {version}"
+                            }
+                        } else {
+                            div { class: "text-xs text-zinc-500 dark:text-zinc-400",
+                                "No versions available"
+                            }
+                        }
+                        
+                        // Version Dropdown
+                        if !available_versions.read().is_empty() {
+                            div { class: "space-y-2",
+                                Dropdown {
+                                    items: available_versions.read().iter().map(|v| {
+                                        DropdownItem::new(v.clone(), v.clone())
+                                            .with_icon("🏷️".to_string())
+                                            .with_description(format!("Switch to version {}", v))
+                                    }).collect(),
+                                    selected: selected_version.read().clone(),
+                                    onselect: move |version: String| {
+                                        selected_version.set(Some(version));
+                                    },
+                                    placeholder: "Select Version".to_string(),
+                                    size: Some(DropdownSize::Small),
+                                    variant: Some(DropdownVariant::Default),
+                                }
+                                
+                                // Quick actions
+                                div { class: "flex space-x-2",
+                                    button {
+                                        class: "flex-1 px-2 py-1 bg-orange-600 hover:bg-orange-700 text-white rounded-md text-xs font-medium transition-colors disabled:opacity-50",
+                                        disabled: selected_version.read().is_none(),
+                                        onclick: move |_| {
+                                            if let Some(version) = selected_version.read().as_ref() {
+                                                tracing::info!("Rollback to version: {}", version);
+                                                // TODO: Implement rollback functionality via git-manager
+                                                
+                                                // Trigger PDF refresh after rollback
+                                                if let Some(mut trigger) = pdf_refresh_trigger {
+                                                    let current = *trigger.read();
+                                                    trigger.set(current + 1);
+                                                    tracing::info!("Triggered PDF refresh after rollback");
+                                                }
+                                            }
+                                        },
+                                        "Rollback"
+                                    }
+                                    
+                                    button {
+                                        class: "px-2 py-1 bg-red-600 hover:bg-red-700 text-white rounded-md text-xs font-medium transition-colors",
+                                        onclick: move |_| {
+                                            // TODO: Quick rollback to previous commit
+                                            tracing::info!("Quick rollback to previous commit");
+                                            
+                                            // Trigger PDF refresh after quick rollback
+                                            if let Some(mut trigger) = pdf_refresh_trigger {
+                                                let current = *trigger.read();
+                                                trigger.set(current + 1);
+                                                tracing::info!("Triggered PDF refresh after quick rollback");
+                                            }
+                                        },
+                                        "⏪ Quick"
                                     }
                                 }
                             }

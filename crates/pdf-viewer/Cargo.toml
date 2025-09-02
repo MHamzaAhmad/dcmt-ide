@@ -8,6 +8,7 @@ dioxus = { workspace = true }
 dioxus-signals = { workspace = true }
 dioxus-hooks = { workspace = true }
 latex-ide-ui = { path = "../ui" }
+latex-ide-file-manager = { path = "../file-manager" }
 pdfium-render = { workspace = true, optional = true }
 anyhow = { workspace = true }
 serde = { workspace = true }
@@ -15,6 +16,8 @@ serde_json = { workspace = true }
 tokio = { version = "1.47", features = ["macros", "rt"], optional = true }
 base64 = "0.22"
 tracing = { workspace = true }
+latex-ide-git-manager = { path = "../git-manager", optional = true }
+chrono = { workspace = true }
 
 # Web-specific dependencies
 wasm-bindgen = { workspace = true, optional = true }
@@ -29,3 +32,4 @@ gloo-timers = { workspace = true, optional = true }
 default = []
 desktop = ["dioxus/desktop", "latex-ide-ui/desktop", "tokio", "pdfium-render"]
 web = ["dioxus/web", "latex-ide-ui/web", "wasm-bindgen", "wasm-bindgen-futures", "js-sys", "web-sys", "gloo-timers"]
+native-git = ["latex-ide-git-manager"]

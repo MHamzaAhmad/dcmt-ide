@@ -27,11 +27,7 @@ pub fn DesktopAIChatInterface(
                 // Model selection
                 Dropdown {
                     items: chat_engine.read().available_models.iter().map(|model| {
-                        DropdownItem { 
-                            id: model.id.clone(), 
-                            label: model.name.clone(),
-                            icon: None 
-                        }
+                        DropdownItem::new(model.id.clone(), model.name.clone())
                     }).collect(),
                     selected: chat_engine.read().selected_model.clone(),
                     onselect: move |model_id: String| {

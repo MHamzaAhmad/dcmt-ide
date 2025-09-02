@@ -2,6 +2,29 @@ use std::env;
 use std::net::SocketAddr;
 use std::path::Path;
 use serde::{Serialize, Deserialize};
+#[cfg(feature = "native-git")]
+use latex_ide_webtransport_server::{GitOp, GitResponseData, GitServerManager};
+
+// Fallback when git is disabled
+#[cfg(not(feature = "native-git"))]
+mod git_fallback {
+    use super::TransportMessage;
+    
+    #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+    pub enum GitOp {
+        Disabled,
+    }
+    
+    #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+    pub enum GitResponseData {
+        Error(String),
+    }
+    
+    pub struct GitServerManager;
+}
+
+#[cfg(not(feature = "native-git"))]
+use git_fallback::{GitOp, GitResponseData, GitServerManager};
 use axum::{
     extract::ws::{WebSocket, Message},
     extract::WebSocketUpgrade,
@@ -17,6 +40,8 @@ pub enum TransportMessage {
     FileOperation { operation: FileOp },
     CompilationRequest { document_id: String, content: String, engine: String },
     CompilationResult { document_id: String, success: bool, pdf_data: Option<Vec<u8>>, log: String },
+    GitOperation { operation: GitOp },
+    GitResponse { success: bool, data: Option<GitResponseData>, error: Option<String> },
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -95,6 +120,18 @@ async fn handle_websocket(socket: WebSocket) {
                         }
                         TransportMessage::CompilationRequest { document_id, content, engine } => {
                             handle_compilation_request(document_id, content, engine).await
+                        }
+                        #[cfg(feature = "native-git")]
+                        TransportMessage::GitOperation { operation } => {
+                            handle_git_operation(operation).await
+                        }
+                        #[cfg(not(feature = "native-git"))]
+                        TransportMessage::GitOperation { .. } => {
+                            TransportMessage::GitResponse {
+                                success: false,
+                                data: None,
+                                error: Some("Git operations not available in this build".to_string()),
+                            }
                         }
                         _ => {
                             tracing::warn!("Unsupported message type");
@@ -379,5 +416,201 @@ async fn compile_latex(tex_file: &Path) -> Result<Vec<u8>, String> {
     } else {
         let log = String::from_utf8_lossy(&output.stderr);
         Err(format!("pdflatex compilation failed: {}", log))
+    }
+}
+
+#[cfg(feature = "native-git")]
+async fn handle_git_operation(operation: GitOp) -> TransportMessage {
+    tracing::info!("Handling git operation: {:?}", operation);
+    
+    // Get workspace path from environment variable
+    let workspace_path = env::var("SAMPLE_WORKSPACE_DIR")
+        .unwrap_or_else(|_| "/app/workspace/sample".to_string());
+    let workspace = std::path::PathBuf::from(&workspace_path);
+    
+    // Create or get GitServerManager for this workspace
+    match GitServerManager::new(workspace) {
+        Ok(mut git_manager) => {
+            let result = execute_git_operation_direct(operation, &mut git_manager).await;
+            
+            match result {
+                Ok(data) => {
+                    tracing::info!("Git operation completed successfully");
+                    TransportMessage::GitResponse {
+                        success: true,
+                        data,
+                        error: None,
+                    }
+                }
+                Err(e) => {
+                    tracing::error!("Git operation failed: {}", e);
+                    TransportMessage::GitResponse {
+                        success: false,
+                        data: None,
+                        error: Some(e.to_string()),
+                    }
+                }
+            }
+        }
+        Err(e) => {
+            tracing::error!("Failed to create git manager: {}", e);
+            TransportMessage::GitResponse {
+                success: false,
+                data: None,
+                error: Some(format!("Git manager initialization failed: {}", e)),
+            }
+        }
+    }
+}
+
+#[cfg(feature = "native-git")]
+async fn execute_git_operation_direct(
+    operation: GitOp,
+    git_manager: &mut GitServerManager,
+) -> Result<Option<GitResponseData>, Box<dyn std::error::Error>> {
+    use latex_ide_webtransport_server::{GitStatusResponse, GitCommitInfo, GitRollbackResult};
+    
+    match operation {
+        GitOp::InitRepository { .. } => {
+            let status = git_manager.git_repo.get_status()?;
+            Ok(Some(GitResponseData::Status(GitStatusResponse {
+                current_branch: status.current_branch,
+                session_branch: status.session_branch,
+                has_changes: status.has_changes,
+                staged_files: status.staged_files,
+                modified_files: status.modified_files,
+                untracked_files: status.untracked_files,
+                commits_ahead: status.commits_ahead,
+                commits_behind: status.commits_behind,
+            })))
+        }
+        
+        GitOp::GetStatus => {
+            let status = git_manager.git_repo.get_status()?;
+            Ok(Some(GitResponseData::Status(GitStatusResponse {
+                current_branch: status.current_branch,
+                session_branch: status.session_branch,
+                has_changes: status.has_changes,
+                staged_files: status.staged_files,
+                modified_files: status.modified_files,
+                untracked_files: status.untracked_files,
+                commits_ahead: status.commits_ahead,
+                commits_behind: status.commits_behind,
+            })))
+        }
+        
+        GitOp::StartSession => {
+            if let Some(ref mut session_mgr) = git_manager.session_manager {
+                let session_branch = session_mgr.start_session()?;
+                Ok(Some(GitResponseData::SessionBranch(session_branch)))
+            } else {
+                Err("Session manager not available".into())
+            }
+        }
+        
+        GitOp::StageAllChanges => {
+            git_manager.git_operations.stage_all_changes()?;
+            Ok(None)
+        }
+        
+        GitOp::Commit { message } => {
+            if let Some(ref session_mgr) = git_manager.session_manager {
+                let commit_id = session_mgr.commit_session_changes(&message)?;
+                Ok(Some(GitResponseData::CommitDetails(GitCommitInfo {
+                    id: commit_id.to_string(),
+                    short_id: format!("{:.7}", commit_id.to_string()),
+                    message,
+                    author_name: "Server".to_string(),
+                    author_email: "server@localhost".to_string(),
+                    timestamp: chrono::Utc::now().to_rfc3339(),
+                    parents: vec![],
+                    is_merge: false,
+                    files_changed: vec![],
+                    insertions: 0,
+                    deletions: 0,
+                })))
+            } else {
+                Err("Session manager not available".into())
+            }
+        }
+        
+        GitOp::CommitPdfVersion { pdf_path, latex_content } => {
+            if let Some(ref mut session_mgr) = git_manager.session_manager {
+                let (commit_id, version) = session_mgr.commit_pdf_version(&pdf_path, &latex_content)?;
+                Ok(Some(GitResponseData::CommitDetails(GitCommitInfo {
+                    id: commit_id.to_string(),
+                    short_id: format!("{:.7}", commit_id.to_string()),
+                    message: format!("PDF version {}", version),
+                    author_name: "Server".to_string(),
+                    author_email: "server@localhost".to_string(),
+                    timestamp: chrono::Utc::now().to_rfc3339(),
+                    parents: vec![],
+                    is_merge: false,
+                    files_changed: vec![pdf_path],
+                    insertions: 0,
+                    deletions: 0,
+                })))
+            } else {
+                Err("Session manager not available".into())
+            }
+        }
+        
+        GitOp::GetCommitHistory { branch_name, limit } => {
+            let commits = git_manager.history_viewer.get_commit_history(
+                branch_name.as_deref(), 
+                limit.unwrap_or(50)
+            )?;
+            let commit_infos: Vec<GitCommitInfo> = commits.into_iter()
+                .map(|commit| GitCommitInfo {
+                    id: commit.id,
+                    short_id: commit.short_id,
+                    message: commit.message,
+                    author_name: commit.author_name,
+                    author_email: commit.author_email,
+                    timestamp: commit.timestamp.to_rfc3339(),
+                    parents: commit.parents,
+                    is_merge: commit.is_merge,
+                    files_changed: commit.files_changed,
+                    insertions: commit.insertions,
+                    deletions: commit.deletions,
+                })
+                .collect();
+            Ok(Some(GitResponseData::CommitHistory(commit_infos)))
+        }
+        
+        GitOp::SafeRollbackToCommit { commit_id } => {
+            let result = git_manager.git_operations.safe_rollback_to_commit(&commit_id)?;
+            match result {
+                latex_ide_git_manager::RollbackResult::Success { commit_id, commit_message } => {
+                    Ok(Some(GitResponseData::RollbackResult(GitRollbackResult::Success {
+                        commit_id,
+                        commit_message,
+                    })))
+                }
+                latex_ide_git_manager::RollbackResult::HasUncommittedChanges(status) => {
+                    Ok(Some(GitResponseData::RollbackResult(GitRollbackResult::HasUncommittedChanges(
+                        GitStatusResponse {
+                            current_branch: status.current_branch,
+                            session_branch: status.session_branch,
+                            has_changes: status.has_changes,
+                            staged_files: status.staged_files,
+                            modified_files: status.modified_files,
+                            untracked_files: status.untracked_files,
+                            commits_ahead: status.commits_ahead,
+                            commits_behind: status.commits_behind,
+                        }
+                    ))))
+                }
+                latex_ide_git_manager::RollbackResult::ConflictsDetected(_) => {
+                    // For simplicity, we'll treat conflicts as errors for now
+                    Err("Rollback conflicts detected".into())
+                }
+            }
+        }
+        
+        _ => {
+            tracing::warn!("Git operation not yet implemented: {:?}", operation);
+            Err("Operation not implemented".into())
+        }
     }
 }

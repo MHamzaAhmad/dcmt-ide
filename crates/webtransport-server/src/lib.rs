@@ -1,6 +1,6 @@
 use wtransport::{Endpoint, Connection, ServerConfig, RecvStream, Identity, tls::{Certificate, CertificateChain, PrivateKey}};
 use latex_ide_yrs_collab::{CollaborationEngine, UserInfo};
-use latex_ide_git_manager::{GitRepository, SessionManager, GitOperations, HistoryViewer, ConflictResolver};
+// Git integration temporarily disabled for Docker compatibility
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -716,10 +716,198 @@ impl WebTransportServer {
                 }
             }
             
-            // Add more operations as needed...
-            _ => {
-                warn!("Git operation not yet implemented: {:?}", operation);
-                Err(anyhow::anyhow!("Operation not implemented"))
+            GitOp::CommitPdfVersion { pdf_path, latex_content } => {
+                if let Some(ref mut session_mgr) = manager.session_manager {
+                    let (commit_id, version) = session_mgr.commit_pdf_version(&pdf_path, &latex_content)?;
+                    Ok(Some(GitResponseData::CommitDetails(GitCommitInfo {
+                        id: commit_id.to_string(),
+                        short_id: format!("{:.7}", commit_id.to_string()),
+                        message: format!("PDF version {}", version),
+                        author_name: "Server".to_string(),
+                        author_email: "server@localhost".to_string(),
+                        timestamp: chrono::Utc::now().to_rfc3339(),
+                        parents: vec![],
+                        is_merge: false,
+                        files_changed: vec![pdf_path],
+                        insertions: 0,
+                        deletions: 0,
+                    })))
+                } else {
+                    Err(anyhow::anyhow!("Session manager not available"))
+                }
+            }
+            
+            GitOp::GetCommitHistory { branch_name, limit } => {
+                let commits = manager.history_viewer.get_commit_history(
+                    branch_name.as_deref(), 
+                    limit.unwrap_or(50)
+                )?;
+                let commit_infos: Vec<GitCommitInfo> = commits.into_iter()
+                    .map(|commit| GitCommitInfo {
+                        id: commit.id,
+                        short_id: commit.short_id,
+                        message: commit.message,
+                        author_name: commit.author_name,
+                        author_email: commit.author_email,
+                        timestamp: commit.timestamp.to_rfc3339(),
+                        parents: commit.parents,
+                        is_merge: commit.is_merge,
+                        files_changed: commit.files_changed,
+                        insertions: commit.insertions,
+                        deletions: commit.deletions,
+                    })
+                    .collect();
+                Ok(Some(GitResponseData::CommitHistory(commit_infos)))
+            }
+            
+            GitOp::SafeRollbackToCommit { commit_id } => {
+                let result = manager.git_operations.safe_rollback_to_commit(&commit_id)?;
+                match result {
+                    latex_ide_git_manager::RollbackResult::Success { commit_id, commit_message } => {
+                        Ok(Some(GitResponseData::RollbackResult(GitRollbackResult::Success {
+                            commit_id,
+                            commit_message,
+                        })))
+                    }
+                    latex_ide_git_manager::RollbackResult::HasUncommittedChanges(status) => {
+                        Ok(Some(GitResponseData::RollbackResult(GitRollbackResult::HasUncommittedChanges(
+                            Self::convert_git_status(status)
+                        ))))
+                    }
+                    latex_ide_git_manager::RollbackResult::ConflictsDetected(conflicts) => {
+                        let conflict_infos: Vec<GitConflictInfo> = conflicts.into_iter()
+                            .map(|conflict| GitConflictInfo {
+                                file_path: conflict.file_path,
+                                conflict_type: match conflict.conflict_type {
+                                    latex_ide_git_manager::ConflictType::Content => GitConflictType::Content,
+                                    latex_ide_git_manager::ConflictType::ModifyDelete => GitConflictType::ModifyDelete,
+                                    latex_ide_git_manager::ConflictType::DeleteModify => GitConflictType::DeleteModify,
+                                    latex_ide_git_manager::ConflictType::AddAdd => GitConflictType::AddAdd,
+                                },
+                                our_content: conflict.our_content,
+                                their_content: conflict.their_content,
+                                base_content: conflict.base_content,
+                                merged_content: conflict.merged_content,
+                            })
+                            .collect();
+                        Ok(Some(GitResponseData::RollbackResult(GitRollbackResult::ConflictsDetected(conflict_infos))))
+                    }
+                }
+            }
+            
+            GitOp::CreateBranch { branch_name, from_current } => {
+                manager.git_operations.create_branch(&branch_name, from_current)?;
+                Ok(None)
+            }
+            
+            GitOp::CheckoutBranch { branch_name } => {
+                manager.git_operations.checkout_branch(&branch_name)?;
+                Ok(None)
+            }
+            
+            GitOp::DeleteBranch { branch_name, force } => {
+                manager.git_operations.delete_branch(&branch_name, force)?;
+                Ok(None)
+            }
+            
+            GitOp::DiscardFileChanges { file_path } => {
+                manager.git_operations.discard_file_changes(&file_path)?;
+                Ok(None)
+            }
+            
+            GitOp::DiscardAllChanges => {
+                manager.git_operations.discard_all_changes()?;
+                Ok(None)
+            }
+            
+            GitOp::GetConflicts => {
+                let conflicts = manager.conflict_resolver.get_current_conflicts()?;
+                let conflict_infos: Vec<GitConflictInfo> = conflicts.into_iter()
+                    .map(|conflict| GitConflictInfo {
+                        file_path: conflict.file_path,
+                        conflict_type: match conflict.conflict_type {
+                            latex_ide_git_manager::ConflictType::Content => GitConflictType::Content,
+                            latex_ide_git_manager::ConflictType::ModifyDelete => GitConflictType::ModifyDelete,
+                            latex_ide_git_manager::ConflictType::DeleteModify => GitConflictType::DeleteModify,
+                            latex_ide_git_manager::ConflictType::AddAdd => GitConflictType::AddAdd,
+                        },
+                        our_content: conflict.our_content,
+                        their_content: conflict.their_content,
+                        base_content: conflict.base_content,
+                        merged_content: conflict.merged_content,
+                    })
+                    .collect();
+                Ok(Some(GitResponseData::Conflicts(conflict_infos)))
+            }
+            
+            GitOp::ResolveConflicts { resolutions } => {
+                let git_resolutions: Vec<latex_ide_git_manager::ResolutionChoice> = resolutions.into_iter()
+                    .map(|res| latex_ide_git_manager::ResolutionChoice {
+                        file_path: res.file_path,
+                        resolution: match res.resolution {
+                            GitResolution::TakeOurs => latex_ide_git_manager::Resolution::TakeOurs,
+                            GitResolution::TakeTheirs => latex_ide_git_manager::Resolution::TakeTheirs,
+                            GitResolution::TakeBase => latex_ide_git_manager::Resolution::TakeBase,
+                            GitResolution::Custom => latex_ide_git_manager::Resolution::Custom,
+                            GitResolution::Manual => latex_ide_git_manager::Resolution::Manual,
+                        },
+                        custom_content: res.custom_content,
+                    })
+                    .collect();
+                manager.conflict_resolver.resolve_conflicts(git_resolutions)?;
+                Ok(None)
+            }
+            
+            GitOp::GetFileHistory { file_path, limit } => {
+                let commits = manager.history_viewer.get_file_history(&file_path, limit.unwrap_or(20))?;
+                let commit_infos: Vec<GitCommitInfo> = commits.into_iter()
+                    .map(|commit| GitCommitInfo {
+                        id: commit.id,
+                        short_id: commit.short_id,
+                        message: commit.message,
+                        author_name: commit.author_name,
+                        author_email: commit.author_email,
+                        timestamp: commit.timestamp.to_rfc3339(),
+                        parents: commit.parents,
+                        is_merge: commit.is_merge,
+                        files_changed: commit.files_changed,
+                        insertions: commit.insertions,
+                        deletions: commit.deletions,
+                    })
+                    .collect();
+                Ok(Some(GitResponseData::FileHistory(commit_infos)))
+            }
+            
+            // Remote operations (placeholder implementations)
+            GitOp::PushToRemote { remote_name: _, branch_name: _ } => {
+                warn!("Remote operations not yet implemented in server");
+                Err(anyhow::anyhow!("Remote operations not yet implemented"))
+            }
+            
+            GitOp::PullFromRemote { remote_name: _, branch_name: _ } => {
+                warn!("Remote operations not yet implemented in server");
+                Err(anyhow::anyhow!("Remote operations not yet implemented"))
+            }
+            
+            // Operations that don't need implementation
+            GitOp::SearchCommits { query: _, limit: _ } => {
+                warn!("Search commits not yet implemented");
+                Err(anyhow::anyhow!("Search commits not yet implemented"))
+            }
+            
+            GitOp::GetCommitDetails { commit_id: _ } => {
+                warn!("Get commit details not yet implemented");
+                Err(anyhow::anyhow!("Get commit details not yet implemented"))
+            }
+            
+            GitOp::MergeBranch { branch_name: _, message: _ } => {
+                warn!("Merge branch not yet implemented");
+                Err(anyhow::anyhow!("Merge branch not yet implemented"))
+            }
+            
+            GitOp::AbortMerge => {
+                warn!("Abort merge not yet implemented");
+                Err(anyhow::anyhow!("Abort merge not yet implemented"))
             }
         }
     }

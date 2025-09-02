@@ -21,3 +21,4 @@ tokio = { workspace = true }
 
 # Additional dependencies for file operations
 pathdiff.workspace = true
+regex.workspace = true

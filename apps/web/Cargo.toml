@@ -20,6 +20,7 @@ latex-ide-editor = { path = "../../crates/editor", features = ["web"] }
 latex-ide-chat = { path = "../../crates/chat", features = ["web"] }
 latex-ide-file-manager = { path = "../../crates/file-manager", features = ["web"] }
 latex-ide-pdf-viewer = { path = "../../crates/pdf-viewer", features = ["web"] }
+latex-ide-git-manager = { path = "../../crates/git-manager", optional = true }
 
 # WASM-specific Yrs bindings
 yrs = { workspace = true }
@@ -69,6 +70,7 @@ base64 = "0.22"
 [features]
 default = ["dev"]
 dev = []
+native-git = ["latex-ide-git-manager"]
 
 # WebTransport support (native only, not for WASM)
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]

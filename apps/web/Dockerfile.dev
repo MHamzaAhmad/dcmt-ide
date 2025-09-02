@@ -18,8 +18,9 @@ RUN curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
 # Add WebAssembly target
 RUN rustup target add wasm32-unknown-unknown
 
-# Install Node.js development tools
+# Install Node.js development tools and Rust hot reload tools
 RUN npm install -g live-server pm2
+RUN cargo install cargo-watch watchexec-cli
 
 WORKDIR /app
 

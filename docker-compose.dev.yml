@@ -13,9 +13,12 @@ services:
       - latex-ide-data:/app/data      # Persistent SQLite database
       - latex-ide-logs:/app/logs      # Service logs
       - latex-ide-models:/app/models  # AI model cache
-      - latex-ide-workspace:/app/workspace  # User workspace files
-      - ./apps/web:/workspace/web:ro  # For development file watching
-      - ./sample-workspace:/app/workspace/sample:rw  # Sample workspace for development
+      - ./sample-workspace:/app/workspace:rw  # Primary workspace with sample files
+      - ./apps/web:/app/apps/web:rw   # Web app source for hot reload
+      - ./apps/desktop:/app/apps/desktop:ro  # Desktop app (needed for Cargo workspace)
+      - ./crates:/app/crates:rw       # Rust source code for hot reload
+      - ./Cargo.toml:/app/Cargo.toml:rw  # Root Cargo.toml for dependency changes
+      - ./Cargo.lock:/app/Cargo.lock:rw  # Cargo.lock for dependency tracking
     environment:
       - NODE_ENV=development
       - RUST_LOG=debug
@@ -23,7 +26,7 @@ services:
       - DATABASE_URL=sqlite:///app/data/latex_ide.db
       - MODEL_CACHE_DIR=/app/models
       - WORKSPACE_DIR=/app/workspace
-      - SAMPLE_WORKSPACE_DIR=/app/workspace/sample
+      - SAMPLE_WORKSPACE_DIR=/app/workspace
       - LATEX_COMPILER_PATH=/usr/bin/pdflatex
       - OPENAI_API_KEY=${OPENAI_API_KEY:-}
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}

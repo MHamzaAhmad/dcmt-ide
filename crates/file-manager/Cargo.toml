@@ -34,3 +34,4 @@ gloo-timers = { version = "0.3", features = ["futures"], optional = true }
 default = []
 desktop = ["dioxus/desktop", "latex-ide-ui/desktop", "notify", "rfd", "dirs"]
 web = ["dioxus/web", "latex-ide-ui/web", "js-sys", "wasm-bindgen", "web-sys", "wasm-bindgen-futures", "gloo-timers"]
+git-integration = []

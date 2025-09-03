@@ -114,12 +114,17 @@ pub fn ConflictResolverUI(props: ConflictResolverUIProps) -> Element {
                     class: "w-full bg-green-600 text-white px-4 py-2 rounded-md text-sm font-medium hover:bg-green-700 disabled:opacity-50",
                     disabled: resolutions.read().len() < conflicts.read().len() || *loading.read(),
                     onclick: move |_| {
-                        let version_control = props.version_control.clone();
+                        let mut version_control = props.version_control.clone();
                         let resolution_choices = resolutions.read().clone();
                         spawn(async move {
                             loading.set(true);
-                            if let Some(ref conflict_resolver) = version_control.read().conflict_resolver {
-                                match conflict_resolver.resolve_conflicts(resolution_choices) {
+                            let conflict_resolver_result = {
+                                version_control.read().conflict_resolver.as_ref()
+                                    .map(|cr| cr.resolve_conflicts(resolution_choices))
+                            };
+                            
+                            if let Some(result) = conflict_resolver_result {
+                                match result {
                                     Ok(_) => {
                                         conflicts.set(Vec::new());
                                         resolutions.set(Vec::new());

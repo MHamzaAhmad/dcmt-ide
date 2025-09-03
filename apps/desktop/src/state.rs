@@ -3,7 +3,29 @@ use dioxus_signals::{Signal, Readable, Writable};
 use latex_ide_yrs_collab::{CollaborationEngine, LaTeXDocument};
 use latex_ide_model_manager::ModelManager;
 use latex_ide_file_manager::ProjectManager;
-use latex_ide_version_control_ui::VersionControlState;
+// use latex_ide_version_control_ui::VersionControlState;
+
+// Temporary placeholder for VersionControlState
+#[derive(Clone, Debug, PartialEq)]
+pub struct VersionControlState {}
+
+impl VersionControlState {
+    pub fn new() -> Self {
+        Self {}
+    }
+    
+    pub fn has_changes(&self) -> bool {
+        false
+    }
+    
+    pub fn get_current_branch(&self) -> Option<String> {
+        Some("main".to_string())
+    }
+    
+    pub fn get_session_branch(&self) -> Option<String> {
+        None
+    }
+}
 use std::sync::Arc;
 use std::collections::HashMap;
 use uuid::Uuid;

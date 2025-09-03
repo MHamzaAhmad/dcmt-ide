@@ -120,7 +120,7 @@ fn App() -> Element {
             // Try to start a Git session regardless of init result
             // This handles both new repos (after init) and existing repos
             tracing::info!("🌿 Attempting to start Git session");
-            let git_transport = git_client.write();
+            let mut git_transport = git_client.write();
             
             match git_transport.start_session().await {
                 Ok(branch_name) => {

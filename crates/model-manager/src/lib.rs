@@ -38,6 +38,7 @@ impl Default for ModelConfig {
 
 /// Enhanced Model Manager with support for multiple AI providers
 pub struct ModelManager {
+    #[allow(dead_code)]
     config: ModelConfig,
     active_models: Arc<RwLock<HashMap<String, Arc<dyn AIModel + Send + Sync>>>>,
     model_metrics: Arc<RwLock<HashMap<String, ModelMetrics>>>,

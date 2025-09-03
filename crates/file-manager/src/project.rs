@@ -1,6 +1,6 @@
 //! Project management functionality
 
-use crate::{FileTree, FileItem, GitFileStatus};
+use crate::{FileTree, FileItem};
 use std::path::{PathBuf, Path};
 use serde::{Serialize, Deserialize};
 

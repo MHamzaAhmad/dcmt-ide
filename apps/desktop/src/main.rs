@@ -14,7 +14,7 @@ use latex_ide_editor::desktop::DesktopCodeMirrorEditor;
 use latex_ide_chat::desktop::DesktopAIChatInterface;
 use latex_ide_file_manager::desktop::DesktopFileTree;
 use latex_ide_pdf_viewer::desktop::DesktopPreviewPane;
-use latex_ide_version_control_ui::{GitPanel, VersionControlProvider};
+// use latex_ide_version_control_ui::{GitPanel, VersionControlProvider};
 
 mod state;
 use state::AppState;
@@ -39,28 +39,28 @@ fn App() -> Element {
     let mut app_state = use_context_provider(|| AppState::new());
 
     // Initialize version control for current workspace
-    use_effect(move || {
-        let mut app_state = app_state.clone();
-        spawn(async move {
-            if let Some(project) = app_state.project_manager.read().get_current_project() {
-                let workspace_path = project.workspace_root.clone();
-                match app_state.version_control.write().initialize(workspace_path) {
-                    Ok(_) => {
-                        info!("Version control initialized for workspace");
-                        // Start a session for this IDE instance
-                        if let Some(ref session_manager) = app_state.version_control.read().session_manager {
-                            if let Ok(session_branch) = session_manager.start_session() {
-                                info!("Started Git session: {}", session_branch);
-                            }
-                        }
-                    }
-                    Err(e) => {
-                        warn!("Failed to initialize version control: {}", e);
-                    }
-                }
-            }
-        });
-    });
+    // use_effect(move || {
+    //     let mut app_state = app_state.clone();
+    //     spawn(async move {
+    //         if let Some(project) = app_state.project_manager.read().get_current_project() {
+    //             let workspace_path = project.workspace_root.clone();
+    //             match app_state.version_control.write().initialize(workspace_path) {
+    //                 Ok(_) => {
+    //                     info!("Version control initialized for workspace");
+    //                     // Start a session for this IDE instance
+    //                     if let Some(ref session_manager) = app_state.version_control.read().session_manager {
+    //                         if let Ok(session_branch) = session_manager.start_session() {
+    //                             info!("Started Git session: {}", session_branch);
+    //                         }
+    //                     }
+    //                 }
+    //                 Err(e) => {
+    //                     warn!("Failed to initialize version control: {}", e);
+    //                 }
+    //             }
+    //         }
+    //     });
+    // });
     
     // Initialize collaboration engine
     let collab_engine = use_resource(move || async move {
@@ -102,14 +102,14 @@ fn App() -> Element {
     });
 
     rsx! {
-        VersionControlProvider {
+        // VersionControlProvider {
             ThemeProvider {
                 div { 
                     id: "app",
                     class: "h-screen w-screen bg-white dark:bg-gray-900 flex flex-col",
                     
                     // Menu bar
-                    MenuBar { app_state: app_state }
+                    MenuBar { app_state: app_state.clone() }
                     
                     // Main application layout
                     div { class: "flex-1 flex overflow-hidden relative",
@@ -161,27 +161,26 @@ fn App() -> Element {
                             }
                         }
                     }
-                }
-                
+                    
                     // Git Panel (overlay)
-                    GitPanel {
-                        visible: app_state.ui_state.read().git_panel_visible,
-                        width: 400,
-                        on_close: {
-                            let mut app_state = app_state.clone();
-                            move |_| {
-                                let mut ui_state = app_state.ui_state.write();
-                                ui_state.git_panel_visible = false;
-                            }
-                        }
-                    }
+                    // GitPanel {
+                    //     visible: app_state.ui_state.read().git_panel_visible,
+                    //     width: 400,
+                    //     on_close: {
+                    //         let mut app_state = app_state.clone();
+                    //         move |_| {
+                    //             let mut ui_state = app_state.ui_state.write();
+                    //             ui_state.git_panel_visible = false;
+                    //         }
+                    //     }
+                    // }
                 }
                 
                 // Status bar
-                StatusBar { app_state: app_state }
+                StatusBar { app_state: app_state.clone() }
                 }
             }
-        }
+        // }
     }
 }
 
@@ -194,25 +193,25 @@ fn MenuBar(app_state: AppState) -> Element {
             }
             div { class: "flex-1" }
             
-            // Git status and controls
+            // Git status and controls  
             div { class: "flex items-center space-x-4",
-                GitStatusIndicator {
-                    has_changes: app_state.version_control.read().has_changes(),
-                    current_branch: app_state.version_control.read().get_current_branch().unwrap_or_else(|| "main".to_string()),
-                    session_branch: app_state.version_control.read().get_session_branch()
-                }
+                // GitStatusIndicator {
+                //     has_changes: app_state.version_control.read().has_changes(),
+                //     current_branch: app_state.version_control.read().get_current_branch().unwrap_or_else(|| "main".to_string()),
+                //     session_branch: app_state.version_control.read().get_session_branch()
+                // }
                 
-                GitPanelToggle {
-                    visible: app_state.ui_state.read().git_panel_visible,
-                    has_changes: app_state.version_control.read().has_changes(),
-                    on_toggle: {
-                        let mut app_state = app_state.clone();
-                        move |_| {
-                            let mut ui_state = app_state.ui_state.write();
-                            ui_state.git_panel_visible = !ui_state.git_panel_visible;
-                        }
-                    }
-                }
+                // GitPanelToggle {
+                //     visible: app_state.ui_state.read().git_panel_visible,
+                //     has_changes: app_state.version_control.read().has_changes(),
+                //     on_toggle: {
+                //         let mut app_state = app_state.clone();
+                //         move |_| {
+                //             let mut ui_state = app_state.ui_state.write();
+                //             ui_state.git_panel_visible = !ui_state.git_panel_visible;
+                //         }
+                //     }
+                // }
                 
                 div { class: "text-sm text-gray-600 dark:text-gray-300",
                     "LaTeX IDE v0.1.0"

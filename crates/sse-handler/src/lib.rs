@@ -114,6 +114,7 @@ pub struct ModelParameters {
 pub struct SSEHandler {
     model_manager: Arc<ModelManager>,
     broadcast_sender: broadcast::Sender<SSEMessage>,
+    #[allow(dead_code)]
     active_streams: Arc<tokio::sync::RwLock<HashMap<Uuid, mpsc::Sender<SSEMessage>>>>,
 }
 
@@ -224,6 +225,7 @@ impl SSEHandler {
         });
     }
     
+    #[allow(dead_code)]
     async fn start_heartbeat(&self) {
         let sender = self.broadcast_sender.clone();
         
@@ -282,8 +284,10 @@ async fn sse_stream_handler(
 #[derive(Debug, Deserialize)]
 struct StreamParams {
     #[serde(default)]
+    #[allow(dead_code)]
     document_id: Option<Uuid>,
     #[serde(default)]
+    #[allow(dead_code)]
     conversation_id: Option<Uuid>,
 }
 

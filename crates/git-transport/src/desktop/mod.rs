@@ -258,11 +258,11 @@ impl DesktopGitTransport {
     pub async fn safe_rollback_to_commit(&self, commit_id: String) -> Result<GitRollbackResult> {
         #[cfg(feature = "native-git")]
         {
-            if let Some(ref git_operations) = self.git_operations {
-                let result = git_operations.safe_rollback_to_commit(&commit_id)?;
+            if let Some(ref conflict_resolver) = self.conflict_resolver {
+                let result = conflict_resolver.safe_rollback_to_commit(&commit_id)?;
                 Ok(convert_rollback_result(result))
             } else {
-                Err(anyhow::anyhow!("Git operations not initialized"))
+                Err(anyhow::anyhow!("Conflict resolver not initialized"))
             }
         }
         

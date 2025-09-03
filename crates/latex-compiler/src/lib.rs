@@ -93,6 +93,17 @@ pub struct LaTeXCompiler {
     session_manager: Option<latex_ide_git_manager::SessionManager>,
 }
 
+impl Clone for LaTeXCompiler {
+    fn clone(&self) -> Self {
+        Self {
+            options: self.options.clone(),
+            working_dir: self.working_dir.clone(),
+            #[cfg(feature = "git-integration")]
+            session_manager: None, // SessionManager doesn't support Clone - create new instances
+        }
+    }
+}
+
 impl LaTeXCompiler {
     pub fn new(working_dir: PathBuf) -> Self {
         Self {

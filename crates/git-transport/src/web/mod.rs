@@ -1,5 +1,6 @@
 use anyhow::Result;
 use crate::types::*;
+use latex_ide_ui::web::hooks::detect_webtransport_support;
 
 #[cfg(target_arch = "wasm32")]
 use {
@@ -22,31 +23,13 @@ impl WebGitTransport {
     }
     
     pub fn with_server_url(server_url: String) -> Self {
-        let webtransport_supported = Self::detect_webtransport_support();
+        let webtransport_supported = detect_webtransport_support();
         tracing::info!("WebGitTransport initialized with WebTransport support: {}", webtransport_supported);
         
         Self {
             server_url,
             webtransport_supported,
         }
-    }
-    
-    #[cfg(target_arch = "wasm32")]
-    fn detect_webtransport_support() -> bool {
-        use js_sys::Reflect;
-        use wasm_bindgen::JsValue;
-        
-        if let Some(window) = web_sys::window() {
-            let js_value = Reflect::get(&window, &JsValue::from_str("WebTransport"));
-            js_value.is_ok() && !js_value.unwrap().is_undefined()
-        } else {
-            false
-        }
-    }
-    
-    #[cfg(not(target_arch = "wasm32"))]
-    fn detect_webtransport_support() -> bool {
-        false
     }
     
     /// Initialize Git repository on server

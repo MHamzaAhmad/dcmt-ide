@@ -17,10 +17,11 @@ wasm-bindgen-futures = { workspace = true, optional = true }
 js-sys = { workspace = true, optional = true }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
-web-sys = { version = "0.3", features = ["Window", "Storage", "Document", "Element", "DomTokenList", "HtmlElement", "EventSource", "MessageEvent", "KeyboardEvent"] }
+web-sys = { version = "0.3", features = ["Window", "Storage", "Document", "Element", "DomTokenList", "HtmlElement", "EventSource", "MessageEvent", "KeyboardEvent", "WebSocket", "BinaryType", "ErrorEvent", "CloseEvent"] }
 wasm-bindgen = { workspace = true }
 wasm-bindgen-futures = { workspace = true }
 js-sys = { workspace = true }
+gloo-timers = { workspace = true }
 tracing = { workspace = true }
 
 [features]

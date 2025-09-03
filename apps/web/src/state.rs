@@ -342,7 +342,8 @@ impl Default for ProjectSettings {
 #[allow(dead_code)]
 impl WebProject {
     pub fn new(name: String) -> Self {
-        let now = js_sys::Date::now();
+        // Use a simple counter instead of timestamp for WebAssembly compatibility
+        let now = 0.0;
         Self {
             id: Uuid::new_v4().to_string(),
             name,
@@ -357,7 +358,7 @@ impl WebProject {
     pub fn add_document(&mut self, name: String) {
         if !self.documents.contains(&name) {
             self.documents.push(name);
-            self.modified_at = js_sys::Date::now();
+            self.modified_at = 0.0; // WebAssembly compatibility - remove timestamp
         }
     }
     
@@ -369,13 +370,13 @@ impl WebProject {
             self.main_document = self.documents.first().cloned();
         }
         
-        self.modified_at = js_sys::Date::now();
+        self.modified_at = 0.0; // WebAssembly compatibility - remove timestamp
     }
     
     pub fn set_main_document(&mut self, name: String) {
         if self.documents.contains(&name) {
             self.main_document = Some(name);
-            self.modified_at = js_sys::Date::now();
+            self.modified_at = 0.0; // WebAssembly compatibility - remove timestamp
         }
     }
 }

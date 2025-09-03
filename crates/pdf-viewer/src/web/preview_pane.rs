@@ -3,6 +3,7 @@ use dioxus_signals::{Signal, Readable, Writable};
 use dioxus_hooks::{use_signal, use_effect};
 use latex_ide_ui::*;
 use latex_ide_ui::button::{ButtonVariant, ButtonSize};
+use latex_ide_ui::web::transport::{use_connection_manager, ConnectionManager, TransportMessage, ConnectionState, TransportType};
 use crate::controls::PDFControls;
 #[cfg(feature = "native-git")]
 use latex_ide_git_manager::{SessionManager, GitRepository, HistoryViewer};
@@ -34,13 +35,6 @@ pub enum CompilationStatus {
     Error,
 }
 
-/// Transport message placeholder - in real implementation this would come from transport crate
-#[derive(Clone, Debug)]
-pub struct CompilationRequest {
-    pub document_id: String,
-    pub content: String,
-    pub engine: String,
-}
 
 #[component]
 pub fn WebPreviewPane(
@@ -55,6 +49,14 @@ pub fn WebPreviewPane(
     let available_versions = use_signal(|| Vec::<String>::new());
     let current_version = use_signal(|| None::<String>);
     
+    // Initialize connection manager
+    let connection_manager = use_connection_manager("localhost:3001".to_string());
+    let connection_manager_clone1 = connection_manager.clone();
+    let connection_manager_clone2 = connection_manager.clone();
+    let connection_manager_clone3 = connection_manager.clone();
+    let connection_manager_clone4 = connection_manager.clone();
+    let connection_manager_clone5 = connection_manager.clone();
+    
     let has_content = !document_content.read().is_empty();
     let current_file_name = current_file
         .and_then(|cf| cf.read().as_ref().and_then(|path| 
@@ -64,6 +66,43 @@ pub fn WebPreviewPane(
     // Clone the file name for use in closures
     let current_file_name_for_closures = current_file_name.clone();
     let current_file_name_for_trigger = current_file_name.clone();
+    
+    // Proactive connection establishment when component mounts
+    use_effect(move || {
+        tracing::info!("📄 PDF viewer component mounted, initializing backend connection");
+        let mut connection_manager = connection_manager_clone5.clone();
+        
+        spawn_local(async move {
+            #[cfg(target_arch = "wasm32")]
+            {
+                tracing::info!("🔄 PDF viewer starting proactive backend connection (1 retry max)");
+                
+                match connection_manager.connect_with_retry(1).await {
+                    Ok(_) => {
+                        tracing::info!("🎉 PDF viewer successfully connected to backend server");
+                        
+                        // Log current connection state for debugging
+                        let state = *connection_manager.connection_state().read();
+                        let transport = *connection_manager.transport_type().read();
+                        tracing::debug!("📊 Final connection status - State: {:?}, Transport: {:?}", state, transport);
+                    }
+                    Err(e) => {
+                        tracing::error!("❌ PDF viewer failed to connect to backend server: {}", e);
+                        
+                        // Log detailed failure info
+                        let state = *connection_manager.connection_state().read();
+                        tracing::debug!("📊 Failed connection status - State: {:?}", state);
+                        tracing::info!("💡 Connection will be retried when LaTeX compilation is requested");
+                    }
+                }
+            }
+            
+            #[cfg(not(target_arch = "wasm32"))]
+            {
+                tracing::debug!("🖥️  PDF viewer on non-WASM platform, skipping proactive connection");
+            }
+        });
+    });
     
     // Load available versions when session manager is ready
     use_effect(move || {
@@ -113,7 +152,7 @@ pub fn WebPreviewPane(
             let content = document_content.read().clone();
             let file_name = current_file_name_for_closures.clone().unwrap_or_else(|| "document".to_string());
             
-            compile_latex(content, file_name, status, pdf, available_versions.clone(), current_version.clone());
+            compile_latex_with_transport(content, file_name, status, pdf, available_versions.clone(), current_version.clone(), &connection_manager_clone1);
         }
     });
     
@@ -129,7 +168,7 @@ pub fn WebPreviewPane(
                 let content = document_content.read().clone();
                 let file_name = current_file_name_for_trigger.clone().unwrap_or_else(|| "document".to_string());
                 
-                compile_latex(content, file_name, status, pdf, available_versions.clone(), current_version.clone());
+                compile_latex_with_transport(content, file_name, status, pdf, available_versions.clone(), current_version.clone(), &connection_manager_clone4);
             }
         });
     }
@@ -163,7 +202,7 @@ pub fn WebPreviewPane(
                                 let pdf = pdf_url.clone();
                                 let file_name = current_file_name_for_closure.clone().unwrap_or_else(|| "document".to_string());
                                 
-                                compile_latex(_content, file_name, status, pdf, available_versions.clone(), current_version.clone());
+                                compile_latex_with_transport(_content, file_name, status, pdf, available_versions.clone(), current_version.clone(), &connection_manager_clone2);
                             },
                             match *compilation_status.read() {
                                 CompilationStatus::Compiling => "⏳ Compiling...",
@@ -240,7 +279,57 @@ pub fn WebPreviewPane(
                         }
                     }
                     
-                    div { class: "flex items-center space-x-2 text-sm text-gray-600 dark:text-gray-400",
+                    div { class: "flex items-center space-x-3 text-sm text-gray-600 dark:text-gray-400",
+                        // Connection status indicator
+                        {
+                            let connection_state_indicator = connection_manager_clone3.connection_state();
+                            let transport_type_indicator = connection_manager_clone3.transport_type();
+                            let current_state = *connection_state_indicator.read();
+                            let current_transport = *transport_type_indicator.read();
+                            
+                            match current_state {
+                                ConnectionState::Connected => {
+                                    let transport_name = match current_transport {
+                                        Some(TransportType::WebTransport) => "WT",
+                                        Some(TransportType::WebSocket) => "WS",
+                                        None => "??"
+                                    };
+                                    rsx! {
+                                        div { class: "flex items-center space-x-1",
+                                            span { class: "w-2 h-2 bg-green-500 rounded-full animate-pulse" }
+                                            span { class: "text-xs text-green-600 dark:text-green-400 font-mono", "{transport_name}" }
+                                        }
+                                    }
+                                },
+                                ConnectionState::ConnectingWebTransport => rsx! {
+                                    div { class: "flex items-center space-x-1",
+                                        span { class: "w-2 h-2 bg-yellow-500 rounded-full animate-pulse" }
+                                        span { class: "text-xs text-yellow-600 dark:text-yellow-400", "Connecting..." }
+                                    }
+                                },
+                                ConnectionState::ConnectingWebSocket => rsx! {
+                                    div { class: "flex items-center space-x-1",
+                                        span { class: "w-2 h-2 bg-yellow-500 rounded-full animate-pulse" }
+                                        span { class: "text-xs text-yellow-600 dark:text-yellow-400", "Fallback..." }
+                                    }
+                                },
+                                ConnectionState::Failed => rsx! {
+                                    div { class: "flex items-center space-x-1",
+                                        span { class: "w-2 h-2 bg-red-500 rounded-full" }
+                                        span { class: "text-xs text-red-600 dark:text-red-400", "Failed" }
+                                    }
+                                },
+                                ConnectionState::Disconnected => rsx! {
+                                    div { class: "flex items-center space-x-1",
+                                        span { class: "w-2 h-2 bg-gray-400 rounded-full" }
+                                        span { class: "text-xs text-gray-500 dark:text-gray-500", "Offline" }
+                                    }
+                                }
+                            }
+                        }
+                        
+                        span { class: "text-gray-300 dark:text-gray-600", "|" }
+                        
                         span { "PDF Preview" }
                         if let Some(version) = current_version.read().as_ref() {
                             span {
@@ -290,19 +379,69 @@ pub fn WebPreviewPane(
                         }
                     }
                     CompilationStatus::Error => {
+                        let connection_state_signal = connection_manager_clone3.connection_state();
+                        let transport_type_signal = connection_manager_clone3.transport_type();
+                        
                         rsx! {
                             div { class: "h-full flex items-center justify-center text-red-500 dark:text-red-400",
                                 div { class: "text-center max-w-md",
                                     div { class: "text-6xl mb-4", "❌" }
-                                    div { class: "text-lg mb-2", "Backend Server Required" }
-                                    div { class: "text-sm mb-4", "LaTeX compilation requires the backend server" }
+                                    
+                                    match *connection_state_signal.read() {
+                                        ConnectionState::Disconnected => rsx! {
+                                            div { class: "text-lg mb-2", "🔌 Backend Server Not Running" }
+                                            div { class: "text-sm mb-4", "LaTeX compilation requires the backend server to be running on localhost:3001" }
+                                            div { class: "text-xs text-yellow-600 dark:text-yellow-400 mb-4", "This usually means you need to start the development server" }
+                                        },
+                                        ConnectionState::ConnectingWebTransport => rsx! {
+                                            div { class: "text-lg mb-2", "🌐 Connecting via WebTransport..." }
+                                            div { class: "text-sm mb-4", "Attempting high-speed WebTransport connection" }
+                                        },
+                                        ConnectionState::ConnectingWebSocket => rsx! {
+                                            div { class: "text-lg mb-2", "🔄 WebSocket Fallback..." }
+                                            div { class: "text-sm mb-4", "WebTransport unavailable, trying WebSocket connection" }
+                                        },
+                                        ConnectionState::Failed => rsx! {
+                                            div { class: "text-lg mb-2", "⚠️ Connection Failed" }
+                                            div { class: "text-sm mb-4", "All connection attempts failed. Check if the backend server is running." }
+                                            div { class: "text-xs text-orange-600 dark:text-orange-400 mb-4", "Network issues or server not responding on localhost:3001" }
+                                        },
+                                        ConnectionState::Connected => {
+                                            let transport_name = match *transport_type_signal.read() {
+                                                Some(TransportType::WebTransport) => "WebTransport",
+                                                Some(TransportType::WebSocket) => "WebSocket",
+                                                None => "Unknown"
+                                            };
+                                            rsx! {
+                                                div { class: "text-lg mb-2", "📝 LaTeX Compilation Error" }
+                                                div { class: "text-sm mb-4", "Connected via {transport_name} but LaTeX compilation failed" }
+                                                div { class: "text-xs text-blue-600 dark:text-blue-400 mb-4", "Check your LaTeX syntax or compiler logs for details" }
+                                            }
+                                        }
+                                    }
+                                    
                                     div { class: "text-xs text-left bg-red-50 dark:bg-red-900 p-3 rounded",
-                                        "To enable PDF compilation:"
-                                        ul { class: "list-disc list-inside mt-2 space-y-1",
-                                            li { "Run: ./scripts/dev.sh web" }
-                                            li { "Or: ./scripts/dev.sh backend" }
-                                            li { "Server provides LaTeX compilation service" }
-                                            li { "Includes file operations and git integration" }
+                                        match *connection_state_signal.read() {
+                                            ConnectionState::Disconnected | ConnectionState::Failed => rsx! {
+                                                div { class: "mb-2", "📋 To start the backend server:" }
+                                                ul { class: "list-disc list-inside mt-2 space-y-1",
+                                                    li { "🚀 Run: ./scripts/dev.sh web" }
+                                                    li { "Or: ./scripts/dev.sh backend" }
+                                                    li { "📦 Provides LaTeX compilation with TinyTeX" }
+                                                    li { "🔧 Includes file operations and git integration" }
+                                                }
+                                                div { class: "mt-3 pt-2 border-t border-red-200 dark:border-red-700 text-center",
+                                                    "💡 The server needs to be running on localhost:3001"
+                                                }
+                                            },
+                                            _ => rsx! {
+                                                div { class: "mb-2", "🔄 Troubleshooting:" }
+                                                ul { class: "list-disc list-inside mt-2 space-y-1",
+                                                    li { "Check your LaTeX document syntax" }
+                                                    li { "Look at browser console for error details" }
+                                                    li { "Ensure required LaTeX packages are available" }
+                                                }
+                                            }
                                         }
                                     }
                                 }
@@ -369,180 +508,157 @@ fn create_pdf_url(_pdf_data: Vec<u8>) -> Option<String> {
     None
 }
 
-#[cfg(target_arch = "wasm32")]
-fn compile_latex(
+/// New compilation function that uses the transport layer
+fn compile_latex_with_transport(
     content: String,
     file_name: String,
     mut status: Signal<CompilationStatus>,
     mut pdf_url: Signal<Option<String>>,
     mut available_versions: Signal<Vec<String>>,
-    mut current_version: Signal<Option<String>>
+    mut current_version: Signal<Option<String>>,
+    connection_manager: &ConnectionManager,
 ) {
-    use serde::{Serialize, Deserialize};
-    
     status.set(CompilationStatus::Compiling);
     
-    spawn_local(async move {
-        tracing::info!("Starting LaTeX compilation for: {}", file_name);
-        
-        #[derive(Serialize, Deserialize, Debug, Clone)]
-        enum LocalTransportMessage {
-            CompilationRequest { document_id: String, content: String, engine: String },
-            CompilationResult { document_id: String, success: bool, pdf_data: Option<Vec<u8>>, log: String },
-        }
-        
-        // Create WebSocket connection for compilation
-        match web_sys::WebSocket::new("ws://localhost:3001/ws") {
-            Ok(ws) => {
-                ws.set_binary_type(web_sys::BinaryType::Arraybuffer);
-                
-                // Wait for connection
-                let connected = std::rc::Rc::new(std::cell::RefCell::new(false));
-                let connected_clone = connected.clone();
-                
-                let onopen = wasm_bindgen::closure::Closure::wrap(Box::new(move || {
-                    *connected_clone.borrow_mut() = true;
-                    tracing::info!("WebSocket connected for compilation");
-                }) as Box<dyn FnMut()>);
-                ws.set_onopen(Some(onopen.as_ref().unchecked_ref()));
-                
-                // Set up response handler
-                let mut status_clone = status.clone();
-                let mut pdf_clone = pdf_url.clone();
-                let file_name_for_message = file_name.clone(); // Clone for the message handler
-                let onmessage = wasm_bindgen::closure::Closure::wrap(Box::new(move |e: web_sys::MessageEvent| {
-                    if let Ok(array_buffer) = e.data().dyn_into::<js_sys::ArrayBuffer>() {
-                        let uint8_array = js_sys::Uint8Array::new(&array_buffer);
-                        let data = uint8_array.to_vec();
-                        
-                        match serde_json::from_slice::<LocalTransportMessage>(&data) {
-                            Ok(LocalTransportMessage::CompilationResult { success, pdf_data, log, .. }) => {
-                                if success {
-                                    if let Some(pdf_bytes) = pdf_data {
-                                        // Create PDF URL
-                                        if let Some(url) = create_pdf_url(pdf_bytes) {
-                                            pdf_clone.set(Some(url));
-                                            
-                                            // Auto-commit with versioning after successful compilation
-                                            tracing::info!("PDF compiled successfully, creating version commit");
-                                            
-                                            // Clone variables for the closure
-                                            let file_name = file_name_for_message.clone(); // Clone file_name for the closure
-                                            let mut versions = available_versions.clone();
-                                            let mut current_ver = current_version.clone();
-                                            
-                                            spawn_local(async move {
-                                                #[cfg(target_arch = "wasm32")]
-                                                {
-                                                    use latex_ide_git_transport::web::WebGitTransport;
-                                                    
-                                                    let git_transport = WebGitTransport::new();
-                                                    match git_transport.commit_pdf_version(
-                                                        format!("output.pdf"),
-                                                        format!("Generated from {}", file_name)
-                                                    ).await {
-                                                        Ok(commit) => {
-                                                            tracing::info!("Successfully created PDF version commit: {} - {}", 
-                                                                commit.short_id, commit.message);
-                                                            
-                                                            // Refresh the available versions list
-                                                            match git_transport.get_all_versions().await {
-                                                                Ok(version_list) => {
-                                                                    versions.set(version_list.clone());
-                                                                    // Set current version to the latest
-                                                                    if let Some(latest) = version_list.last() {
-                                                                        current_ver.set(Some(latest.clone()));
-                                                                    }
-                                                                }
-                                                                Err(e) => {
-                                                                    tracing::error!("Failed to refresh version list: {}", e);
-                                                                }
-                                                            }
-                                                        }
-                                                        Err(e) => {
-                                                            tracing::error!("Failed to create PDF version commit: {}", e);
-                                                        }
-                                                    }
-                                                }
-                                                
-                                                #[cfg(not(target_arch = "wasm32"))]
-                                                {
-                                                    tracing::info!("PDF version commit not implemented for non-wasm32 target");
-                                                }
-                                            });
-                                        }
-                                    }
-                                    status_clone.set(CompilationStatus::Success);
-                                    tracing::info!("LaTeX compilation successful");
-                                } else {
-                                    status_clone.set(CompilationStatus::Error);
-                                    tracing::error!("LaTeX compilation failed: {}", log);
-                                }
-                            }
-                            _ => {}
-                        }
-                    }
-                }) as Box<dyn FnMut(web_sys::MessageEvent)>);
-                ws.set_onmessage(Some(onmessage.as_ref().unchecked_ref()));
-                
-                // Wait for connection
-                let mut attempts = 0;
-                while attempts < 50 && !*connected.borrow() {
-                    gloo_timers::future::sleep(std::time::Duration::from_millis(100)).await;
-                    attempts += 1;
-                }
-                
-                if *connected.borrow() {
-                    // Send compilation request
-                    let request = LocalTransportMessage::CompilationRequest {
-                        document_id: file_name.clone(),
-                        content: content.clone(),
-                        engine: "pdflatex".to_string(),
-                    };
+    #[cfg(target_arch = "wasm32")]
+    {
+        let mut connection_manager = connection_manager.clone(); // Clone for async
+        spawn_local(async move {
+            tracing::info!("Starting LaTeX compilation via transport layer for: {}", file_name);
+            
+            // Check connection state first
+            let current_state = *connection_manager.connection_state().read();
+            tracing::debug!("📊 Current connection state before compilation: {:?}", current_state);
+            
+            match current_state {
+                ConnectionState::Disconnected => {
+                    tracing::info!("🔌 Server disconnected, attempting to connect with retry (2 attempts)...");
                     
-                    match serde_json::to_vec(&request) {
-                        Ok(data) => {
-                            let array = js_sys::Uint8Array::from(&data[..]);
-                            if let Err(e) = ws.send_with_array_buffer(&array.buffer()) {
-                                tracing::error!("Failed to send compilation request: {:?}", e);
-                                status.set(CompilationStatus::Error);
-                            } else {
-                                tracing::info!("Compilation request sent successfully");
-                            }
+                    match connection_manager.connect_with_retry(2).await {
+                        Ok(_) => {
+                            let final_state = *connection_manager.connection_state().read();
+                            let transport = *connection_manager.transport_type().read();
+                            tracing::info!("🎉 Successfully connected for compilation - State: {:?}, Transport: {:?}", 
+                                         final_state, transport);
                         }
                         Err(e) => {
-                            tracing::error!("Failed to serialize compilation request: {}", e);
+                            tracing::error!("❌ Failed to connect to server for compilation: {}", e);
+                            
+                            // Log detailed state for debugging
+                            let failed_state = *connection_manager.connection_state().read();
+                            tracing::debug!("📊 Failed connection state: {:?}", failed_state);
+                            
                             status.set(CompilationStatus::Error);
+                            return;
                         }
                     }
-                } else {
-                    tracing::error!("Failed to connect to compilation server");
+                }
+                ConnectionState::Failed => {
+                    tracing::error!("Connection is in failed state");
+                    status.set(CompilationStatus::Error);
+                    return;
+                }
+                _ => {}
+            }
+            
+            // Setup message handler for responses
+            let mut status_clone = status.clone();
+            let mut pdf_clone = pdf_url.clone();
+            let file_name_for_handler = file_name.clone();
+            let mut versions_clone = available_versions.clone();
+            let mut current_ver_clone = current_version.clone();
+            
+            let _ = connection_manager.setup_message_handler(move |message| {
+                if let TransportMessage::CompilationResult { success, pdf_data, log, .. } = message {
+                    if success {
+                        if let Some(pdf_bytes) = pdf_data {
+                            // Create PDF URL
+                            if let Some(url) = create_pdf_url(pdf_bytes) {
+                                pdf_clone.set(Some(url));
+                                
+                                // Auto-commit with versioning after successful compilation
+                                tracing::info!("PDF compiled successfully, creating version commit");
+                                
+                                // Clone variables for the closure
+                                let file_name = file_name_for_handler.clone();
+                                let mut versions = versions_clone.clone();
+                                let mut current_ver = current_ver_clone.clone();
+                                
+                                spawn_local(async move {
+                                    #[cfg(target_arch = "wasm32")]
+                                    {
+                                        use latex_ide_git_transport::web::WebGitTransport;
+                                        
+                                        let git_transport = WebGitTransport::new();
+                                        match git_transport.commit_pdf_version(
+                                            format!("output.pdf"),
+                                            format!("Generated from {}", file_name)
+                                        ).await {
+                                            Ok(commit) => {
+                                                tracing::info!("Successfully created PDF version commit: {} - {}", 
+                                                    commit.short_id, commit.message);
+                                                
+                                                // Refresh the available versions list
+                                                match git_transport.get_all_versions().await {
+                                                    Ok(version_list) => {
+                                                        versions.set(version_list.clone());
+                                                        // Set current version to the latest
+                                                        if let Some(latest) = version_list.last() {
+                                                            current_ver.set(Some(latest.clone()));
+                                                        }
+                                                    }
+                                                    Err(e) => {
+                                                        tracing::error!("Failed to refresh version list: {}", e);
+                                                    }
+                                                }
+                                            }
+                                            Err(e) => {
+                                                tracing::error!("Failed to create PDF version commit: {}", e);
+                                            }
+                                        }
+                                    }
+                                    
+                                    #[cfg(not(target_arch = "wasm32"))]
+                                    {
+                                        tracing::info!("PDF version commit not implemented for non-wasm32 target");
+                                    }
+                                });
+                            }
+                        }
+                        status_clone.set(CompilationStatus::Success);
+                        tracing::info!("LaTeX compilation successful");
+                    } else {
+                        status_clone.set(CompilationStatus::Error);
+                        tracing::error!("LaTeX compilation failed: {}", log);
+                    }
+                }
+            });
+            
+            // Send compilation request
+            let request = TransportMessage::CompilationRequest {
+                document_id: file_name.clone(),
+                content: content.clone(),
+                engine: "pdflatex".to_string(),
+            };
+            
+            match connection_manager.send_message(request).await {
+                Ok(_) => {
+                    tracing::info!("Compilation request sent successfully via transport layer");
+                }
+                Err(e) => {
+                    tracing::error!("Failed to send compilation request: {}", e);
                     status.set(CompilationStatus::Error);
                 }
-                
-                // Prevent closures from being dropped
-                onopen.forget();
-                onmessage.forget();
             }
-            Err(e) => {
-                tracing::error!("Failed to create WebSocket for compilation: {:?}", e);
-                status.set(CompilationStatus::Error);
-            }
-        }
-    });
-}
-
-#[cfg(not(target_arch = "wasm32"))]
-fn compile_latex(
-    _content: String,
-    _file_name: String,
-    mut status: Signal<CompilationStatus>,
-    _pdf_url: Signal<Option<String>>,
-    _available_versions: Signal<Vec<String>>,
-    _current_version: Signal<Option<String>>
-) {
-    // Desktop implementation would use local LaTeX compiler
-    status.set(CompilationStatus::Error);
+        });
+    }
+    
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        // Desktop implementation would use local LaTeX compiler
+        tracing::info!("Desktop compilation not implemented yet");
+        status.set(CompilationStatus::Error);
+    }
 }
 
 

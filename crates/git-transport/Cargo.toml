@@ -17,6 +17,7 @@ chrono = { workspace = true }
 
 # Git manager for direct operations
 latex-ide-git-manager = { path = "../git-manager", optional = true }
+latex-ide-ui = { path = "../ui" }
 
 # Web-specific dependencies
 [target.'cfg(target_arch = "wasm32")'.dependencies]

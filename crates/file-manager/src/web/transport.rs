@@ -4,10 +4,10 @@ use serde::{Serialize, Deserialize};
 use {
     wasm_bindgen::prelude::*,
     wasm_bindgen::closure::Closure,
-    wasm_bindgen_futures::JsFuture,
     web_sys::{WebSocket, MessageEvent, BinaryType},
-    js_sys::Uint8Array,
     gloo_timers,
+    std::rc::Rc,
+    std::cell::RefCell,
 };
 
 /// Transport message for file operations only
@@ -37,6 +37,12 @@ pub struct FileInfo {
     pub modified: Option<u64>,
 }
 
+/// Global singleton client instance - using thread_local for WASM compatibility
+#[cfg(target_arch = "wasm32")]
+thread_local! {
+    static GLOBAL_CLIENT: std::cell::RefCell<Option<Rc<RefCell<FileTransportClient>>>> = std::cell::RefCell::new(None);
+}
+
 /// WebSocket client for file operations
 #[cfg(target_arch = "wasm32")]
 pub struct FileTransportClient {
@@ -53,13 +59,24 @@ impl FileTransportClient {
         }
     }
     
+    /// Get the global client instance, creating it if necessary
+    pub fn global() -> Rc<RefCell<FileTransportClient>> {
+        GLOBAL_CLIENT.with(|client| {
+            let mut client_ref = client.borrow_mut();
+            if client_ref.is_none() {
+                *client_ref = Some(Rc::new(RefCell::new(FileTransportClient::new())));
+            }
+            client_ref.as_ref().unwrap().clone()
+        })
+    }
+    
     pub async fn connect(&mut self, _url: &str) -> Result<(), String> {
         self.connect_with_retry().await
     }
     
     async fn connect_with_retry(&mut self) -> Result<(), String> {
         let ws_url = "ws://localhost:3001/ws";
-        let max_retries = 3;
+        let max_retries = 1;
         
         for retry_count in 0..max_retries {
             if retry_count > 0 {
@@ -210,11 +227,16 @@ impl Default for FileTransportClient {
 /// Helper function to download a file using WebSocket transport
 #[cfg(target_arch = "wasm32")]
 pub async fn download_file(file_path: &str) -> Result<Vec<u8>, String> {
-    let mut client = FileTransportClient::new();
-    client.connect("ws://localhost:3001/ws").await?;
+    let client_rc = FileTransportClient::global();
+    
+    // Ensure connection
+    if !client_rc.borrow().is_connected() {
+        let mut client_ref = client_rc.borrow_mut();
+        client_ref.connect("ws://localhost:3001/ws").await?;
+    }
     
     let operation = FileOp::Download { name: file_path.to_string() };
-    let response = client.send_operation(operation).await?;
+    let response = client_rc.borrow().send_operation(operation).await?;
     
     match response {
         TransportMessage::FileOperation { operation: FileOp::Upload { name, content } } => {
@@ -231,11 +253,16 @@ pub async fn download_file(file_path: &str) -> Result<Vec<u8>, String> {
 /// Upload file function using WebSocket transport
 #[cfg(target_arch = "wasm32")]
 pub async fn upload_file(name: String, content: Vec<u8>) -> Result<(), String> {
-    let mut client = FileTransportClient::new();
-    client.connect("ws://localhost:3001/ws").await?;
+    let client_rc = FileTransportClient::global();
+    
+    // Ensure connection
+    if !client_rc.borrow().is_connected() {
+        let mut client_ref = client_rc.borrow_mut();
+        client_ref.connect("ws://localhost:3001/ws").await?;
+    }
     
     let operation = FileOp::Upload { name: name.clone(), content };
-    let response = client.send_operation(operation).await?;
+    let response = client_rc.borrow().send_operation(operation).await?;
     
     match response {
         TransportMessage::FileOperation { operation: FileOp::Upload { name: response_name, .. } } => {
@@ -254,11 +281,16 @@ pub async fn upload_file(name: String, content: Vec<u8>) -> Result<(), String> {
 /// Delete file function using WebSocket transport
 #[cfg(target_arch = "wasm32")]
 pub async fn delete_file(name: String) -> Result<(), String> {
-    let mut client = FileTransportClient::new();
-    client.connect("ws://localhost:3001/ws").await?;
+    let client_rc = FileTransportClient::global();
+    
+    // Ensure connection
+    if !client_rc.borrow().is_connected() {
+        let mut client_ref = client_rc.borrow_mut();
+        client_ref.connect("ws://localhost:3001/ws").await?;
+    }
     
     let operation = FileOp::Delete { name: name.clone() };
-    let response = client.send_operation(operation).await?;
+    let response = client_rc.borrow().send_operation(operation).await?;
     
     match response {
         TransportMessage::FileOperation { operation: FileOp::Delete { name: response_name } } => {
@@ -277,11 +309,16 @@ pub async fn delete_file(name: String) -> Result<(), String> {
 /// List files in workspace using WebSocket transport
 #[cfg(target_arch = "wasm32")]
 pub async fn list_files() -> Result<Vec<FileInfo>, String> {
-    let mut client = FileTransportClient::new();
-    client.connect("ws://localhost:3001/ws").await?;
+    let client_rc = FileTransportClient::global();
+    
+    // Ensure connection
+    if !client_rc.borrow().is_connected() {
+        let mut client_ref = client_rc.borrow_mut();
+        client_ref.connect("ws://localhost:3001/ws").await?;
+    }
     
     let operation = FileOp::List;
-    let response = client.send_operation(operation).await?;
+    let response = client_rc.borrow().send_operation(operation).await?;
     
     match response {
         TransportMessage::FileOperation { operation: FileOp::Download { name } } => {

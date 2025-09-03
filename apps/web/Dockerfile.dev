@@ -1,19 +1,28 @@
-FROM rust:1.89
+FROM texlive/texlive:latest
 
-# Install system dependencies for unified development environment
+# Install system dependencies
 RUN apt-get update && apt-get install -y \
     curl \
+    sqlite3 \
+    supervisor \
+    build-essential \
+    pkg-config \
+    libssl-dev \
+    ca-certificates \
     nodejs \
     npm \
-    sqlite3 \
-    texlive-latex-recommended \
-    texlive-latex-extra \
-    texlive-fonts-recommended \
-    supervisor \
     && rm -rf /var/lib/apt/lists/*
 
+# Install Rust
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y && \
+    . ~/.cargo/env && \
+    rustup default stable
+
+# Add Rust to PATH
+ENV PATH="/root/.cargo/bin:$PATH"
+
 # Install wasm-pack for WASM compilation
-RUN curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
+RUN curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | bash
 
 # Add WebAssembly target
 RUN rustup target add wasm32-unknown-unknown
@@ -27,14 +36,14 @@ WORKDIR /app
 COPY Cargo.toml Cargo.lock ./
 COPY crates/ ./crates/
 COPY apps/web/ ./apps/web/
-
 # Create web-only workspace (exclude desktop app for Docker build)
 RUN sed '/apps\/desktop/d' Cargo.toml > Cargo.web.toml && mv Cargo.web.toml Cargo.toml
 
 # Build backend services for development (excluding git functionality for compatibility)
 RUN cargo build \
     --bin sse-handler \
-    --bin model-manager
+    --bin model-manager \
+    --bin latex-compiler
 
 # Build webtransport-server without native git features 
 RUN cargo build \
@@ -47,43 +56,27 @@ RUN wasm-pack build --target web --out-dir pkg --dev --scope latex-ide
 
 # Setup directories for unified services
 WORKDIR /app
-RUN mkdir -p /app/data /app/logs /app/config
+RUN mkdir -p /app/data /app/logs /app/config /app/data/tex /app/workspace/sample
 
 # Copy web assets to serve location
-RUN mkdir -p /app/web
-RUN cp -r /app/apps/web/pkg /app/web/
-RUN cp /app/apps/web/index.html /app/web/
-RUN cp /app/apps/web/style.css /app/web/
-RUN cp /app/apps/web/manifest.json /app/web/
-RUN mkdir -p /app/web/assets
-RUN cp -r /app/crates/editor/assets/* /app/web/assets/
+RUN mkdir -p /app/web \
+    && cp -r /app/apps/web/pkg /app/web/ \
+    && cp /app/apps/web/index.html /app/web/ \
+    && cp /app/apps/web/style.css /app/web/ \
+    && cp /app/apps/web/manifest.json /app/web/ \
+    && mkdir -p /app/web/assets \
+    && cp -r /app/crates/editor/assets/* /app/web/assets/
 
 # Create SQLite database
 RUN sqlite3 /app/data/latex_ide.db "CREATE TABLE IF NOT EXISTS documents (id INTEGER PRIMARY KEY, name TEXT, content TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP);"
 
 # Create supervisor configuration for all services
 RUN mkdir -p /etc/supervisor/conf.d
-
-# Copy service startup configuration
 COPY apps/web/supervisord.conf /etc/supervisor/conf.d/latex-ide.conf
 
-# Create startup script
-RUN echo '#!/bin/bash\n\
-echo "Starting LaTeX IDE unified development server..."\n\
-echo "Frontend: http://localhost:8080"\n\
-echo "WebTransport Server: localhost:3001"\n\
-echo "SSE Handler: localhost:3002"\n\
-echo "Model Manager: localhost:3003"\n\
-echo "Database: SQLite at /app/data/latex_ide.db"\n\
-exec supervisord -c /etc/supervisor/supervisord.conf -n\n\
-' > /app/start-dev.sh && chmod +x /app/start-dev.sh
 
 # Expose all service ports
-EXPOSE 8080 3001 3002 3003
-
-# Health check for the web frontend
-HEALTHCHECK --interval=30s --timeout=10s --start-period=10s --retries=3 \
-    CMD curl -f http://localhost:8080/ || exit 1
+EXPOSE 8080 3001 3002 3003 3004
 
 # Start all services with supervisor
-CMD ["/app/start-dev.sh"]
+CMD ["/usr/bin/supervisord", "-c", "/etc/supervisor/conf.d/latex-ide.conf"]

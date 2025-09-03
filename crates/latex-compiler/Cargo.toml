@@ -3,6 +3,11 @@ name = "dcmt-ide-latex-compiler"
 version.workspace = true
 edition.workspace = true
 
+# Binary configuration for the LaTeX compiler service
+[[bin]]
+name = "latex-compiler"
+path = "src/main.rs"
+
 [dependencies]
 tokio = { workspace = true }
 async-trait = { workspace = true }
@@ -13,6 +18,11 @@ serde_json = { workspace = true }
 regex = { workspace = true }
 tracing = { workspace = true }
 tempfile = "3.21"
+axum = { version = "0.7", features = ["ws"] }
+tower = "0.4" 
+tower-http = { version = "0.5", features = ["cors"] }
+clap = { version = "4.0", features = ["derive"] }
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
 # Optional Git integration
 latex-ide-git-manager = { path = "../git-manager", optional = true }

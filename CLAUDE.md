@@ -435,3 +435,4 @@ When working on this codebase:
 7. **Never duplicate logic** - If web and desktop need the same feature, create it once in a shared crate
 
 **Remember: The apps should be so minimal that they're essentially just different compilation targets for the same shared codebase.**
+- always compile wasm to check if every thing works or not

@@ -24,6 +24,7 @@ latex-ide-yrs-collab = { path = "../yrs-collab" }
 
 # Git integration - temporarily disabled for Docker compatibility  
 latex-ide-git-manager = { path = "../git-manager", optional = true }
+git2 = { version = "0.19", optional = true }
 
 # Serialization
 serde = { workspace = true }
@@ -60,5 +61,5 @@ rustls-pemfile = "2.0"
 rustls = "0.23"
 
 [features]
-default = []
-native-git = ["latex-ide-git-manager"]
+default = ["native-git"]
+native-git = ["latex-ide-git-manager", "git2"]

@@ -193,7 +193,7 @@ impl DesktopGitTransport {
             if let Some(ref history_viewer) = self.history_viewer {
                 let commits = history_viewer.get_commit_history(
                     branch_name.as_deref(), 
-                    limit.unwrap_or(50)
+                    Some(limit.unwrap_or(50))
                 )?;
                 let commit_infos: Vec<GitCommitInfo> = commits.into_iter()
                     .map(convert_commit_info)
@@ -216,7 +216,7 @@ impl DesktopGitTransport {
         #[cfg(feature = "native-git")]
         {
             if let Some(ref history_viewer) = self.history_viewer {
-                let commits = history_viewer.get_file_history(&file_path, limit.unwrap_or(20))?;
+                let commits = history_viewer.get_file_history(&file_path, Some(limit.unwrap_or(20)))?;
                 let commit_infos: Vec<GitCommitInfo> = commits.into_iter()
                     .map(convert_commit_info)
                     .collect();
@@ -238,7 +238,7 @@ impl DesktopGitTransport {
         #[cfg(feature = "native-git")]
         {
             if let Some(ref conflict_resolver) = self.conflict_resolver {
-                let conflicts = conflict_resolver.get_current_conflicts()?;
+                let conflicts = conflict_resolver.get_conflicts()?;
                 let conflict_infos: Vec<GitConflictInfo> = conflicts.into_iter()
                     .map(convert_conflict_info)
                     .collect();

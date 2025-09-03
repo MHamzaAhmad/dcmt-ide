@@ -36,6 +36,7 @@ WORKDIR /app
 COPY Cargo.toml Cargo.lock ./
 COPY crates/ ./crates/
 COPY apps/web/ ./apps/web/
+COPY sample-workspace/ ./workspace/sample/
 # Create web-only workspace (exclude desktop app for Docker build)
 RUN sed '/apps\/desktop/d' Cargo.toml > Cargo.web.toml && mv Cargo.web.toml Cargo.toml
 
@@ -45,10 +46,10 @@ RUN cargo build \
     --bin model-manager \
     --bin latex-compiler
 
-# Build webtransport-server without native git features 
+# Build webtransport-server with native git features enabled
 RUN cargo build \
     --bin webtransport-server \
-    --no-default-features
+    --features native-git
 
 # Build WASM module for development
 WORKDIR /app/apps/web

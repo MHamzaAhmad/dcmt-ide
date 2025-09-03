@@ -77,6 +77,7 @@ pub struct ConnectionManager {
     #[cfg(target_arch = "wasm32")]
     websocket: Rc<RefCell<Option<WebSocket>>>,
     /// Prevent concurrent connection attempts
+    #[cfg(target_arch = "wasm32")]
     connecting: Rc<RefCell<bool>>,
 }
 
@@ -111,6 +112,7 @@ impl ConnectionManager {
             transport_type,
             #[cfg(target_arch = "wasm32")]
             websocket: Rc::new(RefCell::new(None)),
+            #[cfg(target_arch = "wasm32")]
             connecting: Rc::new(RefCell::new(false)),
         };
         

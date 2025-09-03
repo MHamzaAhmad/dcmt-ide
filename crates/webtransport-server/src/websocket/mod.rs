@@ -32,13 +32,13 @@ pub struct FileInfo {
 pub async fn handle_websocket(socket: WebSocket) {
     let (mut sender, mut receiver) = socket.split();
     
-    info!("WebSocket connection established");
+    info!("🔌 WebSocket connection established for transport layer");
     
     while let Some(msg) = receiver.next().await {
         if let Ok(Message::Binary(data)) = msg {
             match serde_json::from_slice::<TransportMessage>(&data) {
                 Ok(transport_msg) => {
-                    info!("Received transport message: {:?}", transport_msg);
+                    info!("📨 Received transport message: {:?}", transport_msg);
                     
                     let response = match transport_msg {
                         TransportMessage::FileOperation { operation } => {

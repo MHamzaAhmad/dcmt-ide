@@ -31,8 +31,15 @@ pub fn main() {
     // Set up panic hook for better error messages
     console_error_panic_hook::set_once();
     
-    // Tracing is initialized by Dioxus
-    tracing::info!("Starting LaTeX IDE Web application");
+    // Initialize tracing for WASM with console output
+    tracing_wasm::set_as_global_default_with_config(
+        tracing_wasm::WASMLayerConfigBuilder::new()
+            .set_max_level(tracing::Level::DEBUG)
+            .set_console_config(tracing_wasm::ConsoleConfig::ReportWithConsoleColor)
+            .build()
+    );
+    
+    tracing::info!("🚀 Starting LaTeX IDE Web application with tracing initialized");
     
     // Launch Dioxus web app 
     #[cfg(target_arch = "wasm32")]
@@ -79,41 +86,51 @@ fn App() -> Element {
         }
     });
 
-    // Initialize session manager via transport layer
+    // Initialize Git integration gracefully - handles existing repositories
     use_effect(move || {
-        let mut session_manager = session_manager.clone();
-        
-        #[cfg(target_arch = "wasm32")]
-        wasm_bindgen_futures::spawn_local(async move {
-            // Try to start a git session via git transport
-            let mut git_client = WebGitClient::new();
-            
-            match git_client.start_session().await {
-                Ok(branch_name) => {
-                    session_manager.set(Some(branch_name.clone()));
-                    tracing::info!("Git session started: {}", branch_name);
-                }
-                Err(e) => {
-                    tracing::warn!("Failed to start git session: {}", e);
-                }
-            }
-        });
-    });
-    
-    // Initialize Git integration
-    use_effect(move || {
+        tracing::info!("🚀 Starting Git initialization effect");
         let mut git_client = git_client.clone();
         let mut git_status = git_status.clone();
+        let mut session_manager = session_manager.clone();
         
         wasm_bindgen_futures::spawn_local(async move {
+            tracing::info!("📡 Spawned Git initialization async task");
+            
+            // First try to initialize the Git repository (or connect to existing one)
             let mut git_transport = git_client.write();
-            match git_transport.init_repository(".".to_string()).await {
+            tracing::info!("🔧 Acquired Git transport lock, attempting repository initialization");
+            
+            // Try to initialize - this gracefully handles both new and existing repos
+            let init_result = git_transport.init_repository(".".to_string()).await;
+            
+            match init_result {
                 Ok(status) => {
                     git_status.set(Some(status));
-                    tracing::info!("Git integration initialized successfully");
+                    tracing::info!("Git repository ready (initialized or existing)");
                 }
                 Err(e) => {
-                    tracing::warn!("Failed to initialize Git integration: {}", e);
+                    tracing::warn!("Git repository initialization reported error: {}", e);
+                    // Continue anyway - repository might exist but init reported an error
+                }
+            }
+            
+            // Release the write lock before starting session
+            drop(git_transport);
+            
+            // Try to start a Git session regardless of init result
+            // This handles both new repos (after init) and existing repos
+            tracing::info!("🌿 Attempting to start Git session");
+            let git_transport = git_client.write();
+            
+            match git_transport.start_session().await {
+                Ok(branch_name) => {
+                    session_manager.set(Some(branch_name.clone()));
+                    tracing::info!("Git session started on branch: {}", branch_name);
+                }
+                Err(e) => {
+                    tracing::warn!("Failed to start Git session: {}", e);
+                    // This is acceptable - the app can work without session management
+                    // Common reasons: no git repo, no write permissions, backend unavailable
                 }
             }
         });

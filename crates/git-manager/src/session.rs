@@ -342,45 +342,27 @@ Thumbs.db
     }
 
     fn get_next_version(&self) -> Result<String> {
-        let version_file = self.get_version_file_path();
+        // Check existing tags to find the highest version number
+        let repo = self.git_repo.get_repository()?;
+        let mut highest_version = 0;
         
-        if version_file.exists() {
-            let content = match fs::read_to_string(&version_file) {
-                Ok(content) => content,
-                Err(e) => {
-                    warn!("Failed to read version file, using default version: {}", e);
-                    return Ok("v1.0.1".to_string());
-                }
-            };
-            
-            let current = content.trim();
-            
-            // Parse version (assumes format like "v1.0.123") 
-            if let Ok(regex) = regex::Regex::new(r"^v(\d+)\.(\d+)\.(\d+)$") {
-                if let Some(captures) = regex.captures(current) {
-                    let major: u32 = captures[1].parse().unwrap_or(1);
-                    let minor: u32 = captures[2].parse().unwrap_or(0);
-                    let patch: u32 = captures[3].parse().unwrap_or(0);
-                    
-                    // Handle potential overflow
-                    if patch == u32::MAX {
-                        warn!("Patch version at maximum, incrementing minor version");
-                        Ok(format!("v{}.{}.{}", major, minor + 1, 0))
-                    } else {
-                        Ok(format!("v{}.{}.{}", major, minor, patch + 1))
+        // Iterate through all tags to find existing version numbers
+        repo.tag_foreach(|_oid, name| {
+            if let Ok(tag_name) = std::str::from_utf8(name) {
+                if let Some(version_str) = tag_name.strip_prefix("refs/tags/v") {
+                    if let Ok(version_num) = version_str.parse::<u32>() {
+                        if version_num > highest_version {
+                            highest_version = version_num;
+                        }
                     }
-                } else {
-                    warn!("Invalid version format in file: {}, using default", current);
-                    Ok("v1.0.1".to_string())
                 }
-            } else {
-                warn!("Failed to compile version regex, using default");
-                Ok("v1.0.1".to_string())
             }
-        } else {
-            // First version
-            Ok("v1.0.1".to_string())
-        }
+            true // Continue iteration
+        })?;
+        
+        // Return next version number
+        let next_version = highest_version + 1;
+        Ok(format!("v{}", next_version))
     }
 
     fn increment_version_file(&self, version: &str) -> Result<()> {
@@ -395,16 +377,28 @@ Thumbs.db
         let signature = Signature::now("LaTeX IDE", "latex-ide@localhost")?;
         let tag_message = format!("PDF version {}", version);
         
-        repo.tag(
+        // Convert commit to object and create tag
+        let commit_object = commit.into_object();
+        
+        // Try to create the tag, if it exists skip it (since we already found the next available version)
+        match repo.tag(
             version,
-            &commit.into_object(),
+            &commit_object,
             &signature,
             &tag_message,
             false,
-        )?;
-
-        info!("Created version tag: {} for commit: {}", version, commit_id);
-        Ok(())
+        ) {
+            Ok(_) => {
+                info!("Created version tag: {} for commit: {}", version, commit_id);
+                Ok(())
+            },
+            Err(e) if e.code() == git2::ErrorCode::Exists => {
+                // Tag already exists, this shouldn't happen with our new logic, but handle gracefully
+                warn!("Tag {} already exists, skipping tag creation", version);
+                Ok(())
+            },
+            Err(e) => Err(e.into())
+        }
     }
 
     pub fn get_current_version(&self) -> Result<Option<String>> {

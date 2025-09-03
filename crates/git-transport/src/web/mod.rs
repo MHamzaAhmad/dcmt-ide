@@ -192,21 +192,12 @@ impl WebGitTransport {
                 commits_behind: 0,
             })),
             GitOp::StartSession => {
-                tracing::info!("WebTransport: Starting git session");
-                Ok(GitResponseData::SessionBranch("session-branch".to_string()))
+                tracing::info!("WebTransport: Attempting StartSession, will fallback to WebSocket");
+                Err(anyhow::anyhow!("StartSession requires WebSocket backend"))
             },
             GitOp::InitRepository { .. } => {
-                tracing::info!("WebTransport: Initializing repository");
-                Ok(GitResponseData::Status(GitStatusResponse {
-                    current_branch: "main".to_string(),
-                    session_branch: None,
-                    has_changes: false,
-                    staged_files: vec![],
-                    modified_files: vec![],
-                    untracked_files: vec![],
-                    commits_ahead: 0,
-                    commits_behind: 0,
-                }))
+                tracing::info!("WebTransport: Attempting InitRepository, will fallback to WebSocket");
+                Err(anyhow::anyhow!("InitRepository requires WebSocket backend"))
             },
             GitOp::GetCommitHistory { .. } => {
                 Ok(GitResponseData::CommitHistory(vec![]))

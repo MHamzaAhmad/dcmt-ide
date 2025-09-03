@@ -1,5 +1,8 @@
 use crate::*;
 
+#[cfg(target_arch = "wasm32")]
+use wasm_bindgen::JsCast;
+
 #[derive(Clone, PartialEq)]
 pub struct DropdownItem {
     pub id: String,
@@ -50,6 +53,9 @@ pub fn Dropdown(
     let size = size.unwrap_or(DropdownSize::Medium);
     let variant = variant.unwrap_or(DropdownVariant::Default);
     
+    // Close dropdown when clicking outside - using a simpler approach to avoid closure issues
+    // We'll rely on event propagation stopping within the dropdown component instead
+    
     let selected_item = items.iter()
         .find(|item| Some(&item.id) == selected.as_ref())
         .cloned();
@@ -70,6 +76,14 @@ pub fn Dropdown(
     rsx! {
         div {
             class: "{class_str}",
+            tabindex: "0", // Make focusable
+            onblur: move |_| {
+                // Close dropdown when focus is lost
+                is_open.set(false);
+            },
+            onclick: move |evt| {
+                evt.stop_propagation();
+            },
             
             // Trigger button
             button {

@@ -56,6 +56,7 @@ pub fn WebPreviewPane(
     let connection_manager_clone3 = connection_manager.clone();
     let connection_manager_clone4 = connection_manager.clone();
     let connection_manager_clone5 = connection_manager.clone();
+    let connection_manager_clone6 = connection_manager.clone();
     
     let has_content = !document_content.read().is_empty();
     let current_file_name = current_file
@@ -66,6 +67,8 @@ pub fn WebPreviewPane(
     // Clone the file name for use in closures
     let current_file_name_for_closures = current_file_name.clone();
     let current_file_name_for_trigger = current_file_name.clone();
+    let current_file_name_for_compile = current_file_name.clone();
+    let current_file_name_for_dropdown = current_file_name.clone();
     
     // Proactive connection establishment when component mounts
     use_effect(move || {
@@ -104,11 +107,14 @@ pub fn WebPreviewPane(
         });
     });
     
-    // Load available versions when session manager is ready
+    // Load available versions when session is established
     use_effect(move || {
-        if session_manager.is_some() {
-            let mut versions = available_versions.clone();
-            let mut current_ver = current_version.clone();
+        if let Some(session_signal) = session_manager.as_ref() {
+            if let Some(session_name) = session_signal.read().as_ref() {
+                let session_name = session_name.clone();
+                tracing::info!("Loading versions for session: {}", session_name);
+                let mut versions = available_versions.clone();
+                let mut current_ver = current_version.clone();
             
             spawn_local(async move {
                 #[cfg(target_arch = "wasm32")]
@@ -119,7 +125,7 @@ pub fn WebPreviewPane(
                     match git_transport.get_all_versions().await {
                         Ok(version_list) => {
                             versions.set(version_list.clone());
-                            // Set current version to latest if available
+                            // Set current version to latest if available (last in the list is highest version number)
                             if let Some(latest) = version_list.last() {
                                 current_ver.set(Some(latest.clone()));
                             }
@@ -136,6 +142,7 @@ pub fn WebPreviewPane(
                     tracing::info!("Version loading not implemented for non-wasm32 target");
                 }
             });
+            }
         }
     });
     
@@ -201,7 +208,7 @@ pub fn WebPreviewPane(
                             let _content = document_content.read().clone();
                             let status = compilation_status.clone();
                             let pdf = pdf_url.clone();
-                            let file_name = current_file_name_for_closure.clone().unwrap_or_else(|| "document".to_string());
+                            let file_name = current_file_name_for_compile.clone().unwrap_or_else(|| "document".to_string());
                             
                             compile_latex_with_transport(_content, file_name, status, pdf, available_versions.clone(), current_version.clone(), &connection_manager_clone2);
                         },
@@ -222,7 +229,7 @@ pub fn WebPreviewPane(
                         "Download"
                     }
                     
-                    // Version controls
+                    // Version dropdown
                     if !available_versions.read().is_empty() {
                         div {
                             class: "flex items-center gap-2 ml-4 border-l border-zinc-200 dark:border-zinc-700 pl-4",
@@ -231,21 +238,20 @@ pub fn WebPreviewPane(
                                 "Version:"
                             }
                             
-                            if let Some(version) = current_version.read().as_ref() {
-                                span {
-                                    class: "text-sm font-mono text-blue-600 dark:text-blue-400",
-                                    "{version}"
-                                }
-                            }
-                            
                             Dropdown {
-                                items: available_versions.read().iter().map(|version| {
+                                items: available_versions.read().iter().rev().map(|version| {
                                     DropdownItem::new(version.clone(), version.clone())
                                         .with_description(format!("PDF version {}", version))
                                 }).collect(),
                                 selected: current_version.read().clone(),
                                 onselect: move |version: String| {
                                     let mut current_ver = current_version.clone();
+                                    let mut status = compilation_status.clone();
+                                    let mut pdf = pdf_url.clone();
+                                    let content = document_content.read().clone();
+                                    let file_name = current_file_name_for_dropdown.clone().unwrap_or_else(|| "document".to_string());
+                                    let connection_mgr = connection_manager_clone6.clone();
+                                    
                                     spawn_local(async move {
                                         #[cfg(target_arch = "wasm32")]
                                         {
@@ -254,10 +260,21 @@ pub fn WebPreviewPane(
                                             let git_transport = WebGitTransport::new();
                                             match git_transport.rollback_to_version(version.clone()).await {
                                                 Ok(_) => {
-                                                    current_ver.set(Some(version));
-                                                    tracing::info!("Successfully reverted to version");
-                                                    // Trigger PDF refresh by recompiling
-                                                    // TODO: Get the LaTeX content for this version and recompile
+                                                    current_ver.set(Some(version.clone()));
+                                                    tracing::info!("Successfully reverted to version: {}", version);
+                                                    
+                                                    // After successful rollback, trigger PDF recompilation
+                                                    // The rollback has updated the working directory, so we can recompile with current content
+                                                    tracing::info!("Triggering PDF recompilation after version rollback");
+                                                    compile_latex_with_transport(
+                                                        content, 
+                                                        file_name, 
+                                                        status, 
+                                                        pdf, 
+                                                        available_versions.clone(), 
+                                                        current_ver,
+                                                        &connection_mgr
+                                                    );
                                                 }
                                                 Err(e) => {
                                                     tracing::error!("Failed to revert to version: {}", e);
@@ -278,20 +295,10 @@ pub fn WebPreviewPane(
                         }
                     }
                 }
-                
-                div { class: "flex items-center space-x-3 text-sm text-zinc-600 dark:text-zinc-400",
-                    span { "PDF Preview" }
-                    if let Some(version) = current_version.read().as_ref() {
-                        span {
-                            class: "text-xs font-mono bg-zinc-100 dark:bg-zinc-700 text-zinc-800 dark:text-zinc-200 px-2 py-1 rounded",
-                            "{version}"
-                        }
-                    }
-                }
             }
             
             // PDF viewer area
-            div { class: "flex-1 overflow-auto p-4",
+            div { class: "flex-1 overflow-hidden",
                 match *compilation_status.read() {
                     CompilationStatus::Compiling => {
                         rsx! {
@@ -310,8 +317,8 @@ pub fn WebPreviewPane(
                         if let Some(url) = pdf_url.read().as_ref() {
                             rsx! {
                                 iframe {
-                                    src: "{url}",
-                                    class: "w-full h-full border rounded-lg shadow-lg",
+                                    src: "{url}#toolbar=0&navpanes=0&scrollbar=0",
+                                    class: "w-full h-full border-0",
                                     "PDF Preview"
                                 }
                             }
@@ -328,8 +335,8 @@ pub fn WebPreviewPane(
                         }
                     }
                     CompilationStatus::Error => {
-                        let connection_state_signal = connection_manager_clone3.connection_state();
-                        let transport_type_signal = connection_manager_clone3.transport_type();
+                        let connection_state_signal = connection_manager.connection_state();
+                        let transport_type_signal = connection_manager.transport_type();
                         
                         rsx! {
                             div { class: "h-full flex items-center justify-center text-red-500 dark:text-red-400",

@@ -7,6 +7,9 @@ use crate::types::{GitOp, GitResponseData, GitStatusResponse, GitCommitInfo, Git
 #[cfg(feature = "native-git")]
 use latex_ide_git_manager::{GitRepository, SessionManager, GitOperations, HistoryViewer, ConflictResolver};
 
+#[cfg(feature = "native-git")]
+use git2::ResetType;
+
 /// Git server manager that wraps all Git operations for a workspace
 pub struct GitServerManager {
     #[cfg(feature = "native-git")]
@@ -164,6 +167,7 @@ impl GitServerManager {
             GitOp::CommitPdfVersion { pdf_path, latex_content } => {
                 if let Some(ref mut session_mgr) = self.session_manager {
                     let (commit_id, version) = session_mgr.commit_pdf_version(&pdf_path, &latex_content)?;
+                    tracing::info!("📄 PDF version committed: {} ({})", version, commit_id);
                     Ok(Some(GitResponseData::CommitDetails(GitCommitInfo {
                         id: commit_id.to_string(),
                         short_id: format!("{:.7}", commit_id.to_string()),
@@ -185,7 +189,7 @@ impl GitServerManager {
             GitOp::GetCommitHistory { branch_name, limit } => {
                 let commits = self.history_viewer.get_commit_history(
                     branch_name.as_deref(), 
-                    limit.unwrap_or(50)
+                    Some(limit.unwrap_or(50))
                 )?;
                 let commit_infos: Vec<GitCommitInfo> = commits.into_iter()
                     .map(|commit| GitCommitInfo {
@@ -206,7 +210,14 @@ impl GitServerManager {
             }
             
             GitOp::SafeRollbackToCommit { commit_id } => {
-                let result = self.git_operations.safe_rollback_to_commit(&commit_id)?;
+                // Use reset to commit with hard reset type for rollback functionality
+                self.git_operations.reset_to_commit(&commit_id, ResetType::Hard)?;
+                
+                // Return simple success response since reset_to_commit doesn't return a result enum
+                let result = latex_ide_git_manager::RollbackResult::Success { 
+                    commit_id: commit_id.clone(), 
+                    commit_message: format!("Rolled back to commit: {}", commit_id) 
+                };
                 match result {
                     latex_ide_git_manager::RollbackResult::Success { commit_id, commit_message } => {
                         Ok(Some(GitResponseData::RollbackResult(GitRollbackResult::Success {
@@ -266,7 +277,7 @@ impl GitServerManager {
             }
             
             GitOp::GetConflicts => {
-                let conflicts = self.conflict_resolver.get_current_conflicts()?;
+                let conflicts = self.conflict_resolver.get_conflicts()?;
                 let conflict_infos: Vec<GitConflictInfo> = conflicts.into_iter()
                     .map(|conflict| GitConflictInfo {
                         file_path: conflict.file_path,
@@ -304,7 +315,7 @@ impl GitServerManager {
             }
             
             GitOp::GetFileHistory { file_path, limit } => {
-                let commits = self.history_viewer.get_file_history(&file_path, limit.unwrap_or(20))?;
+                let commits = self.history_viewer.get_file_history(&file_path, Some(limit.unwrap_or(20)))?;
                 let commit_infos: Vec<GitCommitInfo> = commits.into_iter()
                     .map(|commit| GitCommitInfo {
                         id: commit.id,

@@ -167,7 +167,6 @@ impl SessionManager {
         );
 
         let commit_id = self.commit_session_changes(&message)?;
-        self.increment_version_file(&version)?;
         
         // Create version tag
         self.create_version_tag(&version, &commit_id)?;
@@ -251,60 +250,9 @@ impl SessionManager {
 
     fn create_initial_commit(&self, repo: &Repository) -> Result<Oid> {
         // Create initial .gitignore for LaTeX projects
-        let gitignore_content = r#"# LaTeX auxiliary files
-*.aux
-*.lof
-*.log
-*.lot
-*.fls
-*.out
-*.toc
-*.fmt
-*.fot
-*.cb
-*.cb2
-*.fdb_latexmk
-*.fls
-*.figlist
-*.makefile
-*.fgn
-*.fgw
-*.figlist
-*.makefile
-
-# LaTeX intermediate files
-*.dvi
-*.xdv
-*-converted-to.*
-
-# BibTeX auxiliary files
-*.bbl
-*.bcf
-*.blg
-*.run.xml
-
-# Build directories
-build/
-out/
-dist/
-
-# IDE files
-.vscode/
-.idea/
-*.swp
-*.swo
-*~
-
-# OS files
-.DS_Store
-Thumbs.db
-"#;
-
-        std::fs::write(self.git_repo.get_repo_path().join(".gitignore"), gitignore_content)?;
 
         // Add and commit
         let mut index = repo.index()?;
-        index.add_path(std::path::Path::new(".gitignore"))?;
         index.write()?;
 
         let tree_id = index.write_tree()?;
@@ -337,9 +285,6 @@ Thumbs.db
         &mut self.git_repo
     }
 
-    fn get_version_file_path(&self) -> std::path::PathBuf {
-        self.git_repo.get_repo_path().join(".latex_version")
-    }
 
     fn get_next_version(&self) -> Result<String> {
         // Check existing tags to find the highest version number
@@ -365,11 +310,6 @@ Thumbs.db
         Ok(format!("v{}", next_version))
     }
 
-    fn increment_version_file(&self, version: &str) -> Result<()> {
-        let version_file = self.get_version_file_path();
-        fs::write(version_file, version)?;
-        Ok(())
-    }
 
     fn create_version_tag(&self, version: &str, commit_id: &Oid) -> Result<()> {
         let repo = self.git_repo.get_repository()?;
@@ -402,42 +342,48 @@ Thumbs.db
     }
 
     pub fn get_current_version(&self) -> Result<Option<String>> {
-        let version_file = self.get_version_file_path();
-        
-        if version_file.exists() {
-            let content = fs::read_to_string(&version_file)?;
-            Ok(Some(content.trim().to_string()))
-        } else {
-            Ok(None)
-        }
+        // Get the latest version from tags
+        let versions = self.get_all_versions()?;
+        Ok(versions.first().map(|v| v.clone()))
     }
 
     pub fn get_all_versions(&self) -> Result<Vec<String>> {
         let repo = self.git_repo.get_repository()?;
         let mut versions = Vec::new();
 
-        // Get all tags that match version pattern
+        // Get all tags that match version pattern (v followed by number)
         repo.tag_foreach(|_oid, name| {
             if let Ok(name_str) = std::str::from_utf8(name) {
                 if let Some(tag_name) = name_str.strip_prefix("refs/tags/") {
-                    if tag_name.starts_with("v") && tag_name.matches('.').count() == 2 {
-                        versions.push(tag_name.to_string());
+                    if tag_name.starts_with("v") {
+                        // Check if it's a valid version (v1, v2, v1.0, v1.0.0, etc.)
+                        let version_part = &tag_name[1..];
+                        if version_part.chars().next().map_or(false, |c| c.is_ascii_digit()) {
+                            versions.push(tag_name.to_string());
+                        }
                     }
                 }
             }
             true
         })?;
 
-        // Sort versions (simple string sort works for semantic versions)
-        versions.sort();
-        versions.reverse(); // Most recent first
+        // Sort versions numerically by extracting the first number after 'v'
+        versions.sort_by(|a, b| {
+            let a_num = a[1..].split('.').next().and_then(|s| s.parse::<u32>().ok()).unwrap_or(0);
+            let b_num = b[1..].split('.').next().and_then(|s| s.parse::<u32>().ok()).unwrap_or(0);
+            b_num.cmp(&a_num) // Reverse order - most recent first
+        });
         
         Ok(versions)
     }
 
     pub fn rollback_to_version(&mut self, version: &str) -> Result<()> {
-        // Validate version format
-        if !version.starts_with("v") || !version.contains('.') {
+        // Validate version format - just needs to start with 'v' and have digits
+        if !version.starts_with("v") {
+            return Err(anyhow::anyhow!("Invalid version format: {}", version));
+        }
+        let version_part = &version[1..];
+        if !version_part.chars().next().map_or(false, |c| c.is_ascii_digit()) {
             return Err(anyhow::anyhow!("Invalid version format: {}", version));
         }
         
@@ -467,9 +413,6 @@ Thumbs.db
             Ok(_) => {
                 // Update HEAD
                 repo.set_head_detached(tag_commit.id())?;
-                
-                // Update version file to match rollback
-                self.increment_version_file(version)?;
                 
                 info!("Successfully rolled back to version: {}", version);
                 Ok(())

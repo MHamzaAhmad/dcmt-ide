@@ -32,7 +32,7 @@ pub struct FileInfo {
 pub async fn handle_websocket(socket: WebSocket) {
     let (mut sender, mut receiver) = socket.split();
     
-    info!("🔌 WebSocket connection established for transport layer");
+    info!("WebSocket connection established for transport layer");
     
     while let Some(msg) = receiver.next().await {
         if let Ok(Message::Binary(data)) = msg {

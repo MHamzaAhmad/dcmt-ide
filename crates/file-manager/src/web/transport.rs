@@ -212,6 +212,64 @@ impl FileTransportClient {
         }
     }
     
+    pub async fn send_compilation_request(&self, document_id: String, content: String, engine: String) -> Result<TransportMessage, String> {
+        if !self.connected {
+            return Err("Not connected".to_string());
+        }
+        
+        if let Some(ws) = &self.websocket {
+            let message = TransportMessage::CompilationRequest { document_id, content, engine };
+            let serialized = serde_json::to_vec(&message)
+                .map_err(|e| format!("Serialization error: {}", e))?;
+                
+            let array = js_sys::Uint8Array::from(&serialized[..]);
+            ws.send_with_array_buffer(&array.buffer())
+                .map_err(|e| format!("Send error: {:?}", e))?;
+            
+            // Set up response handler
+            let response = std::rc::Rc::new(std::cell::RefCell::new(None::<Result<TransportMessage, String>>));
+            let response_clone = response.clone();
+            
+            let onmessage = Closure::wrap(Box::new(move |e: MessageEvent| {
+                if let Ok(array_buffer) = e.data().dyn_into::<js_sys::ArrayBuffer>() {
+                    let uint8_array = js_sys::Uint8Array::new(&array_buffer);
+                    let data = uint8_array.to_vec();
+                    
+                    match serde_json::from_slice::<TransportMessage>(&data) {
+                        Ok(msg) => {
+                            *response_clone.borrow_mut() = Some(Ok(msg));
+                        }
+                        Err(e) => {
+                            *response_clone.borrow_mut() = Some(Err(format!("Deserialization error: {}", e)));
+                        }
+                    }
+                }
+            }) as Box<dyn FnMut(_)>);
+            
+            ws.set_onmessage(Some(onmessage.as_ref().unchecked_ref()));
+            
+            // Wait for response with timeout
+            let mut attempts = 0;
+            while attempts < 100 { // 10 second timeout
+                gloo_timers::future::TimeoutFuture::new(100).await;
+                if let Some(result) = response.borrow_mut().take() {
+                    // Clean up the handler
+                    ws.set_onmessage(None);
+                    onmessage.forget();
+                    return result;
+                }
+                attempts += 1;
+            }
+            
+            // Clean up on timeout
+            ws.set_onmessage(None);
+            onmessage.forget();
+            Err("Request timeout".to_string())
+        } else {
+            Err("No connection".to_string())
+        }
+    }
+    
     pub fn is_connected(&self) -> bool {
         self.connected
     }
@@ -346,6 +404,10 @@ impl FileTransportClient {
     }
     
     pub async fn send_operation(&self, _operation: FileOp) -> Result<TransportMessage, String> {
+        Err("FileTransportClient not available on non-wasm32 targets".to_string())
+    }
+    
+    pub async fn send_compilation_request(&self, _document_id: String, _content: String, _engine: String) -> Result<TransportMessage, String> {
         Err("FileTransportClient not available on non-wasm32 targets".to_string())
     }
     

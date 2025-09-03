@@ -380,6 +380,7 @@ This codebase follows a strict philosophy of proper implementation:
 - **NO "temporary" disabling** - Never disable features as a quick fix
 - **NO "for now" solutions** - Avoid temporary workarounds
 - **NO incomplete TODOs** - If there's a problem, fix it completely
+- **NO emojis** - Dont add emojis anywhere
 
 ### Problem Resolution Approach
 

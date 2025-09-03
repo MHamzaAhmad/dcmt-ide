@@ -2,6 +2,7 @@ use std::env;
 use std::path::{Path, PathBuf};
 use tokio::fs;
 use tracing::{info, error, debug};
+use regex::Regex;
 
 use super::TransportMessage;
 
@@ -41,7 +42,7 @@ pub async fn handle_compilation_request(document_id: String, content: String, en
                     info!("Found main document to compile: {:?}", file_to_compile);
                     
                     // Run pdflatex compilation
-                    match compile_latex(&file_to_compile).await {
+                    match compile_latex(&file_to_compile, &engine).await {
                         Ok(pdf_data) => {
                             info!("LaTeX compilation successful for: {}", document_id);
                             TransportMessage::CompilationResult {
@@ -85,58 +86,124 @@ pub async fn handle_compilation_request(document_id: String, content: String, en
     }
 }
 
-async fn compile_latex(tex_file: &Path) -> Result<Vec<u8>, String> {
+async fn compile_latex(tex_file: &Path, user_engine: &str) -> Result<Vec<u8>, String> {
     let workspace = tex_file.parent().unwrap_or(Path::new("/app/workspace/sample"));
     let file_name = tex_file.file_stem().unwrap_or(std::ffi::OsStr::new("document"));
     
-    // Set up TinyTeX PATH if running in Docker
-    let pdflatex_cmd = setup_latex_path();
+    info!("Compiling LaTeX file: {:?}", tex_file);
     
-    info!("Running pdflatex on: {:?} with command: {}", tex_file, pdflatex_cmd);
-    
-    // Use latex-auto script for automatic package installation
-    let output = tokio::process::Command::new("latex-auto")
-        .arg(tex_file)
-        .arg("pdflatex")
-        .current_dir(workspace)
-        .output()
-        .await;
-    
-    let output = match output {
-        Ok(output) => output,
-        Err(_) => {
-            // Fallback to direct pdflatex if latex-auto is not available
-            info!("latex-auto not available, falling back to direct pdflatex");
-            tokio::process::Command::new(&pdflatex_cmd)
-                .arg("-interaction=nonstopmode")
-                .arg("-output-directory")
-                .arg(workspace)
-                .arg(tex_file)
-                .current_dir(workspace)
-                .output()
-                .await
-                .map_err(|e| format!("Failed to run pdflatex ({}): {}", pdflatex_cmd, e))?
-        }
+    // Try latexmk first (recommended approach)
+    let output = match try_latexmk(tex_file, workspace, user_engine).await {
+        Ok(output) => Ok(output),
+        Err(_) => try_pdflatex_direct(tex_file, workspace, user_engine).await,
     };
     
-    if output.status.success() {
-        // Read the generated PDF
-        let pdf_file = workspace.join(format!("{}.pdf", file_name.to_string_lossy()));
-        
-        match fs::read(&pdf_file).await {
-            Ok(pdf_data) => {
-                info!("Successfully compiled PDF: {:?}", pdf_file);
-                Ok(pdf_data)
-            }
-            Err(e) => {
-                let log = String::from_utf8_lossy(&output.stdout);
-                Err(format!("PDF generation failed: {}. Log: {}", e, log))
+    match output {
+        Ok(output) => {
+            if output.status.success() {
+                // Read the generated PDF
+                let pdf_file = workspace.join(format!("{}.pdf", file_name.to_string_lossy()));
+                
+                match fs::read(&pdf_file).await {
+                    Ok(pdf_data) => {
+                        info!("Successfully compiled PDF: {:?}", pdf_file);
+                        Ok(pdf_data)
+                    }
+                    Err(e) => {
+                        let stdout_log = String::from_utf8_lossy(&output.stdout);
+                        let stderr_log = String::from_utf8_lossy(&output.stderr);
+                        Err(format!("PDF file not found after compilation: {}. Stdout: {}. Stderr: {}", e, stdout_log, stderr_log))
+                    }
+                }
+            } else {
+                let stdout_log = String::from_utf8_lossy(&output.stdout);
+                let stderr_log = String::from_utf8_lossy(&output.stderr);
+                
+                // Parse for specific error patterns and provide helpful messages
+                let error_message = if stdout_log.contains("fontspec") && stdout_log.contains("XeTeX or") {
+                    format!("LaTeX Engine Error: This document uses fontspec package which requires XeLaTeX or LuaLaTeX.\n\nThe document contains font-related packages that are not compatible with pdfLaTeX. Please ensure your document structure is compatible or the auto-detection is working properly.\n\nDetailed error:\n{}", stdout_log)
+                } else if stdout_log.contains("File `(") && stdout_log.contains("not found") {
+                    format!("LaTeX Syntax Error: Invalid command syntax detected.\n\nLooks like there's a syntax error in your LaTeX code. Please check for missing braces or incorrect command usage.\n\nDetailed error:\n{}", stdout_log)
+                } else if stdout_log.contains("Package") && stdout_log.contains("Error") {
+                    format!("LaTeX Package Error: A required package is missing or incompatible with the current engine.\n\nDetailed error:\n{}", stdout_log)
+                } else if stdout_log.contains("Bib file(s) not found") {
+                    format!("LaTeX Bibliography Error: Bibliography file is missing.\n\nThe document references a bibliography file that couldn't be found. Either create the .bib file or remove the bibliography commands.\n\nDetailed error:\n{}", stdout_log)
+                } else if stdout_log.contains("undefined references") {
+                    format!("LaTeX Reference Warning: Document compiled but has undefined references.\n\nThe PDF was generated successfully but some citations or references are undefined. This is usually not critical for viewing.\n\nDetailed log:\n{}", stdout_log)
+                } else {
+                    format!("LaTeX Compilation failed:\n\nOutput: {}\nErrors: {}", stdout_log, stderr_log)
+                };
+                
+                Err(error_message)
             }
         }
-    } else {
-        let log = String::from_utf8_lossy(&output.stderr);
-        Err(format!("pdflatex compilation failed: {}", log))
+        Err(e) => Err(format!("Failed to run LaTeX compiler: {}", e))
     }
+}
+
+/// Try compiling with latexmk (recommended)
+async fn try_latexmk(tex_file: &Path, workspace: &Path, user_engine: &str) -> Result<std::process::Output, String> {
+    info!("Attempting compilation with latexmk");
+    
+    // Detect the appropriate engine based on file content and user preference
+    let engine = resolve_latex_engine(tex_file, user_engine).await;
+    info!("Using LaTeX engine: {}", engine);
+    
+    let mut cmd = tokio::process::Command::new("latexmk");
+    cmd.arg("-synctex=1")             // Enable SyncTeX for source-PDF sync
+        .arg("-interaction=nonstopmode") // Don't stop on errors  
+        .arg("-file-line-error")       // Better error formatting
+        .arg("-g")                     // Force regeneration (like -f but keeps cache)
+        .arg("-cd")                    // Change to document directory before processing
+        .arg(tex_file);
+    
+    // Set engine-specific flags
+    match engine.as_str() {
+        "xelatex" => {
+            cmd.arg("-xelatex");       // Use XeLaTeX engine
+        }
+        "lualatex" => {
+            cmd.arg("-lualatex");      // Use LuaLaTeX engine  
+        }
+        "latex" => {
+            cmd.arg("-latex");         // Use LaTeX->dvips->ps2pdf chain
+        }
+        _ => {
+            cmd.arg("-pdf");           // Use pdfLaTeX (default)
+        }
+    }
+    
+    cmd.output()
+        .await
+        .map_err(|e| format!("Failed to run latexmk with {}: {}", engine, e))
+}
+
+/// Fallback to direct engine when latexmk is not available
+async fn try_pdflatex_direct(tex_file: &Path, workspace: &Path, user_engine: &str) -> Result<std::process::Output, String> {
+    info!("latexmk not available, falling back to direct engine");
+    
+    // Detect the appropriate engine based on file content and user preference
+    let engine = resolve_latex_engine(tex_file, user_engine).await;
+    info!("Using direct engine: {}", engine);
+    
+    let engine_cmd = match engine.as_str() {
+        "xelatex" => "xelatex",
+        "lualatex" => "lualatex", 
+        "latex" => "latex",
+        _ => "pdflatex",
+    };
+    
+    tokio::process::Command::new(engine_cmd)
+        .arg("-interaction=nonstopmode")
+        .arg("-synctex=1")
+        .arg("-file-line-error")
+        .arg("-output-directory")
+        .arg(workspace)
+        .arg(tex_file)
+        .current_dir(workspace)
+        .output()
+        .await
+        .map_err(|e| format!("Failed to run {}: {}", engine_cmd, e))
 }
 
 /// Find the main LaTeX document to compile
@@ -195,36 +262,73 @@ fn is_complete_document(content: &str) -> bool {
     content.contains("\\end{document}")
 }
 
-/// Setup LaTeX PATH for TinyTeX installation in Docker
-fn setup_latex_path() -> String {
-    // Check if we're running in Docker with TinyTeX
-    let tinytex_base = Path::new("/root/.TinyTeX/bin");
-    
-    if tinytex_base.exists() {
-        // Find the architecture-specific directory
-        if let Ok(entries) = std::fs::read_dir(tinytex_base) {
-            for entry in entries.flatten() {
-                let path = entry.path();
-                if path.is_dir() {
-                    let pdflatex = path.join("pdflatex");
-                    if pdflatex.exists() {
-                        debug!("Found pdflatex at: {:?}", pdflatex);
-                        
-                        // Also update the PATH environment variable for this process
-                        if let Ok(current_path) = env::var("PATH") {
-                            let new_path = format!("{}:{}", path.display(), current_path);
-                            env::set_var("PATH", new_path);
-                            debug!("Updated PATH with TinyTeX binaries: {:?}", path);
-                        }
-                        
-                        return pdflatex.to_string_lossy().to_string();
-                    }
-                }
-            }
+/// Resolve the LaTeX engine based on user preference and auto-detection
+async fn resolve_latex_engine(tex_file: &Path, user_engine: &str) -> String {
+    // If user specified a specific engine (not "auto"), use it
+    match user_engine {
+        "pdflatex" | "xelatex" | "lualatex" | "latex" => {
+            info!("Using user-specified engine: {}", user_engine);
+            user_engine.to_string()
+        }
+        "auto" | _ => {
+            // Auto-detect based on file content
+            detect_latex_engine(tex_file).await
         }
     }
+}
+
+/// Detect the appropriate LaTeX engine based on file content
+async fn detect_latex_engine(tex_file: &Path) -> String {
+    let content = match fs::read_to_string(tex_file).await {
+        Ok(content) => content,
+        Err(_) => return "pdflatex".to_string(), // Default fallback
+    };
     
-    // Fallback to system pdflatex
-    debug!("TinyTeX not found, using system pdflatex");
+    // Check for packages that require XeLaTeX or LuaLaTeX
+    let fontspec_regex = Regex::new(r"\\usepackage.*\{fontspec\}").unwrap();
+    let polyglossia_regex = Regex::new(r"\\usepackage.*\{polyglossia\}").unwrap();
+    let unicode_math_regex = Regex::new(r"\\usepackage.*\{unicode-math\}").unwrap();
+    let font_commands_regex = Regex::new(r"\\set(main|sans|mono)font").unwrap();
+    
+    if fontspec_regex.is_match(&content) ||
+       polyglossia_regex.is_match(&content) ||
+       unicode_math_regex.is_match(&content) ||
+       font_commands_regex.is_match(&content) {
+        
+        // Check for LuaLaTeX-specific packages
+        let luaotfload_regex = Regex::new(r"\\usepackage.*\{luaotfload\}").unwrap();
+        let luacode_regex = Regex::new(r"\\usepackage.*\{luacode\}").unwrap();
+        let directlua_regex = Regex::new(r"\\directlua").unwrap();
+        
+        if luaotfload_regex.is_match(&content) ||
+           luacode_regex.is_match(&content) ||
+           directlua_regex.is_match(&content) {
+            info!("Detected LuaLaTeX due to Lua-specific packages");
+            return "lualatex".to_string();
+        }
+        
+        info!("Detected XeLaTeX due to fontspec/unicode packages");
+        return "xelatex".to_string();
+    }
+    
+    // Check for PSTricks which works best with LaTeX->dvips->ps2pdf
+    let pstricks_regex = Regex::new(r"\\usepackage.*\{pstricks\}").unwrap();
+    let pst_regex = Regex::new(r"\\usepackage.*\{pst-").unwrap();
+    
+    if pstricks_regex.is_match(&content) || pst_regex.is_match(&content) {
+        info!("Detected LaTeX due to PSTricks packages");
+        return "latex".to_string();
+    }
+    
+    // Check for other LuaLaTeX-specific packages
+    let luamplib_regex = Regex::new(r"\\usepackage.*\{luamplib\}").unwrap();
+    if luamplib_regex.is_match(&content) {
+        info!("Detected LuaLaTeX due to luamplib package");
+        return "lualatex".to_string();
+    }
+    
+    // Default to pdfLaTeX for compatibility
+    info!("Using pdfLaTeX as default engine");
     "pdflatex".to_string()
 }
+

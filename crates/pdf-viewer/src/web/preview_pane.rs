@@ -113,8 +113,8 @@ pub fn WebPreviewPane(
             if let Some(session_name) = session_signal.read().as_ref() {
                 let session_name = session_name.clone();
                 tracing::info!("Loading versions for session: {}", session_name);
-                let mut versions = available_versions.clone();
-                let mut current_ver = current_version.clone();
+                let mut versions = available_versions;
+                let mut current_ver = current_version;
             
             spawn_local(async move {
                 #[cfg(target_arch = "wasm32")]
@@ -125,8 +125,8 @@ pub fn WebPreviewPane(
                     match git_transport.get_all_versions().await {
                         Ok(version_list) => {
                             versions.set(version_list.clone());
-                            // Set current version to latest if available (last in the list is highest version number)
-                            if let Some(latest) = version_list.last() {
+                            // Set current version to latest if available (first in the list is highest version number)
+                            if let Some(latest) = version_list.first() {
                                 current_ver.set(Some(latest.clone()));
                             }
                             tracing::info!("Loaded {} available versions", version_list.len());
@@ -239,7 +239,7 @@ pub fn WebPreviewPane(
                             }
                             
                             Dropdown {
-                                items: available_versions.read().iter().rev().map(|version| {
+                                items: available_versions.read().iter().map(|version| {
                                     DropdownItem::new(version.clone(), version.clone())
                                         .with_description(format!("PDF version {}", version))
                                 }).collect(),

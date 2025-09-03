@@ -49,10 +49,10 @@ pub async fn handle_file_operation(operation: FileOp) -> TransportMessage {
                 }
                 Err(e) => {
                     error!("Failed to read file {}: {}", name, e);
+                    // Return error as separate message, don't try to upload it as a file
                     TransportMessage::FileOperation {
-                        operation: FileOp::Upload { 
-                            name: format!("Error: {}", e), 
-                            content: vec![] 
+                        operation: FileOp::Download { 
+                            name: format!("FILE_ERROR: Failed to read {}: {}", name, e)
                         }
                     }
                 }
@@ -61,6 +61,17 @@ pub async fn handle_file_operation(operation: FileOp) -> TransportMessage {
         
         FileOp::Upload { name, content } => {
             info!("Uploading file: {}", name);
+            
+            // Prevent error messages from being written as files
+            if name.starts_with("Error: ") || name.starts_with("FILE_ERROR: ") {
+                error!("Attempted to upload error message as file: {}", name);
+                return TransportMessage::FileOperation {
+                    operation: FileOp::Download { 
+                        name: "UPLOAD_ERROR: Cannot upload error messages as files".to_string()
+                    }
+                };
+            }
+            
             let file_path = workspace.join(&name);
             
             // Ensure parent directory exists

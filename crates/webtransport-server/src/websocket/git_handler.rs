@@ -9,7 +9,7 @@ pub async fn handle_git_operation(operation: GitOp) -> TransportMessage {
     use tracing::{info, error};
     use crate::git_manager::GitServerManager;
     
-    info!("🔧 Handling git operation: {:?}", operation);
+    info!("Handling git operation: {:?}", operation);
     
     // Get workspace path from environment variable
     let workspace_path = env::var("SAMPLE_WORKSPACE_DIR")
@@ -27,11 +27,11 @@ pub async fn handle_git_operation(operation: GitOp) -> TransportMessage {
                         crate::types::GitOp::StartSession => {
                             if let Some(ref response_data) = data {
                                 if let crate::types::GitResponseData::SessionBranch(ref branch_name) = response_data {
-                                    info!("🌿 Git session started successfully: {}", branch_name);
+                                    info!("Git session started successfully: {}", branch_name);
                                 }
                             }
                         }
-                        _ => info!("✅ Git operation completed successfully: {:?}", operation),
+                        _ => info!("Git operation completed successfully: {:?}", operation),
                     }
                     
                     TransportMessage::GitResponse {
@@ -41,7 +41,7 @@ pub async fn handle_git_operation(operation: GitOp) -> TransportMessage {
                     }
                 }
                 Err(e) => {
-                    error!("❌ Git operation failed ({:?}): {}", operation, e);
+                    error!("Git operation failed ({:?}): {}", operation, e);
                     TransportMessage::GitResponse {
                         success: false,
                         data: None,
@@ -51,7 +51,7 @@ pub async fn handle_git_operation(operation: GitOp) -> TransportMessage {
             }
         }
         Err(e) => {
-            error!("❌ Failed to create git manager for workspace '{}': {}", workspace_path, e);
+            error!("Failed to create git manager for workspace '{}': {}", workspace_path, e);
             TransportMessage::GitResponse {
                 success: false,
                 data: None,

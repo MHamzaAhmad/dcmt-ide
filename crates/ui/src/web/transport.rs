@@ -426,7 +426,7 @@ impl ConnectionManager {
     }
     
     /// Send a message through the active connection
-    pub async fn send_message(&self, _message: TransportMessage) -> Result<(), String> {
+    pub async fn send_message(&self, message: TransportMessage) -> Result<(), String> {
         #[cfg(target_arch = "wasm32")]
         {
             match self.transport_type.read().as_ref() {

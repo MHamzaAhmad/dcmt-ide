@@ -158,16 +158,12 @@ pub fn WebEditorPane(
                                                                     match client.connect("ws://localhost:3001").await {
                                                                         Ok(_) => {
                                                                             let document_id = file_path_clone.replace(".tex", "");
-                                                                            let compile_msg = FileTransportMessage::CompilationRequest {
-                                                                                document_id,
-                                                                                content: new_content,
-                                                                                engine: "pdflatex".to_string(),
-                                                                            };
                                                                             
-                                                                            match client.send_operation(FileOp::Upload { 
-                                                                                name: format!("compile:{}", file_path_clone), 
-                                                                                content: serde_json::to_vec(&compile_msg).unwrap_or_default()
-                                                                            }).await {
+                                                                            match client.send_compilation_request(
+                                                                                document_id,
+                                                                                new_content,
+                                                                                "pdflatex".to_string()
+                                                                            ).await {
                                                                                 Ok(FileTransportMessage::CompilationResult { success, log, .. }) => {
                                                                                     if success {
                                                                                         tracing::info!("Compilation successful for: {}", file_path_clone);

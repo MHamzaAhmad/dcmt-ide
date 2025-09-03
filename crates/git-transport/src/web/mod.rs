@@ -211,8 +211,13 @@ impl WebGitTransport {
             GitOp::GetCommitHistory { .. } => {
                 Ok(GitResponseData::CommitHistory(vec![]))
             },
+            GitOp::CommitPdfVersion { .. } => {
+                // Force fallback to WebSocket for real PDF version commits
+                Err(anyhow::anyhow!("CommitPdfVersion requires WebSocket backend"))
+            },
             GitOp::GetAllVersions => {
-                Ok(GitResponseData::VersionList(vec!["v1.0.0".to_string(), "v1.0.1".to_string()]))
+                // Force fallback to WebSocket for real version data
+                Err(anyhow::anyhow!("GetAllVersions requires WebSocket backend"))
             },
             _ => {
                 // For other operations, fallback to WebSocket will be used

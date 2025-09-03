@@ -175,167 +175,116 @@ pub fn WebPreviewPane(
     let current_file_name_for_closure = current_file_name.clone();
     
     rsx! {
-        div { class: "h-full bg-gray-50 dark:bg-gray-900 border-l border-gray-200 dark:border-gray-700 flex flex-col",
-            
-            // Session History Display (above controls)
-            SessionHistoryBar {
-                session_manager: session_manager,
-            }
+        div { class: "h-full bg-zinc-50 dark:bg-zinc-950 border-l border-zinc-200 dark:border-zinc-800 flex flex-col",
             
             // PDF controls with version management
-            div { class: "border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800",
-                div { class: "flex items-center justify-between px-4 py-2",
-                    div { class: "flex items-center space-x-2",
-                        Button {
-                            variant: ButtonVariant::Primary,
-                            size: ButtonSize::Small,
-                            disabled: matches!(*compilation_status.read(), CompilationStatus::Compiling) || !has_content,
-                            onclick: move |_| {
-                                if !has_content {
-                                    return;
-                                }
-                                
-                                compilation_status.set(CompilationStatus::Compiling);
-                                
-                                let _content = document_content.read().clone();
-                                let status = compilation_status.clone();
-                                let pdf = pdf_url.clone();
-                                let file_name = current_file_name_for_closure.clone().unwrap_or_else(|| "document".to_string());
-                                
-                                compile_latex_with_transport(_content, file_name, status, pdf, available_versions.clone(), current_version.clone(), &connection_manager_clone2);
-                            },
+            div { class: "h-10 border-b border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 flex items-center justify-between px-4",
+                div { class: "flex items-center space-x-2",
+                    button {
+                        class: if matches!(*compilation_status.read(), CompilationStatus::Compiling) || !has_content {
+                            "px-3 py-1 text-xs font-medium text-zinc-400 dark:text-zinc-600 bg-zinc-100 dark:bg-zinc-800 rounded-md cursor-not-allowed"
+                        } else {
                             match *compilation_status.read() {
-                                CompilationStatus::Compiling => "⏳ Compiling...",
-                                CompilationStatus::Success => "✅ Compiled",
-                                CompilationStatus::Error => "❌ Error",
-                                CompilationStatus::Ready => if has_content { "▶️ Compile" } else { "📄 No Content" }
+                                CompilationStatus::Success => "px-3 py-1 text-xs font-medium text-green-600 dark:text-green-400 bg-green-50 dark:bg-green-900 hover:bg-green-100 dark:hover:bg-green-800 rounded-md transition-colors",
+                                CompilationStatus::Error => "px-3 py-1 text-xs font-medium text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900 hover:bg-red-100 dark:hover:bg-red-800 rounded-md transition-colors",
+                                _ => "px-3 py-1 text-xs font-medium text-white dark:text-zinc-900 bg-zinc-900 dark:bg-zinc-100 hover:bg-zinc-800 dark:hover:bg-zinc-200 rounded-md transition-colors"
                             }
-                        }
-                        
-                        Button {
-                            variant: ButtonVariant::Ghost,
-                            size: ButtonSize::Small,
-                            onclick: move |_| {
-                                // Download PDF
-                                tracing::info!("Download PDF clicked");
-                            },
-                            "📥"
-                        }
-                        
-                        // Version controls
-                        if !available_versions.read().is_empty() {
-                            div {
-                                class: "flex items-center gap-2 ml-4 border-l border-gray-200 dark:border-gray-700 pl-4",
-                                span {
-                                    class: "text-sm text-gray-600 dark:text-gray-400",
-                                    "Version:"
-                                }
-                                
-                                if let Some(version) = current_version.read().as_ref() {
-                                    span {
-                                        class: "text-sm font-mono text-blue-600 dark:text-blue-400",
-                                        "{version}"
-                                    }
-                                }
-                                
-                                Dropdown {
-                                    items: available_versions.read().iter().map(|version| {
-                                        DropdownItem::new(version.clone(), version.clone())
-                                            .with_description(format!("PDF version {}", version))
-                                    }).collect(),
-                                    selected: current_version.read().clone(),
-                                    onselect: move |version: String| {
-                                        let mut current_ver = current_version.clone();
-                                        spawn_local(async move {
-                                            #[cfg(target_arch = "wasm32")]
-                                            {
-                                                use latex_ide_git_transport::web::WebGitTransport;
-                                                
-                                                let git_transport = WebGitTransport::new();
-                                                match git_transport.rollback_to_version(version.clone()).await {
-                                                    Ok(_) => {
-                                                        current_ver.set(Some(version));
-                                                        tracing::info!("Successfully reverted to version");
-                                                        // Trigger PDF refresh by recompiling
-                                                        // TODO: Get the LaTeX content for this version and recompile
-                                                    }
-                                                    Err(e) => {
-                                                        tracing::error!("Failed to revert to version: {}", e);
-                                                    }
-                                                }
-                                            }
-                                            
-                                            #[cfg(not(target_arch = "wasm32"))]
-                                            {
-                                                tracing::info!("Version rollback not implemented for non-wasm32 target");
-                                            }
-                                        });
-                                    },
-                                    placeholder: "Select version".to_string(),
-                                    size: Some(DropdownSize::Small),
-                                    variant: Some(DropdownVariant::Default),
-                                }
+                        },
+                        disabled: matches!(*compilation_status.read(), CompilationStatus::Compiling) || !has_content,
+                        onclick: move |_| {
+                            if !has_content {
+                                return;
                             }
+                            
+                            compilation_status.set(CompilationStatus::Compiling);
+                            
+                            let _content = document_content.read().clone();
+                            let status = compilation_status.clone();
+                            let pdf = pdf_url.clone();
+                            let file_name = current_file_name_for_closure.clone().unwrap_or_else(|| "document".to_string());
+                            
+                            compile_latex_with_transport(_content, file_name, status, pdf, available_versions.clone(), current_version.clone(), &connection_manager_clone2);
+                        },
+                        match *compilation_status.read() {
+                            CompilationStatus::Compiling => "Compiling...",
+                            CompilationStatus::Success => "Compiled",
+                            CompilationStatus::Error => "Error",
+                            CompilationStatus::Ready => if has_content { "Compile" } else { "No Content" }
                         }
                     }
                     
-                    div { class: "flex items-center space-x-3 text-sm text-gray-600 dark:text-gray-400",
-                        // Connection status indicator
-                        {
-                            let connection_state_indicator = connection_manager_clone3.connection_state();
-                            let transport_type_indicator = connection_manager_clone3.transport_type();
-                            let current_state = *connection_state_indicator.read();
-                            let current_transport = *transport_type_indicator.read();
+                    button {
+                        class: "px-3 py-1 text-xs font-medium text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100 hover:bg-zinc-100 dark:hover:bg-zinc-700 rounded-md transition-colors",
+                        onclick: move |_| {
+                            // Download PDF
+                            tracing::info!("Download PDF clicked");
+                        },
+                        "Download"
+                    }
+                    
+                    // Version controls
+                    if !available_versions.read().is_empty() {
+                        div {
+                            class: "flex items-center gap-2 ml-4 border-l border-zinc-200 dark:border-zinc-700 pl-4",
+                            span {
+                                class: "text-sm text-zinc-600 dark:text-zinc-400",
+                                "Version:"
+                            }
                             
-                            match current_state {
-                                ConnectionState::Connected => {
-                                    let transport_name = match current_transport {
-                                        Some(TransportType::WebTransport) => "WT",
-                                        Some(TransportType::WebSocket) => "WS",
-                                        None => "??"
-                                    };
-                                    rsx! {
-                                        div { class: "flex items-center space-x-1",
-                                            span { class: "w-2 h-2 bg-green-500 rounded-full animate-pulse" }
-                                            span { class: "text-xs text-green-600 dark:text-green-400 font-mono", "{transport_name}" }
-                                        }
-                                    }
-                                },
-                                ConnectionState::ConnectingWebTransport => rsx! {
-                                    div { class: "flex items-center space-x-1",
-                                        span { class: "w-2 h-2 bg-yellow-500 rounded-full animate-pulse" }
-                                        span { class: "text-xs text-yellow-600 dark:text-yellow-400", "Connecting..." }
-                                    }
-                                },
-                                ConnectionState::ConnectingWebSocket => rsx! {
-                                    div { class: "flex items-center space-x-1",
-                                        span { class: "w-2 h-2 bg-yellow-500 rounded-full animate-pulse" }
-                                        span { class: "text-xs text-yellow-600 dark:text-yellow-400", "Fallback..." }
-                                    }
-                                },
-                                ConnectionState::Failed => rsx! {
-                                    div { class: "flex items-center space-x-1",
-                                        span { class: "w-2 h-2 bg-red-500 rounded-full" }
-                                        span { class: "text-xs text-red-600 dark:text-red-400", "Failed" }
-                                    }
-                                },
-                                ConnectionState::Disconnected => rsx! {
-                                    div { class: "flex items-center space-x-1",
-                                        span { class: "w-2 h-2 bg-gray-400 rounded-full" }
-                                        span { class: "text-xs text-gray-500 dark:text-gray-500", "Offline" }
-                                    }
+                            if let Some(version) = current_version.read().as_ref() {
+                                span {
+                                    class: "text-sm font-mono text-blue-600 dark:text-blue-400",
+                                    "{version}"
                                 }
                             }
-                        }
-                        
-                        span { class: "text-gray-300 dark:text-gray-600", "|" }
-                        
-                        span { "PDF Preview" }
-                        if let Some(version) = current_version.read().as_ref() {
-                            span {
-                                class: "text-xs font-mono bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200 px-2 py-1 rounded",
-                                "{version}"
+                            
+                            Dropdown {
+                                items: available_versions.read().iter().map(|version| {
+                                    DropdownItem::new(version.clone(), version.clone())
+                                        .with_description(format!("PDF version {}", version))
+                                }).collect(),
+                                selected: current_version.read().clone(),
+                                onselect: move |version: String| {
+                                    let mut current_ver = current_version.clone();
+                                    spawn_local(async move {
+                                        #[cfg(target_arch = "wasm32")]
+                                        {
+                                            use latex_ide_git_transport::web::WebGitTransport;
+                                            
+                                            let git_transport = WebGitTransport::new();
+                                            match git_transport.rollback_to_version(version.clone()).await {
+                                                Ok(_) => {
+                                                    current_ver.set(Some(version));
+                                                    tracing::info!("Successfully reverted to version");
+                                                    // Trigger PDF refresh by recompiling
+                                                    // TODO: Get the LaTeX content for this version and recompile
+                                                }
+                                                Err(e) => {
+                                                    tracing::error!("Failed to revert to version: {}", e);
+                                                }
+                                            }
+                                        }
+                                        
+                                        #[cfg(not(target_arch = "wasm32"))]
+                                        {
+                                            tracing::info!("Version rollback not implemented for non-wasm32 target");
+                                        }
+                                    });
+                                },
+                                placeholder: "Select version".to_string(),
+                                size: Some(DropdownSize::Small),
+                                variant: Some(DropdownVariant::Default),
                             }
+                        }
+                    }
+                }
+                
+                div { class: "flex items-center space-x-3 text-sm text-zinc-600 dark:text-zinc-400",
+                    span { "PDF Preview" }
+                    if let Some(version) = current_version.read().as_ref() {
+                        span {
+                            class: "text-xs font-mono bg-zinc-100 dark:bg-zinc-700 text-zinc-800 dark:text-zinc-200 px-2 py-1 rounded",
+                            "{version}"
                         }
                     }
                 }
@@ -346,7 +295,7 @@ pub fn WebPreviewPane(
                 match *compilation_status.read() {
                     CompilationStatus::Compiling => {
                         rsx! {
-                            div { class: "h-full flex items-center justify-center text-gray-500 dark:text-gray-400",
+                            div { class: "h-full flex items-center justify-center text-zinc-500 dark:text-zinc-400",
                                 div { class: "text-center",
                                     div { class: "inline-block animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mb-4" }
                                     div { class: "text-lg mb-2", "Compiling LaTeX..." }
@@ -368,7 +317,7 @@ pub fn WebPreviewPane(
                             }
                         } else {
                             rsx! {
-                                div { class: "h-full flex items-center justify-center text-gray-500 dark:text-gray-400",
+                                div { class: "h-full flex items-center justify-center text-zinc-500 dark:text-zinc-400",
                                     div { class: "text-center",
                                         div { class: "text-6xl mb-4", "✅" }
                                         div { class: "text-lg mb-2", "Compilation Successful" }
@@ -451,7 +400,7 @@ pub fn WebPreviewPane(
                     CompilationStatus::Ready => {
                         if has_content {
                             rsx! {
-                                div { class: "h-full flex items-center justify-center text-gray-500 dark:text-gray-400",
+                                div { class: "h-full flex items-center justify-center text-zinc-500 dark:text-zinc-400",
                                     div { class: "text-center",
                                         div { class: "text-6xl mb-4", "📄" }
                                         div { class: "text-lg mb-2", "Ready to Compile" }
@@ -464,7 +413,7 @@ pub fn WebPreviewPane(
                             }
                         } else {
                             rsx! {
-                                div { class: "h-full flex items-center justify-center text-gray-500 dark:text-gray-400",
+                                div { class: "h-full flex items-center justify-center text-zinc-500 dark:text-zinc-400",
                                     div { class: "text-center",
                                         div { class: "text-6xl mb-4", "📝" }
                                         div { class: "text-lg mb-2", "No Document Selected" }
@@ -661,135 +610,6 @@ fn compile_latex_with_transport(
     }
 }
 
-
-#[derive(Debug, Clone)]
-struct SessionCommit {
-    short_hash: String,
-    message: String,
-    version: Option<String>,
-    timestamp: String,
-}
-
-#[component]
-fn SessionHistoryBar(
-    #[props(default)] session_manager: Option<Signal<Option<String>>>,
-) -> Element {
-    let commits = use_signal(|| Vec::<SessionCommit>::new());
-    let mut selected_commit = use_signal(|| None::<String>);
-    
-    // Load commit history when component mounts or session manager changes
-    use_effect(move || {
-        if let Some(session_mgr) = session_manager {
-            if let Some(session_name) = session_mgr.read().as_ref().cloned() {
-                let mut commits = commits.clone();
-                
-                spawn_local(async move {
-                    #[cfg(target_arch = "wasm32")]
-                    {
-                        // Try to get commit history via git transport
-                        use latex_ide_git_transport::web::WebGitTransport;
-                        
-                        let git_transport = WebGitTransport::new();
-                        match git_transport.get_commit_history(Some(session_name), Some(10)).await {
-                            Ok(history) => {
-                                let session_commits: Vec<SessionCommit> = history.into_iter()
-                                    .map(|commit| {
-                                        let message = commit.message.clone();
-                                        SessionCommit {
-                                            short_hash: commit.short_id,
-                                            version: if message.contains("PDF version") {
-                                                Some(message.split("PDF version ").nth(1).unwrap_or("v1.0.0").to_string())
-                                            } else {
-                                                None
-                                            },
-                                            message,
-                                            timestamp: format_timestamp_from_iso(&commit.timestamp),
-                                        }
-                                    })
-                                    .collect();
-                                commits.set(session_commits);
-                            }
-                            Err(e) => {
-                                tracing::error!("Failed to fetch commit history: {}", e);
-                            }
-                        }
-                    }
-                    
-                    #[cfg(not(target_arch = "wasm32"))]
-                    {
-                        tracing::info!("Commit history loading not implemented for non-wasm32 target");
-                    }
-                });
-            }
-        }
-    });
-
-    rsx! {
-        div { class: "bg-gray-50 dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700 px-4 py-2",
-            div { class: "flex items-center justify-between",
-                div { class: "flex items-center space-x-2",
-                    span { class: "text-xs font-medium text-gray-600 dark:text-gray-300",
-                        "Session History:"
-                    }
-                    if !commits.read().is_empty() {
-                        Dropdown {
-                            items: commits.read().iter().map(|commit| {
-                                DropdownItem::new(commit.short_hash.clone(), commit.short_hash.clone())
-                                    .with_description(format!("{} - {}", 
-                                        commit.version.as_deref().unwrap_or("No version"),
-                                        commit.message.chars().take(30).collect::<String>()
-                                    ))
-                            }).collect(),
-                            selected: selected_commit.read().clone(),
-                            onselect: move |hash: String| {
-                                selected_commit.set(Some(hash));
-                            },
-                            placeholder: "Select commit".to_string(),
-                            size: Some(DropdownSize::Small),
-                            variant: Some(DropdownVariant::Default),
-                        }
-                    } else {
-                        span { class: "text-xs text-gray-500 dark:text-gray-400",
-                            if session_manager.is_some() { "Loading..." } else { "No session" }
-                        }
-                    }
-                }
-                
-                if let Some(hash) = selected_commit.read().clone() {
-                    button {
-                        class: "px-2 py-1 bg-orange-600 hover:bg-orange-700 text-white rounded text-xs font-medium transition-colors",
-                        onclick: move |_| {
-                            let commit_hash = hash.clone();
-                            spawn_local(async move {
-                                #[cfg(target_arch = "wasm32")]
-                                {
-                                    use latex_ide_git_transport::web::WebGitTransport;
-                                    
-                                    let git_transport = WebGitTransport::new();
-                                    match git_transport.safe_rollback_to_commit(commit_hash).await {
-                                        Ok(_) => {
-                                            tracing::info!("Successfully rolled back to commit");
-                                            // Could trigger PDF refresh here
-                                        }
-                                        Err(e) => {
-                                            tracing::error!("Rollback failed: {}", e);
-                                        }
-                                    }
-                                }
-                                
-                                #[cfg(not(target_arch = "wasm32"))]
-                                {
-                                    tracing::info!("Rollback not implemented for non-wasm32 target");
-                                }
-                            });
-                        },
-                        "Rollback"
-                    }
-                }
-            }
-        }
-    }
-}
 
 fn format_timestamp_from_iso(timestamp_iso: &str) -> String {
     // Parse ISO timestamp and format it for display

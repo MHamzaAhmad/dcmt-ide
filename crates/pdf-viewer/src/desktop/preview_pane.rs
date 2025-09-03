@@ -31,10 +31,10 @@ pub fn DesktopPreviewPane(
         tracing::info!("Git features not available in this build");
     });
     rsx! {
-        div { class: "h-full bg-gray-50 dark:bg-gray-900 border-l border-gray-200 dark:border-gray-700",
+        div { class: "h-full bg-zinc-50 dark:bg-zinc-950 border-l border-zinc-200 dark:border-zinc-800",
             
             // PDF controls
-            div { class: "h-12 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between px-4",
+            div { class: "h-12 border-b border-zinc-200 dark:border-zinc-800 flex items-center justify-between px-4",
                 div { class: "flex items-center space-x-2",
                     Button {
                         variant: ButtonVariant::Secondary,
@@ -57,7 +57,7 @@ pub fn DesktopPreviewPane(
                     }
                 }
                 
-                div { class: "flex items-center space-x-2 text-sm text-gray-600 dark:text-gray-400",
+                div { class: "flex items-center space-x-2 text-sm text-zinc-600 dark:text-zinc-400",
                     span { "Page 1 of 1" }
                     
                     Button {
@@ -83,9 +83,9 @@ pub fn DesktopPreviewPane(
                     // Version controls for desktop
                     if !available_versions.read().is_empty() {
                         div {
-                            class: "flex items-center gap-2 ml-4 border-l border-gray-200 dark:border-gray-700 pl-4",
+                            class: "flex items-center gap-2 ml-4 border-l border-zinc-200 dark:border-zinc-700 pl-4",
                             span {
-                                class: "text-sm text-gray-600 dark:text-gray-400",
+                                class: "text-sm text-zinc-600 dark:text-zinc-400",
                                 "Version:"
                             }
                             
@@ -121,7 +121,7 @@ pub fn DesktopPreviewPane(
                 div { class: "bg-white shadow-lg mx-auto",
                     style: "width: 210mm; min-height: 297mm;",
                     
-                    div { class: "h-full flex items-center justify-center text-gray-500",
+                    div { class: "h-full flex items-center justify-center text-zinc-500 dark:text-zinc-400",
                         "PDF Preview\n(Compile document to see output)"
                     }
                 }

@@ -101,4 +101,4 @@ models/
 *.backup
 
 # Sample workspace - ignore generated files but keep templates
-sample-workspace
+sample-workspace/*

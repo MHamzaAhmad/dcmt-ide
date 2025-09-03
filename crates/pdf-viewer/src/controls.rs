@@ -24,7 +24,7 @@ pub fn PDFControls(
 ) -> Element {
     rsx! {
         div {
-            class: "flex items-center gap-2 p-3 border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900",
+            class: "flex items-center gap-2 p-3 border-b border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900",
             
             if let Some(doc) = &*document.read() {
                 // Navigation controls
@@ -40,7 +40,7 @@ pub fn PDFControls(
                 }
                 
                 span {
-                    class: "mx-2 text-sm text-gray-600 dark:text-gray-400",
+                    class: "mx-2 text-sm text-zinc-600 dark:text-zinc-400",
                     "Page {doc.current_page + 1} of {doc.total_pages}"
                 }
                 
@@ -69,7 +69,7 @@ pub fn PDFControls(
                     }
                     
                     span {
-                        class: "mx-2 text-sm text-gray-600 dark:text-gray-400 min-w-[50px] text-center",
+                        class: "mx-2 text-sm text-zinc-600 dark:text-zinc-400 min-w-[50px] text-center",
                         "{(doc.zoom * 100.0) as i32}%"
                     }
                     
@@ -112,9 +112,9 @@ pub fn PDFControls(
                 if let Some(versions) = &available_versions {
                     if !versions.read().is_empty() {
                         div {
-                            class: "flex items-center gap-2 ml-4 border-l border-gray-200 dark:border-gray-700 pl-4",
+                            class: "flex items-center gap-2 ml-4 border-l border-zinc-200 dark:border-zinc-700 pl-4",
                             span {
-                                class: "text-sm text-gray-600 dark:text-gray-400",
+                                class: "text-sm text-zinc-600 dark:text-zinc-400",
                                 "Version:"
                             }
                             
@@ -149,7 +149,7 @@ pub fn PDFControls(
                 }
             } else {
                 span {
-                    class: "text-gray-500 dark:text-gray-400",
+                    class: "text-zinc-500 dark:text-zinc-400",
                     "No PDF loaded"
                 }
             }

@@ -436,3 +436,83 @@ When working on this codebase:
 
 **Remember: The apps should be so minimal that they're essentially just different compilation targets for the same shared codebase.**
 - always compile wasm to check if every thing works or not
+
+## UI Design System & Color Scheme
+
+LaTeX IDE uses a sophisticated dark/light theme system with careful attention to accessibility and consistency across all components.
+
+### Color Palette
+
+The application uses **Zinc** as the primary color scale for a modern, professional appearance:
+
+#### Light Theme
+- **Backgrounds**: `bg-white`, `bg-zinc-50`, `bg-zinc-100`
+- **Surfaces**: `bg-zinc-100` (secondary surfaces), `bg-zinc-200` (borders)
+- **Text**: `text-zinc-900` (primary), `text-zinc-700` (secondary), `text-zinc-600` (tertiary), `text-zinc-500` (muted)
+- **Interactive Elements**: `hover:bg-zinc-100`, `text-zinc-900` (active)
+
+#### Dark Theme  
+- **Backgrounds**: `bg-zinc-950`, `bg-zinc-900`, `bg-zinc-800`
+- **Surfaces**: `bg-zinc-800` (secondary surfaces), `bg-zinc-700` (borders)
+- **Text**: `text-zinc-100` (primary), `text-zinc-300` (secondary), `text-zinc-400` (tertiary), `text-zinc-500` (muted)
+- **Interactive Elements**: `hover:bg-zinc-800`, `text-zinc-100` (active)
+
+#### Accent Colors
+- **Primary Buttons**: `bg-zinc-900` (light) / `bg-zinc-50` (dark) with inverted text
+- **Success/Active**: `bg-blue-100` / `bg-blue-900`, `text-blue-600` / `text-blue-400`
+- **Warning/Changes**: `bg-orange-500` (indicator dots)
+- **Danger**: `bg-red-500` / `bg-red-900` for destructive actions
+
+### Theme Implementation
+
+The theming system uses:
+- **CSS Classes**: TailwindCSS with `dark:` variants for automatic theme switching
+- **Theme Context**: `use_theme()` hook provides access to current theme state
+- **Local Storage**: Theme preference persisted in browser storage
+- **Document Root**: `dark` class applied to `<html>` element for global theme switching
+
+### Component Color Patterns
+
+#### App Header (`crates/ui/src/web/app_header.rs`)
+- **Background**: `bg-white dark:bg-zinc-900`
+- **Border**: `border-zinc-200 dark:border-zinc-800`
+- **Active Buttons**: `bg-zinc-900 text-zinc-50 dark:bg-zinc-50 dark:text-zinc-900`
+- **Inactive Buttons**: `text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100`
+- **Hover States**: `hover:bg-zinc-100 dark:hover:bg-zinc-800`
+
+#### File Manager (`crates/file-manager/src/web/components.rs`)
+- **Background**: `bg-white dark:bg-zinc-900`
+- **Tree Items**: `text-zinc-700 dark:text-zinc-300`
+- **Hover States**: `hover:bg-zinc-100 dark:hover:bg-zinc-800`
+- **Icons**: `text-zinc-500 dark:text-zinc-400`
+- **Action Buttons**: `bg-white dark:bg-zinc-800` with `border-zinc-200 dark:border-zinc-700`
+
+#### Editor Pane (`crates/editor/src/web/editor_pane.rs`)
+- **Background**: `bg-white dark:bg-zinc-950`
+- **Header**: `bg-zinc-50 dark:bg-zinc-900`
+- **Toggle Buttons**: Active state uses `bg-zinc-900 dark:bg-zinc-100` with inverted text
+- **Chat Toggle**: `bg-blue-100 dark:bg-blue-900` when active
+
+#### Button Components (`crates/ui/src/button.rs`)
+- **Primary**: `bg-zinc-900 dark:bg-zinc-50` with inverted text colors
+- **Secondary**: `bg-zinc-100 dark:bg-zinc-800` with matching text
+- **Ghost**: Transparent with `hover:bg-zinc-100 dark:hover:bg-zinc-800`
+- **Danger**: `bg-red-500 dark:bg-red-900` for destructive actions
+
+### Design Principles
+
+1. **Consistent Contrast**: All text meets WCAG accessibility standards with proper contrast ratios
+2. **Semantic Colors**: Colors have consistent meaning across components (zinc = neutral, blue = interactive/active, orange = warning, red = danger)
+3. **Hover Feedback**: Interactive elements use consistent hover states with `transition-colors`
+4. **Border Hierarchy**: `border-zinc-200/800` for primary borders, lighter variants for secondary
+5. **Surface Elevation**: Background colors indicate visual hierarchy (darker = more elevated in dark mode)
+
+### Usage Guidelines
+
+When creating new components:
+- Always provide both light and dark variants using TailwindCSS `dark:` prefix
+- Use zinc scale for neutral colors, maintaining consistency with existing components
+- Follow the established hover state patterns for interactive elements
+- Test components in both themes to ensure proper contrast and visibility
+- Use `text-zinc-500 dark:text-zinc-400` for muted/placeholder content
+- Apply `transition-colors` to interactive elements for smooth theme transitions

@@ -26,10 +26,6 @@ async fn main() -> anyhow::Result<()> {
         .init();
 
     let args = Args::parse();
-    
-    info!("Starting LaTeX Compiler Service");
-    info!("Port: {}", args.port);
-    info!("Temp directory: {}", args.temp_dir.display());
 
     // Add LaTeX binaries to PATH if specified
     if let Some(latex_bin_path) = &args.latex_bin_path {
@@ -37,23 +33,11 @@ async fn main() -> anyhow::Result<()> {
             let current_path = std::env::var("PATH").unwrap_or_default();
             let new_path = format!("{}:{}", latex_bin_path.display(), current_path);
             std::env::set_var("PATH", new_path);
-            info!("Added custom LaTeX binaries to PATH: {}", latex_bin_path.display());
         } else {
             info!("Custom LaTeX binaries path does not exist: {}", latex_bin_path.display());
         }
     } else {
         info!("Using system LaTeX binaries from PATH (TexLive recommended)");
-    }
-
-    // Verify LaTeX installation
-    match verify_latex_installation().await {
-        Ok(engines) => {
-            info!("Available LaTeX engines: {:?}", engines);
-        },
-        Err(e) => {
-            error!("LaTeX installation verification failed: {}", e);
-            return Err(e);
-        }
     }
 
     // Create compiler service

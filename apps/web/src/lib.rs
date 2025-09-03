@@ -174,7 +174,6 @@ fn App() -> Element {
                                                     }
                                                     Err(e) => {
                                                         tracing::error!("Failed to download file {}: {}", file_path, e);
-                                                        document_content.set(format!("// Error loading file: {}", e));
                                                     }
                                                 }
                                             });

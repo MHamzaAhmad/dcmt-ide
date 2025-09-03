@@ -74,9 +74,14 @@ RUN sqlite3 /app/data/latex_ide.db "CREATE TABLE IF NOT EXISTS documents (id INT
 RUN mkdir -p /etc/supervisor/conf.d
 COPY apps/web/supervisord.conf /etc/supervisor/conf.d/latex-ide.conf
 
+# Copy and setup log formatter and entrypoint
+COPY scripts/log-formatter.sh /app/log-formatter.sh
+COPY scripts/docker-entrypoint.sh /app/docker-entrypoint.sh
+RUN chmod +x /app/log-formatter.sh /app/docker-entrypoint.sh
+
 
 # Expose all service ports
 EXPOSE 8080 3001 3002 3003 3004
 
-# Start all services with supervisor
-CMD ["/usr/bin/supervisord", "-c", "/etc/supervisor/conf.d/latex-ide.conf"]
+# Start all services with custom entrypoint
+ENTRYPOINT ["/app/docker-entrypoint.sh"]

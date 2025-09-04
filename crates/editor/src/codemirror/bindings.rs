@@ -7,28 +7,29 @@ pub mod wasm_bindings {
     #[wasm_bindgen]
     extern "C" {
         // Core CodeMirror types
-        #[wasm_bindgen(js_name = EditorView, js_namespace = ["window", "CM6", "view"])]
+        #[wasm_bindgen(js_name = EditorView, js_namespace = ["window", "CM6_EditorView"])]
         pub type EditorView;
         
-        #[wasm_bindgen(js_name = EditorState, js_namespace = ["window", "CM6", "state"])]
+        #[wasm_bindgen(js_name = EditorState, js_namespace = ["window", "CM6_EditorState"])]
         pub type EditorState;
         
-        #[wasm_bindgen(js_name = Transaction, js_namespace = ["window", "CM6", "state"])]
+        #[wasm_bindgen(js_name = Transaction, js_namespace = ["window", "CM6_Transaction"])]
         pub type Transaction;
         
-        #[wasm_bindgen(js_name = StateEffect, js_namespace = ["window", "CM6", "state"])]
+        #[wasm_bindgen(js_name = StateEffect, js_namespace = ["window", "CM6_StateEffect"])]
         pub type StateEffect;
         
-        #[wasm_bindgen(js_name = Compartment, js_namespace = ["window", "CM6", "state"])]
+        #[wasm_bindgen(js_name = Compartment, js_namespace = ["window", "CM6_Compartment"])]
         pub type Compartment;
+        
+        // Extension types for line numbers and other features
+        #[wasm_bindgen(js_name = Extension, js_namespace = ["window"])]
+        pub type Extension;
     }
 
     #[wasm_bindgen]
     extern "C" {
         // EditorView methods
-        #[wasm_bindgen(constructor, js_namespace = ["window", "CM6", "view"])]
-        pub fn new_editor_view(config: &JsValue) -> EditorView;
-        
         #[wasm_bindgen(method, getter)]
         pub fn state(this: &EditorView) -> EditorState;
         
@@ -50,8 +51,21 @@ pub mod wasm_bindings {
         #[wasm_bindgen(method, js_name = contentDOM)]
         pub fn content_dom(this: &EditorView) -> HtmlElement;
         
-        // Position and coordinate methods (simplified for now)
-        // TODO: Implement proper coordinate handling
+        // Global function references
+        #[wasm_bindgen(js_name = CM6_basicSetup, js_namespace = ["window"])]
+        pub fn basic_setup() -> Extension;
+        
+        #[wasm_bindgen(js_name = CM6_lineNumbers, js_namespace = ["window"])]
+        pub fn line_numbers() -> Extension;
+        
+        #[wasm_bindgen(js_name = CM6_latex, js_namespace = ["window"])]
+        pub fn latex() -> Extension;
+        
+        #[wasm_bindgen(js_name = CM6_oneDark, js_namespace = ["window"])]
+        pub fn one_dark() -> Extension;
+        
+        #[wasm_bindgen(js_name = CM6_lineWrapping, js_namespace = ["window"])]
+        pub fn line_wrapping() -> Extension;
     }
 
     // Simplified types and functions for compilation

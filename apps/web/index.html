@@ -32,33 +32,394 @@
         }
     </script>
     
-    <!-- CodeMirror 6 CSS -->
+    <!-- CodeMirror 6 CSS with Zinc Theme -->
     <style>
+        /* Base CodeMirror styling with proper sizing */
         .cm-editor {
-            height: 100%;
-            border: 1px solid #e2e8f0;
+            height: 100% !important;
+            max-height: 100% !important;
+            width: 100% !important;
+            max-width: 100% !important;
+            border: none;
+            background-color: white;
+            color: #18181b; /* zinc-900 */
+            font-family: 'JetBrains Mono', 'Fira Code', 'SF Mono', Consolas, 'Liberation Mono', Menlo, monospace;
+            position: relative !important;
+            overflow: hidden !important;
+        }
+        
+        .cm-content {
+            padding: 1rem;
+            min-height: 100% !important;
+            max-height: 100% !important;
+            background-color: white;
+            color: #18181b; /* zinc-900 */
+            overflow: auto !important;
+        }
+        
+        .cm-scroller {
+            height: 100% !important;
+            max-height: 100% !important;
+            background-color: white;
+            overflow: auto !important;
         }
         
         .cm-focused {
-            outline: 2px solid #3b82f6;
-            outline-offset: -2px;
+            outline: none;
         }
         
-        /* LaTeX-specific styling */
-        .cm-latex-command { color: #0969da; font-weight: 600; }
-        .cm-latex-environment { color: #8250df; }
-        .cm-latex-math { color: #0550ae; font-style: italic; }
-        .cm-latex-comment { color: #6e7781; font-style: italic; }
+        /* Light theme (default) */
+        .cm-line {
+            color: #18181b; /* zinc-900 */
+        }
         
-        /* AI suggestion decorations */
-        .cm-addition { background-color: rgba(34, 197, 94, 0.2); border-bottom: 2px solid rgb(34, 197, 94); }
-        .cm-deletion { background-color: rgba(239, 68, 68, 0.2); text-decoration: line-through; }
-        .cm-modification { background-color: rgba(251, 191, 36, 0.2); border-bottom: 2px solid rgb(251, 191, 36); }
-        .cm-sync-highlight { background-color: rgba(168, 85, 247, 0.3); border-left: 3px solid rgb(168, 85, 247); }
+        .cm-gutters {
+            background-color: #fafafa; /* zinc-50 */
+            border-right: 1px solid #e4e4e7; /* zinc-200 */
+            color: #71717a; /* zinc-500 */
+        }
+        
+        .cm-lineNumbers .cm-gutterElement {
+            color: #71717a; /* zinc-500 */
+            font-size: 0.875rem;
+            padding: 0 8px;
+        }
+        
+        .cm-activeLine {
+            background-color: #f4f4f5; /* zinc-100 */
+        }
+        
+        .cm-activeLineGutter {
+            background-color: #f4f4f5; /* zinc-100 */
+        }
+        
+        .cm-selectionBackground {
+            background-color: rgba(59, 130, 246, 0.2) !important; /* blue with opacity */
+        }
+        
+        .cm-cursor {
+            border-left-color: #18181b; /* zinc-900 */
+        }
+        
+        /* Dark theme */
+        .dark .cm-editor {
+            background-color: #09090b; /* zinc-950 */
+            color: #f4f4f5; /* zinc-100 */
+        }
+        
+        .dark .cm-content {
+            background-color: #09090b; /* zinc-950 */
+            color: #f4f4f5; /* zinc-100 */
+            max-height: 100% !important;
+            overflow: auto !important;
+        }
+        
+        .dark .cm-scroller {
+            background-color: #09090b; /* zinc-950 */
+            max-height: 100% !important;
+            overflow: auto !important;
+        }
+        
+        .dark .cm-line {
+            color: #f4f4f5; /* zinc-100 */
+        }
+        
+        .dark .cm-gutters {
+            background-color: #18181b; /* zinc-900 */
+            border-right: 1px solid #3f3f46; /* zinc-700 */
+            color: #a1a1aa; /* zinc-400 */
+        }
+        
+        .dark .cm-lineNumbers .cm-gutterElement {
+            color: #a1a1aa; /* zinc-400 */
+        }
+        
+        .dark .cm-activeLine {
+            background-color: #27272a; /* zinc-800 */
+        }
+        
+        .dark .cm-activeLineGutter {
+            background-color: #27272a; /* zinc-800 */
+        }
+        
+        .dark .cm-cursor {
+            border-left-color: #f4f4f5; /* zinc-100 */
+        }
+        
+        /* LaTeX syntax highlighting - Light theme */
+        .cm-latex-command { 
+            color: #3b82f6; /* blue-500 */
+            font-weight: 600; 
+        }
+        .cm-latex-environment { 
+            color: #8b5cf6; /* violet-500 */
+        }
+        .cm-latex-math { 
+            color: #0ea5e9; /* sky-500 */
+            font-style: italic; 
+        }
+        .cm-latex-comment { 
+            color: #71717a; /* zinc-500 */
+            font-style: italic; 
+        }
+        
+        /* LaTeX syntax highlighting - Dark theme */
+        .dark .cm-latex-command { 
+            color: #60a5fa; /* blue-400 */
+        }
+        .dark .cm-latex-environment { 
+            color: #a78bfa; /* violet-400 */
+        }
+        .dark .cm-latex-math { 
+            color: #38bdf8; /* sky-400 */
+        }
+        .dark .cm-latex-comment { 
+            color: #a1a1aa; /* zinc-400 */
+        }
+        
+        /* AI suggestion decorations - Light theme */
+        .cm-addition { 
+            background-color: rgba(34, 197, 94, 0.15); 
+            border-bottom: 2px solid #22c55e; /* green-500 */
+        }
+        .cm-deletion { 
+            background-color: rgba(239, 68, 68, 0.15); 
+            text-decoration: line-through;
+            color: #ef4444; /* red-500 */
+        }
+        .cm-modification { 
+            background-color: rgba(251, 191, 36, 0.15); 
+            border-bottom: 2px solid #fbbf24; /* yellow-400 */
+        }
+        .cm-sync-highlight { 
+            background-color: rgba(168, 85, 247, 0.2); 
+            border-left: 3px solid #a855f7; /* purple-500 */
+        }
+        
+        /* AI suggestion decorations - Dark theme */
+        .dark .cm-addition { 
+            background-color: rgba(34, 197, 94, 0.25); 
+            border-bottom-color: #16a34a; /* green-600 */
+        }
+        .dark .cm-deletion { 
+            background-color: rgba(239, 68, 68, 0.25); 
+            color: #f87171; /* red-400 */
+        }
+        .dark .cm-modification { 
+            background-color: rgba(251, 191, 36, 0.25); 
+            border-bottom-color: #eab308; /* yellow-500 */
+        }
+        .dark .cm-sync-highlight { 
+            background-color: rgba(168, 85, 247, 0.3); 
+            border-left-color: #9333ea; /* purple-600 */
+        }
+        
+        /* Search highlighting */
+        .cm-searchMatch {
+            background-color: rgba(251, 191, 36, 0.3);
+            border: 1px solid #fbbf24;
+        }
+        
+        .dark .cm-searchMatch {
+            background-color: rgba(251, 191, 36, 0.4);
+            border-color: #eab308;
+        }
+        
+        .cm-searchMatch.cm-searchMatch-selected {
+            background-color: rgba(59, 130, 246, 0.4);
+            border-color: #3b82f6;
+        }
+        
+        /* Selection and matching brackets */
+        .cm-matchingBracket {
+            background-color: rgba(34, 197, 94, 0.2);
+        }
+        
+        .dark .cm-matchingBracket {
+            background-color: rgba(34, 197, 94, 0.3);
+        }
+        
+        .cm-nonmatchingBracket {
+            background-color: rgba(239, 68, 68, 0.3);
+        }
+        
+        /* Folding */
+        .cm-foldGutter .cm-gutterElement {
+            color: #a1a1aa; /* zinc-400 */
+        }
+        
+        .dark .cm-foldGutter .cm-gutterElement {
+            color: #71717a; /* zinc-500 */
+        }
+        
+        /* Ensure proper container behavior */
+        .cm-editor.cm-focused {
+            border: none;
+            box-shadow: none;
+        }
+        
+        /* Override any OneDark theme if accidentally applied */
+        .dark .cm-editor.cm-theme-dark {
+            background-color: #09090b !important; /* zinc-950 */
+            color: #f4f4f5 !important; /* zinc-100 */
+        }
+        
+        /* Additional containment rules to prevent fullscreen */
+        .cm-wrap {
+            contain: layout size !important;
+            height: 100% !important;
+            max-height: 100% !important;
+        }
+        
+        /* Ensure the editor stays within its container div */
+        div[id^="cm-editor-"] {
+            contain: layout size !important;
+            height: 100% !important;
+            max-height: 100% !important;
+            width: 100% !important;
+            max-width: 100% !important;
+            overflow: hidden !important;
+        }
+        
+        div[id^="cm-editor-"] .cm-editor {
+            height: 100% !important;
+            max-height: 100% !important;
+            width: 100% !important;
+            max-width: 100% !important;
+            position: relative !important;
+        }
     </style>
     
     <!-- Custom styles -->
     <link rel="stylesheet" href="style.css">
+    
+    <!-- CodeMirror 6 ES Modules -->
+    <script type="module">
+        // Import CodeMirror 6 modules and make them globally available
+        import { EditorView, lineNumbers, highlightActiveLineGutter, highlightSpecialChars, 
+                drawSelection, dropCursor, rectangularSelection, crosshairCursor, 
+                keymap } from 'https://esm.sh/@codemirror/view@6.26.0?deps=@codemirror/state@6.4.1';
+        import { EditorState, Transaction, StateEffect, Compartment } from 'https://esm.sh/@codemirror/state@6.4.1';
+        import { defaultKeymap, historyKeymap, 
+                history } from 'https://esm.sh/@codemirror/commands@6.3.3?deps=@codemirror/state@6.4.1';
+        import { foldGutter, bracketMatching, foldKeymap, indentOnInput } from 'https://esm.sh/@codemirror/language@6.10.0?deps=@codemirror/state@6.4.1';
+        import { autocompletion, closeBrackets, completionKeymap } from 'https://esm.sh/@codemirror/autocomplete@6.15.0?deps=@codemirror/state@6.4.1';
+        import { highlightSelectionMatches } from 'https://esm.sh/@codemirror/search@6.5.6?deps=@codemirror/state@6.4.1';
+        
+        // Try to import LaTeX and theme support
+        let latex = null;
+        let oneDark = null;
+        
+        try {
+            const latexModule = await import('https://esm.sh/@codemirror/lang-latex@6.0.0');
+            latex = latexModule.latex;
+        } catch (e) {
+            console.warn('LaTeX language support not available:', e);
+        }
+        
+        try {
+            const themeModule = await import('https://esm.sh/@codemirror/theme-one-dark@6.1.2');
+            oneDark = themeModule.oneDark;
+        } catch (e) {
+            console.warn('OneDark theme not available:', e);
+        }
+        
+        // Create global CM6 namespace for WASM
+        window.CM6 = {
+            // Core classes
+            EditorView,
+            EditorState,
+            Transaction,
+            StateEffect,
+            Compartment,
+            
+            // Extensions
+            lineNumbers: () => lineNumbers(),
+            highlightActiveLineGutter: () => highlightActiveLineGutter(),
+            highlightSpecialChars: () => highlightSpecialChars(),
+            history: () => history(),
+            foldGutter: () => foldGutter(),
+            drawSelection: () => drawSelection(),
+            dropCursor: () => dropCursor(),
+            indentOnInput: () => indentOnInput(),
+            bracketMatching: () => bracketMatching(),
+            closeBrackets: () => closeBrackets(),
+            autocompletion: () => autocompletion(),
+            rectangularSelection: () => rectangularSelection(),
+            crosshairCursor: () => crosshairCursor(),
+            highlightSelectionMatches: () => highlightSelectionMatches(),
+            lineWrapping: () => EditorView.lineWrapping,
+            
+            // Language support
+            latex: latex ? () => latex() : null,
+            
+            // Themes
+            oneDark: oneDark ? () => oneDark : null,
+            
+            // Keymaps
+            defaultKeymap: () => defaultKeymap,
+            historyKeymap: () => historyKeymap,
+            foldKeymap: () => foldKeymap,
+            completionKeymap: () => completionKeymap,
+            
+            // Utility to create basic setup
+            basicSetup: () => {
+                try {
+                    return [
+                        lineNumbers(),
+                        highlightActiveLineGutter(),
+                        highlightSpecialChars(),
+                        history(),
+                        foldGutter(),
+                        drawSelection(),
+                        dropCursor(),
+                        EditorState.allowMultipleSelections.of(true),
+                        indentOnInput(),
+                        bracketMatching(),
+                        closeBrackets(),
+                        autocompletion(),
+                        rectangularSelection(),
+                        crosshairCursor(),
+                        highlightSelectionMatches(),
+                        keymap.of([
+                            ...defaultKeymap,
+                            ...historyKeymap,
+                            ...foldKeymap,
+                            ...completionKeymap
+                        ])
+                    ];
+                } catch (e) {
+                    console.error('Error creating basicSetup extensions:', e);
+                    // Return minimal setup if there's an error
+                    return [
+                        lineNumbers(),
+                        history(),
+                        drawSelection(),
+                        keymap.of(defaultKeymap)
+                    ];
+                }
+            }
+        };
+        
+        console.log('CodeMirror 6 modules loaded and available globally');
+        
+        // Verify CM6 is properly accessible
+        if (typeof window.CM6 !== 'undefined') {
+            console.log('✅ CM6 global object confirmed available');
+            console.log('✅ CM6.basicSetup:', typeof window.CM6.basicSetup);
+            console.log('✅ CM6.lineNumbers:', typeof window.CM6.lineNumbers);
+            
+            // Test basic setup creation
+            try {
+                const testSetup = window.CM6.basicSetup();
+                console.log('✅ basicSetup test successful, extensions count:', testSetup.length);
+            } catch (e) {
+                console.error('❌ basicSetup test failed:', e);
+            }
+        } else {
+            console.error('❌ CM6 global object not found');
+        }
+    </script>
     
     <!-- Progressive Web App manifest -->
     <link rel="manifest" href="manifest.json">
@@ -269,76 +630,6 @@
             });
         }
 
-        // Load CodeMirror LaTeX IDE bundle
-        async function loadCodeMirrorBundle() {
-            try {
-                // Load the bundled CodeMirror LaTeX IDE
-                const bundleScript = document.createElement('script');
-                bundleScript.src = './assets/codemirror-bundle.js';
-                bundleScript.async = true;
-                
-                return new Promise((resolve, reject) => {
-                    bundleScript.onload = () => {
-                        console.log('CodeMirror LaTeX IDE bundle loaded');
-                        resolve();
-                    };
-                    bundleScript.onerror = reject;
-                    document.head.appendChild(bundleScript);
-                });
-                
-            } catch (error) {
-                console.error('Failed to load CodeMirror bundle:', error);
-                throw error;
-            }
-        }
-        
-        // Enhanced CodeMirror factory with bundled modules
-        function setupCodeMirror6() {
-            if (!window.CodeMirrorLaTeXIDE) {
-                console.error('CodeMirror LaTeX IDE bundle not loaded');
-                return;
-            }
-            
-            // Create enhanced factory
-            window.CodeMirrorFactory = {
-                createEditor: async function(container, initialContent = '') {
-                    console.log('Creating enhanced CodeMirror editor...');
-                    
-                    try {
-                        const editor = await window.CodeMirrorLaTeXIDE.createEditor(container, {
-                            content: initialContent,
-                            theme: document.documentElement.classList.contains('dark') ? 'dark' : 'light',
-                            enableLatex: true,
-                            enableAutocompletion: true,
-                            enableLineNumbers: true,
-                            enableLineWrapping: true,
-                            onChange: (content) => {
-                                // Notify Rust/WASM about content changes
-                                if (window.onEditorContentChange) {
-                                    window.onEditorContentChange(content);
-                                }
-                            },
-                            onSelectionChange: (selection) => {
-                                // Notify Rust/WASM about selection changes
-                                if (window.onEditorSelectionChange) {
-                                    window.onEditorSelectionChange(selection);
-                                }
-                            }
-                        });
-                        
-                        // Store as global reference for WASM interaction
-                        window.cmEditor = editor;
-                        
-                        console.log('Enhanced CodeMirror editor created successfully');
-                        return editor;
-                        
-                    } catch (error) {
-                        console.error('Failed to create CodeMirror editor:', error);
-                        throw error;
-                    }
-                }
-            };
-        }
 
         // Hide loading screen
         function hideLoadingScreen() {
@@ -362,18 +653,11 @@
                     console.warn('Some browser features may not be available');
                 }
 
-                // Load CodeMirror LaTeX IDE bundle
-                updateLoadingProgress(20, 'Loading CodeMirror LaTeX IDE bundle...');
-                await loadCodeMirrorBundle();
                 
                 // Load WebAssembly module
-                updateLoadingProgress(50, 'Loading WebAssembly module...');
+                updateLoadingProgress(40, 'Loading WebAssembly module...');
                 const wasmModule = await import('./pkg/latex_ide_web.js');
 
-                // Set up enhanced CodeMirror 6 factory
-                updateLoadingProgress(40, 'Setting up enhanced editor...');
-                setupCodeMirror6();
-                
                 updateLoadingProgress(60, 'Initializing WASM...');
                 await wasmModule.default(); // Initialize WASM
                 

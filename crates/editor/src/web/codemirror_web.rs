@@ -17,6 +17,7 @@ use {
 #[component]
 pub fn WebCodeMirrorEditor(mut props: CodeMirrorProps) -> Element {
     let container_id = use_signal(|| format!("cm-editor-{}", uuid::Uuid::new_v4().simple()));
+    let config = props.to_editor_config();
     
     #[cfg(target_arch = "wasm32")]
     let mut editor_instance = use_signal(|| None::<Rc<Editor>>);
@@ -32,12 +33,13 @@ pub fn WebCodeMirrorEditor(mut props: CodeMirrorProps) -> Element {
         {
             let container_id_clone = container_id.read().clone();
             let initial_content = props.content.read().clone();
+            let config_clone = config.clone();
             
             spawn_local(async move {
                 if let Some(window) = web_sys::window() {
                     if let Some(document) = window.document() {
                         if let Some(element) = document.get_element_by_id(&container_id_clone) {
-                            match Editor::new(element, Some(initial_content)).await {
+                            match Editor::new_with_config(element, Some(initial_content), config_clone).await {
                                 Ok(editor) => {
                                     let editor_rc = Rc::new(editor);
                                     editor_instance.set(Some(editor_rc.clone()));
@@ -108,37 +110,37 @@ pub fn WebCodeMirrorEditor(mut props: CodeMirrorProps) -> Element {
     
     rsx! {
         div {
-            class: format!("h-full flex flex-col bg-white dark:bg-gray-900 {}", 
+            class: format!("h-full w-full flex flex-col bg-white dark:bg-zinc-950 {}", 
                 props.class.as_ref().unwrap_or(&String::new())),
             
             // Error display
             if let Some(error) = initialization_error.read().as_ref() {
                 div {
-                    class: "bg-red-50 border border-red-200 text-red-700 px-4 py-2 text-sm",
+                    class: "bg-red-50 dark:bg-red-900 border border-red-200 dark:border-red-700 text-red-700 dark:text-red-300 px-4 py-2 text-sm",
                     "⚠️ Editor Error: {error}"
                 }
             }
             
             // Editor container with loading/error states
             div {
-                class: "flex-1 relative",
+                class: "flex-1 relative overflow-hidden",
                 
                 // Main editor container
                 div {
                     id: "{container_id.read()}",
-                    class: "h-full w-full",
+                    class: "h-full w-full overflow-hidden",
                     
                     // Loading overlay
                     if editor_instance.read().is_none() && initialization_error.read().is_none() {
                         div {
-                            class: "absolute inset-0 flex items-center justify-center bg-gray-50 dark:bg-gray-800 bg-opacity-75",
+                            class: "absolute inset-0 flex items-center justify-center bg-zinc-50 dark:bg-zinc-800 bg-opacity-75",
                             div {
                                 class: "text-center",
                                 div {
                                     class: "inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500 mb-4",
                                 }
                                 div {
-                                    class: "text-sm text-gray-600 dark:text-gray-400",
+                                    class: "text-sm text-zinc-600 dark:text-zinc-400",
                                     "Initializing CodeMirror 6..."
                                 }
                             }

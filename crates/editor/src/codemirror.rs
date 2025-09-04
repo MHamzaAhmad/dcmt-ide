@@ -173,7 +173,7 @@ pub struct CodeMirrorProps {
 }
 
 /// Configuration for creating a new editor instance
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug)]
 pub struct EditorConfig {
     /// Initial document content
     pub initial_content: Option<String>,
@@ -198,6 +198,21 @@ pub struct EditorConfig {
     
     /// Custom extensions to add
     pub custom_extensions: Vec<String>,
+}
+
+impl Default for EditorConfig {
+    fn default() -> Self {
+        Self {
+            initial_content: None,
+            enable_ai_suggestions: false,
+            enable_pdf_sync: false,
+            dark_theme: false,
+            line_wrapping: true,
+            line_numbers: true,  // Enable line numbers by default
+            language_mode: LanguageMode::LaTeX,
+            custom_extensions: Vec::new(),
+        }
+    }
 }
 
 /// Supported language modes

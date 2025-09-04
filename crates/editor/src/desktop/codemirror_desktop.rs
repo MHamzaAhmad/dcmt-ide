@@ -1,5 +1,5 @@
 use latex_ide_ui::*;
-use crate::codemirror::{CodeMirrorProps, CodeMirrorOps, DecorationType};
+use crate::codemirror::{CodeMirrorProps, CodeMirrorOps, DecorationType, EditorConfig};
 
 #[cfg(all(not(target_arch = "wasm32"), feature = "desktop"))]
 use {
@@ -18,15 +18,21 @@ pub struct DesktopCodeMirrorState {
     decorations: HashMap<String, DecorationType>,
     #[allow(dead_code)]
     last_content: String,
+    config: EditorConfig,
 }
 
 impl DesktopCodeMirrorState {
     pub fn new() -> Self {
+        Self::new_with_config(EditorConfig::default())
+    }
+
+    pub fn new_with_config(config: EditorConfig) -> Self {
         Self {
             editor_id: format!("cm-editor-{}", Uuid::new_v4().simple()),
             initialized: false,
             decorations: HashMap::new(),
             last_content: String::new(),
+            config,
         }
     }
 }
@@ -301,7 +307,8 @@ impl CodeMirrorOps for DesktopCodeMirrorState {
 
 #[component]
 pub fn DesktopCodeMirrorEditor(mut props: CodeMirrorProps) -> Element {
-    let editor_state = use_signal(|| DesktopCodeMirrorState::new());
+    let config = props.to_editor_config();
+    let editor_state = use_signal(|| DesktopCodeMirrorState::new_with_config(config.clone()));
     let mut initialization_error = use_signal(|| None::<String>);
     let mut editor_ready = use_signal(|| false);
     
@@ -311,6 +318,7 @@ pub fn DesktopCodeMirrorEditor(mut props: CodeMirrorProps) -> Element {
         {
             let container_id = editor_state.read().editor_id.clone();
             let initial_content = props.content.read().clone();
+            let config = props.to_editor_config();
             
             let init_script = format!(
                 r#"
@@ -347,45 +355,62 @@ pub fn DesktopCodeMirrorEditor(mut props: CodeMirrorProps) -> Element {
                             throw new Error('CodeMirror container element not found');
                         }}
                         
-                        // Create editor with enhanced configuration
+                        // Create editor with configuration-based extensions
                         let extensions = [];
                         
-                        if (window.CM6.basicSetup && window.CM6.basicSetup.basicSetup) {{
-                            extensions.push(window.CM6.basicSetup.basicSetup);
-                        }} else {{
-                            // Fallback basic extensions
-                            extensions = [
+                        // Configuration from Rust
+                        const config = {{
+                            line_numbers: {},
+                            line_wrapping: {},
+                            dark_theme: {},
+                            enable_ai_suggestions: {},
+                            enable_pdf_sync: {}
+                        }};
+                        
+                        // Always add core editing functionality
+                        extensions.push(
+                            window.CM6.view.highlightSpecialChars(),
+                            window.CM6.view.history(),
+                            window.CM6.view.drawSelection(),
+                            window.CM6.view.dropCursor(),
+                            window.CM6.state.EditorState.allowMultipleSelections.of(true),
+                            window.CM6.language.indentOnInput(),
+                            window.CM6.language.bracketMatching(),
+                            window.CM6.view.closeBrackets(),
+                            window.CM6.autocomplete.autocompletion(),
+                            window.CM6.view.rectangularSelection(),
+                            window.CM6.view.crosshairCursor(),
+                            window.CM6.view.highlightSelectionMatches(),
+                            window.CM6.view.keymap.of([
+                                ...window.CM6.commands.defaultKeymap,
+                                ...window.CM6.commands.historyKeymap,
+                                ...window.CM6.commands.foldKeymap,
+                                ...window.CM6.commands.completionKeymap
+                            ])
+                        );
+                        
+                        // Configuration-based extensions
+                        if (config.line_numbers) {{
+                            extensions.push(
                                 window.CM6.view.lineNumbers(),
                                 window.CM6.view.highlightActiveLineGutter(),
-                                window.CM6.view.highlightSpecialChars(),
-                                window.CM6.view.history(),
-                                window.CM6.view.foldGutter(),
-                                window.CM6.view.drawSelection(),
-                                window.CM6.view.dropCursor(),
-                                window.CM6.state.EditorState.allowMultipleSelections.of(true),
-                                window.CM6.language.indentOnInput(),
-                                window.CM6.language.bracketMatching(),
-                                window.CM6.view.closeBrackets(),
-                                window.CM6.autocomplete.autocompletion(),
-                                window.CM6.view.rectangularSelection(),
-                                window.CM6.view.crosshairCursor(),
-                                window.CM6.view.highlightSelectionMatches(),
-                                window.CM6.view.keymap.of([
-                                    ...window.CM6.commands.defaultKeymap,
-                                    ...window.CM6.commands.historyKeymap,
-                                    ...window.CM6.commands.foldKeymap,
-                                    ...window.CM6.commands.completionKeymap
-                                ])
-                            ].filter(ext => ext !== undefined);
+                                window.CM6.view.foldGutter()
+                            );
                         }}
                         
-                        // Add LaTeX language support if available
+                        if (config.line_wrapping) {{
+                            extensions.push(window.CM6.view.EditorView.lineWrapping);
+                        }}
+                        
+                        // LaTeX language support
                         if (window.CM6.latex && window.CM6.latex.latex) {{
                             extensions.push(window.CM6.latex.latex());
                         }}
                         
-                        // Add line wrapping
-                        extensions.push(window.CM6.view.EditorView.lineWrapping);
+                        // Dark theme support (would need to be loaded dynamically)
+                        if (config.dark_theme) {{
+                            console.log('Dark theme requested but not implemented in desktop version');
+                        }}
                         
                         const startState = window.CM6.state.EditorState.create({{
                             doc: {},
@@ -411,6 +436,11 @@ pub fn DesktopCodeMirrorEditor(mut props: CodeMirrorProps) -> Element {
                 }})()
                 "#,
                 container_id,
+                config.line_numbers,
+                config.line_wrapping,
+                config.dark_theme,
+                config.enable_ai_suggestions,
+                config.enable_pdf_sync,
                 serde_json::to_string(&initial_content).unwrap_or("\"\"".to_string())
             );
             

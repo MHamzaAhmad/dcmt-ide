@@ -19,6 +19,7 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 urlencoding = "2.1"
 futures-util = "0.3"
+dotenvy = "0.15"
 
 [[bin]]
 name = "dcmt-backend"

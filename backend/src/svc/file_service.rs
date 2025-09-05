@@ -14,6 +14,7 @@ pub type EventReceiver = broadcast::Receiver<FileEvent>;
 pub struct FileService {
     repository: Arc<FileRepository>,
     event_sender: EventSender,
+    workspace_path: PathBuf,
     _watcher: Arc<RwLock<Option<RecommendedWatcher>>>,
 }
 
@@ -25,6 +26,7 @@ impl FileService {
         let service = Self {
             repository,
             event_sender,
+            workspace_path: workspace_path.clone(),
             _watcher: Arc::new(RwLock::new(None)),
         };
 
@@ -154,7 +156,7 @@ impl FileService {
 
         // Send event
         let mut metadata = FileEventMetadata::new(false);
-        if let Ok(file_metadata) = std::fs::metadata(format!("workspace/{}", path)) {
+        if let Ok(file_metadata) = std::fs::metadata(self.workspace_path.join(path)) {
             metadata = metadata.with_size(file_metadata.len());
         }
         let event = FileEvent::new(FileEventType::Modified, path.to_string()).with_metadata(metadata);
@@ -165,8 +167,8 @@ impl FileService {
 
     pub async fn delete_file_or_directory(&self, path: &str) -> Result<()> {
         // Get metadata before deletion
-        let workspace_path = PathBuf::from("workspace").join(path);
-        let is_dir = workspace_path.is_dir();
+        let file_path = self.workspace_path.join(path);
+        let is_dir = file_path.is_dir();
         
         self.repository.delete_file(path).await?;
 
@@ -180,8 +182,8 @@ impl FileService {
 
     pub async fn rename_file(&self, old_path: &str, new_path: &str) -> Result<()> {
         // Get metadata before renaming
-        let workspace_path = PathBuf::from("workspace").join(old_path);
-        let is_dir = workspace_path.is_dir();
+        let file_path = self.workspace_path.join(old_path);
+        let is_dir = file_path.is_dir();
         
         self.repository.rename_file(old_path, new_path).await?;
 

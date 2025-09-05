@@ -1,12 +1,14 @@
-use dcmt_backend::transport::router::create_router;
+use dcmt_backend::{config::Config, transport::router::create_router};
 use anyhow::Result;
 use axum::serve;
-use std::path::PathBuf;
 use tokio::net::TcpListener;
 use tracing::info;
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    // Load configuration
+    let config = Config::load()?;
+
     // Initialize tracing
     tracing_subscriber::fmt()
         .with_env_filter(
@@ -16,22 +18,22 @@ async fn main() -> Result<()> {
         .init();
 
     // Ensure workspace directory exists
-    let workspace_path = PathBuf::from("workspace");
-    if !workspace_path.exists() {
-        tokio::fs::create_dir_all(&workspace_path).await?;
-        info!("Created workspace directory at: {:?}", workspace_path);
+    if !config.workspace_path.exists() {
+        tokio::fs::create_dir_all(&config.workspace_path).await?;
+        info!("Created workspace directory at: {:?}", config.workspace_path);
     } else {
-        info!("Using existing workspace directory at: {:?}", workspace_path);
+        info!("Using existing workspace directory at: {:?}", config.workspace_path);
     }
 
-    // Create router
-    let app = create_router().await?;
+    // Create router with config
+    let app = create_router(config.clone()).await?;
     
     // Start server
-    let listener = TcpListener::bind("127.0.0.1:3001").await?;
-    info!("🚀 DCMT Backend server running on http://127.0.0.1:3001");
-    info!("📁 Workspace path: {:?}", workspace_path.canonicalize().unwrap_or(workspace_path));
-    info!("🔌 WebSocket endpoint: ws://127.0.0.1:3001/ws");
+    let server_addr = format!("{}:{}", config.server.host, config.server.port);
+    let listener = TcpListener::bind(&server_addr).await?;
+    info!("🚀 DCMT Backend server running on http://{}", server_addr);
+    info!("📁 Workspace path: {:?}", config.workspace_path.canonicalize().unwrap_or(config.workspace_path.clone()));
+    info!("🔌 WebSocket endpoint: ws://{}/ws", server_addr);
     
     serve(listener, app).await?;
     

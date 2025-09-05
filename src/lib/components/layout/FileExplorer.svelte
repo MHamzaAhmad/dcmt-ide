@@ -1,63 +1,73 @@
 <script lang="ts">
 	import { TreeView, TreeViewFile, TreeViewFolder } from '$lib/components/ui/tree-view';
-	import { File, Folder, FolderOpen, FileText } from '@lucide/svelte';
-	import { fileTree, openFiles, type FileNode } from '$lib/stores/files.js';
+	import { File, Folder, FolderOpen, FileText, Loader2, AlertCircle } from '@lucide/svelte';
+	import { openFiles } from '$lib/stores/files.js';
 	import { editorState } from '$lib/stores/editor.js';
-	import { onMount } from 'svelte';
+	import { useDirectoryTree, useFileContent, useAutoRefresh } from '$lib/api/hooks';
+	import type { FileInfo } from '$lib/api/types';
 
-	let files = $state<FileNode[]>([]);
+	// Convert FileInfo to FileNode format for compatibility with existing components
+	interface FileNode {
+		id: string;
+		name: string;
+		path: string;
+		type: 'file' | 'directory';
+		children?: FileNode[];
+	}
 
-	$effect(() => {
-		files = $fileTree;
-	});
+	// Use our unified file system API
+	const directoryQuery = useDirectoryTree('');
+	let selectedFilePath = $state<string>('');
+	
+	// Create reactive file content query
+	let fileContentQuery = $derived(useFileContent(selectedFilePath, !!selectedFilePath));
+	
+	// Enable auto-refresh for real-time file watching
+	const fileWatcher = useAutoRefresh(true);
 
-	onMount(() => {
-		fileTree.loadMockFiles();
-	});
+	// Convert API FileInfo to our FileNode format
+	function convertFileInfoToNode(fileInfo: FileInfo, parentPath: string = ''): FileNode {
+		const fullPath = parentPath ? `${parentPath}/${fileInfo.name}` : fileInfo.name;
+		
+		return {
+			id: fullPath,
+			name: fileInfo.name,
+			path: fullPath,
+			type: fileInfo.file_type === 'Directory' ? 'directory' : 'file',
+			children: fileInfo.children?.map(child => convertFileInfoToNode(child, fullPath))
+		};
+	}
 
-	function handleFileClick(file: FileNode) {
+	// Reactive file tree conversion
+	let files = $derived($directoryQuery.data ? 
+		($directoryQuery.data.children?.map(child => convertFileInfoToNode(child)) || []) : 
+		[]);
+
+	async function handleFileClick(file: FileNode) {
 		if (file.type === 'file') {
-			// Open file in editor
+			// Set selected file path to trigger content loading
+			selectedFilePath = file.path;
+			
+			// For now, open with placeholder content - the query will update it
 			openFiles.openFile({
 				id: file.id,
 				name: file.name,
 				path: file.path,
-				content: getFileContent(file.path)
+				content: 'Loading...' // This will be updated by the file content query
 			});
 			
 			editorState.setActiveFile(file.id);
 		}
 	}
 
-	function getFileContent(path: string): string {
-		// Mock content based on file type
-		if (path.endsWith('.tex')) {
-			return `\\documentclass{article}
-\\usepackage[utf8]{inputenc}
-\\title{Sample LaTeX Document}
-\\author{Author Name}
-\\date{\\today}
-
-\\begin{document}
-\\maketitle
-
-\\section{Introduction}
-This is a sample LaTeX document.
-
-\\section{Content}
-Add your content here.
-
-\\end{document}`;
+	// Watch for file content changes and update the opened file
+	$effect(() => {
+		if (selectedFilePath && $fileContentQuery.data) {
+			// Update the opened file with the loaded content
+			const fileId = selectedFilePath;
+			openFiles.updateFileContent(fileId, $fileContentQuery.data.content);
 		}
-		return `// Content for ${path}`;
-	}
-
-	function renderFileTree(nodes: FileNode[]) {
-		return nodes.map(node => ({
-			...node,
-			component: node.type === 'folder' ? 'folder' : 'file'
-		}));
-	}
+	});
 
 	function getFileIcon(fileName: string) {
 		if (fileName.endsWith('.tex')) {
@@ -73,84 +83,43 @@ Add your content here.
 	</div>
 	
 	<div class="flex-1 overflow-auto p-2">
-		{#if files.length > 0}
+		{#if $directoryQuery.isPending}
+			<!-- Loading state -->
+			<div class="p-4 text-center">
+				<Loader2 class="h-6 w-6 animate-spin mx-auto mb-2" />
+				<p class="text-sm text-muted-foreground">Loading files...</p>
+			</div>
+		{:else if $directoryQuery.isError}
+			<!-- Error state -->
+			<div class="p-4 text-center">
+				<AlertCircle class="h-6 w-6 text-destructive mx-auto mb-2" />
+				<p class="text-sm text-destructive">Failed to load files</p>
+				<p class="text-xs text-muted-foreground mt-1">
+					{$directoryQuery.error?.message || 'Unknown error'}
+				</p>
+			</div>
+		{:else if files.length > 0}
+			<!-- File tree -->
 			<TreeView class="w-full">
 				{#each files as node}
-					{#if node.type === 'folder'}
-						<TreeViewFolder 
-							name={node.name} 
-							open={node.isExpanded}
-							class="text-sm"
-						>
-							{#snippet icon({ name, open })}
-								{#if open}
-									<FolderOpen size={16} class="text-blue-500" />
-								{:else}
-									<Folder size={16} class="text-blue-500" />
-								{/if}
-							{/snippet}
-							
-							{#if node.children}
-								{#each node.children as child}
-									{#if child.type === 'file'}
-										<TreeViewFile 
-											name={child.name}
-											class="text-sm hover:bg-accent"
-											onclick={() => handleFileClick(child)}
-										>
-											{#snippet icon({ name })}
-												{@const IconComponent = getFileIcon(name)}
-												<IconComponent size={16} class="text-muted-foreground" />
-											{/snippet}
-										</TreeViewFile>
-									{:else}
-										<TreeViewFolder 
-											name={child.name} 
-											open={child.isExpanded}
-											class="text-sm"
-										>
-											{#snippet icon({ name, open })}
-												{#if open}
-													<FolderOpen size={16} class="text-blue-500" />
-												{:else}
-													<Folder size={16} class="text-blue-500" />
-												{/if}
-											{/snippet}
-											
-											{#if child.children}
-												{#each child.children as grandchild}
-													<TreeViewFile 
-														name={grandchild.name}
-														class="text-sm hover:bg-accent"
-														onclick={() => handleFileClick(grandchild)}
-													>
-														{#snippet icon({ name })}
-															{@const IconComponent = getFileIcon(name)}
-															<IconComponent size={16} class="text-muted-foreground" />
-														{/snippet}
-													</TreeViewFile>
-												{/each}
-											{/if}
-										</TreeViewFolder>
-									{/if}
-								{/each}
-							{/if}
-						</TreeViewFolder>
-					{:else}
-						<TreeViewFile 
-							name={node.name}
-							class="text-sm hover:bg-accent"
-							onclick={() => handleFileClick(node)}
-						>
-							{#snippet icon({ name })}
+					<TreeViewFile 
+						name={node.name}
+						class="text-sm hover:bg-accent"
+						onclick={() => handleFileClick(node)}
+					>
+						{#snippet icon({ name })}
+							{#if node.type === 'directory'}
+								<Folder size={16} class="text-blue-500" />
+							{:else}
 								{@const IconComponent = getFileIcon(name)}
 								<IconComponent size={16} class="text-muted-foreground" />
-							{/snippet}
-						</TreeViewFile>
-					{/if}
+							{/if}
+						{/snippet}
+					</TreeViewFile>
 				{/each}
 			</TreeView>
 		{:else}
+			<!-- Empty state -->
 			<div class="p-4 text-center text-muted-foreground text-sm">
 				No files found
 			</div>

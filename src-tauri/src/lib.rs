@@ -3,11 +3,10 @@ mod services;
 mod models;
 
 use commands::filesystem::*;
-use services::{FileService, FileWatcher};
-use std::path::PathBuf;
+use commands::project::{ProjectInfo, *};
 use std::sync::Arc;
 use tauri::Manager;
-use tracing::{info, error};
+use tracing::info;
 
 // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
 #[tauri::command]
@@ -24,32 +23,17 @@ pub fn run() {
 
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
-            let app_handle = app.handle().clone();
+            // Initialize project state - starts with no project selected
+            let project_state = Arc::new(std::sync::RwLock::new(None::<ProjectInfo>));
+            app.manage(project_state);
             
-            // Determine workspace path - for now use current directory
-            // In production, this could be user-configurable or derived from project settings
-            let workspace_path = std::env::current_dir()
-                .unwrap_or_else(|_| PathBuf::from("."));
+            info!("Application initialized - waiting for project selection");
             
-            info!("Initializing file system services with workspace: {:?}", workspace_path);
-
-            // Initialize file service
-            let file_service = Arc::new(FileService::new(workspace_path.clone()));
-            app.manage(file_service);
-
-            // Initialize file watcher
-            match FileWatcher::new(app_handle, workspace_path) {
-                Ok(watcher) => {
-                    info!("File watcher initialized successfully");
-                    app.manage(watcher);
-                }
-                Err(e) => {
-                    error!("Failed to initialize file watcher: {}", e);
-                    // Continue without watcher - file operations will still work
-                }
-            }
-
+            // Note: FileService and FileWatcher will be initialized after project selection
+            // via the select_project_folder command
+            
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -62,7 +46,11 @@ pub fn run() {
             rename_file,
             file_exists,
             get_workspace_info,
-            batch_file_operations
+            batch_file_operations,
+            select_project_folder,
+            get_current_project,
+            clear_project,
+            get_project_info
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

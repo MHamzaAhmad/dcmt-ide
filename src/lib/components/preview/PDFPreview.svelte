@@ -4,8 +4,8 @@
 	import { ZoomIn, ZoomOut, RotateCw, Download, FileText } from '@lucide/svelte';
 
 	let canvasContainer: HTMLDivElement;
-	let canvas: HTMLCanvasElement;
-	let pdfDoc: any = null;
+	let canvas = $state<HTMLCanvasElement>();
+	let pdfDoc = $state<any>(null);
 	let currentPage = $state(1);
 	let totalPages = $state(0);
 	let scale = $state(1.5);

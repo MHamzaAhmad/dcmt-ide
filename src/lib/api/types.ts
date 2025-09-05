@@ -41,3 +41,90 @@ export interface APIError {
 	message: string;
 	status: number;
 }
+
+// File System Types (shared between desktop and web)
+export interface FileInfo {
+	name: string;
+	path: string;
+	file_type: 'File' | 'Directory';
+	size?: number;
+	modified?: number;
+	children?: FileInfo[];
+}
+
+export interface FileContent {
+	path: string;
+	content: string;
+	size: number;
+	modified: number;
+}
+
+export interface CreateFileRequest {
+	path: string;
+	content?: string;
+	is_directory: boolean;
+}
+
+export interface UpdateFileRequest {
+	content: string;
+}
+
+// Project Types (desktop only)
+export interface ProjectInfo {
+	name: string;
+	path: string;
+	selected_at: number;
+}
+
+// Generic Platform API Interface (will support filesystem, compilation, etc.)
+export interface PlatformAPI {
+	// Project management (desktop only)
+	selectProjectFolder?(): Promise<ProjectInfo | null>;
+	getCurrentProject?(): Promise<ProjectInfo | null>;
+	clearProject?(): Promise<void>;
+	
+	// File operations
+	getDirectoryTree(path: string): Promise<FileInfo>;
+	readFileContent(path: string): Promise<FileContent>;
+	writeFileContent(path: string, content: string): Promise<void>;
+	createFile(path: string, content?: string, isDirectory?: boolean): Promise<void>;
+	deleteFile(path: string): Promise<void>;
+	renameFile(oldPath: string, newPath: string): Promise<void>;
+	fileExists(path: string): Promise<boolean>;
+}
+
+// Specific interfaces for different API categories
+export interface FileSystemOperations {
+	getDirectoryTree(path: string): Promise<FileInfo>;
+	readFileContent(path: string): Promise<FileContent>;
+	writeFileContent(path: string, content: string): Promise<void>;
+	createFile(path: string, content?: string, isDirectory?: boolean): Promise<void>;
+	deleteFile(path: string): Promise<void>;
+	renameFile(oldPath: string, newPath: string): Promise<void>;
+	fileExists(path: string): Promise<boolean>;
+}
+
+export interface ProjectOperations {
+	selectProjectFolder?(): Promise<ProjectInfo | null>;
+	getCurrentProject?(): Promise<ProjectInfo | null>;
+	clearProject?(): Promise<void>;
+}
+
+// File Watcher Interface
+export interface FileWatcherOperations {
+	isActive(): boolean;
+	destroy(): Promise<void>;
+}
+
+// File Event Types for unified handling
+export interface FileEventData {
+	event_type: 'Created' | 'Modified' | 'Deleted' | 'Renamed';
+	path: string;
+	metadata: {
+		is_directory: boolean;
+		size?: number;
+		old_path?: string;
+		new_path?: string;
+	};
+	timestamp: number;
+}

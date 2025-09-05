@@ -1,7 +1,7 @@
 // API Client Configuration
 
 export class APIClient {
-	private baseURL: string;
+	public baseURL: string;
 	private token: string;
 
 	constructor(baseURL: string = '') {

@@ -23,8 +23,11 @@ pub struct LlmClientConfig {
 
 impl Default for LlmClientConfig {
     fn default() -> Self {
+        let base_url = std::env::var("LLM_BASE_URL")
+            .unwrap_or_else(|_| "http://localhost:3003".to_string());
+        
         Self {
-            base_url: "http://localhost:3000".to_string(), // Adjust based on your server
+            base_url,
             auth_token: String::new(), // Empty as requested
         }
     }

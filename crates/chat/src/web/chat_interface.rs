@@ -1,6 +1,6 @@
 use dioxus::prelude::*;
 use dioxus_signals::{Signal, Readable, Writable};
-use dioxus_hooks::use_signal;
+use dioxus_hooks::{use_signal, use_effect};
 use crate::{ChatEngine, ChatMessage};
 use latex_ide_ui::*;
 use latex_ide_ui::button::ButtonVariant;
@@ -33,49 +33,44 @@ pub fn WebAIChatInterface(capabilities: Signal<BrowserCapabilities>) -> Element 
     let mut chat_engine = use_signal(|| ChatEngine::new());
     let mut current_message = use_signal(|| String::new());
     
+    // Load models on first render (web only for now, desktop loads on demand)
+    #[cfg(all(target_arch = "wasm32", feature = "web"))]
+    use_effect(move || {
+        let mut engine = chat_engine.clone();
+        spawn_local(async move {
+            let _ = engine.write().load_models().await;
+        });
+    });
+    
     rsx! {
-        div { class: "h-full flex flex-col",
+        div { class: "h-full flex flex-col bg-white dark:bg-zinc-950",
             
-            // AI Chat header
-            div { class: "p-4 border-b border-gray-200 dark:border-gray-700",
-                h3 { class: "text-lg font-medium text-gray-900 dark:text-gray-100 mb-3",
+            // Simplified header - just title and connection status
+            div { class: "px-4 py-3 border-b border-zinc-200 dark:border-zinc-800",
+                h3 { class: "text-lg font-semibold text-zinc-900 dark:text-zinc-100",
                     "AI Assistant"
-                }
-                
-                // Model selection
-                Dropdown {
-                    items: chat_engine.read().available_models.iter().enumerate().map(|(_i, model)| {
-                        DropdownItem::new(model.id.clone(), model.name.clone())
-                    }).collect(),
-                    selected: chat_engine.read().selected_model.clone(),
-                    onselect: move |model_id: String| {
-                        chat_engine.write().set_selected_model(model_id);
-                    },
-                    placeholder: "Select Model".to_string(),
                 }
                 
                 // Connection status
                 if capabilities.read().server_sent_events {
-                    div { class: "text-xs text-green-600 dark:text-green-400 mt-2",
-                        "🟢 Connected via Server-Sent Events"
+                    div { class: "text-xs text-emerald-600 dark:text-emerald-400 mt-1",
+                        "Connected via SSE"
                     }
                 } else {
-                    div { class: "text-xs text-yellow-600 dark:text-yellow-400 mt-2",
-                        "🟡 Limited AI connectivity"
+                    div { class: "text-xs text-amber-600 dark:text-amber-400 mt-1",
+                        "Limited connectivity"
                     }
                 }
             }
             
-            // Chat messages
-            div { class: "flex-1 overflow-auto p-4 space-y-4",
+            // Chat messages area
+            div { class: "flex-1 overflow-auto px-4 py-3 space-y-3",
                 if chat_engine.read().messages.is_empty() {
-                    div { class: "text-center text-gray-500 dark:text-gray-400 mt-8",
-                        div { class: "text-4xl mb-4", "🤖" }
-                        div { class: "text-lg mb-2", "AI Assistant Ready" }
-                        div { class: "text-sm",
-                            "Ask me about LaTeX syntax, document structure,"
-                            br {}
-                            "mathematical typesetting, or get writing help."
+                    div { class: "flex flex-col items-center justify-center h-full text-center",
+                        div { class: "text-4xl mb-3 text-zinc-400 dark:text-zinc-500", "💬" }
+                        div { class: "text-lg font-medium text-zinc-900 dark:text-zinc-100 mb-2", "AI Assistant Ready" }
+                        div { class: "text-sm text-zinc-600 dark:text-zinc-400 max-w-sm",
+                            "Ask me about LaTeX syntax, document structure, mathematical typesetting, or get writing help."
                         }
                     }
                 } else {
@@ -85,32 +80,101 @@ pub fn WebAIChatInterface(capabilities: Signal<BrowserCapabilities>) -> Element 
                 }
                 
                 if chat_engine.read().is_streaming {
-                    div { class: "flex items-center space-x-2 text-gray-500 dark:text-gray-400",
-                        div { class: "animate-pulse w-2 h-2 bg-blue-500 rounded-full" }
-                        div { class: "animate-pulse w-2 h-2 bg-blue-500 rounded-full", style: "animation-delay: 0.2s" }
-                        div { class: "animate-pulse w-2 h-2 bg-blue-500 rounded-full", style: "animation-delay: 0.4s" }
+                    div { class: "flex items-center space-x-2 text-zinc-500 dark:text-zinc-400 py-2",
+                        div { class: "flex space-x-1",
+                            div { class: "w-2 h-2 bg-zinc-400 dark:bg-zinc-500 rounded-full animate-pulse" }
+                            div { class: "w-2 h-2 bg-zinc-400 dark:bg-zinc-500 rounded-full animate-pulse", style: "animation-delay: 0.2s" }
+                            div { class: "w-2 h-2 bg-zinc-400 dark:bg-zinc-500 rounded-full animate-pulse", style: "animation-delay: 0.4s" }
+                        }
                         span { class: "text-sm", "AI is thinking..." }
                     }
                 }
             }
             
-            // Message input
-            div { class: "p-4 border-t border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800",
+            // Input area with model selection above
+            div { class: "border-t border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 p-4 space-y-3",
+                
+                // Model selection dropdown
+                div { class: "flex items-center space-x-3",
+                    span { class: "text-sm font-medium text-zinc-700 dark:text-zinc-300 whitespace-nowrap",
+                        "Model:"
+                    }
+                    
+                    if chat_engine.read().is_loading_models {
+                        div { class: "text-sm text-zinc-500 dark:text-zinc-400",
+                            "Loading models..."
+                        }
+                    } else if let Some(error) = &chat_engine.read().model_load_error {
+                        div { class: "flex items-center space-x-2",
+                            div { class: "text-sm text-red-600 dark:text-red-400",
+                                "Error loading models"
+                            }
+                            Button {
+                                variant: ButtonVariant::Ghost,
+                                onclick: move |_| {
+                                    #[cfg(all(target_arch = "wasm32", feature = "web"))]
+                                    {
+                                        let mut engine = chat_engine.clone();
+                                        spawn_local(async move {
+                                            let _ = engine.write().load_models().await;
+                                        });
+                                    }
+                                },
+                                "Retry"
+                            }
+                        }
+                    } else if chat_engine.read().available_models.is_empty() {
+                        div { class: "flex items-center space-x-2",
+                            div { class: "text-sm text-zinc-500 dark:text-zinc-400",
+                                "No models loaded"
+                            }
+                            Button {
+                                variant: ButtonVariant::Ghost,
+                                onclick: move |_| {
+                                    #[cfg(all(target_arch = "wasm32", feature = "web"))]
+                                    {
+                                        let mut engine = chat_engine.clone();
+                                        spawn_local(async move {
+                                            let _ = engine.write().load_models().await;
+                                        });
+                                    }
+                                },
+                                "Load Models"
+                            }
+                        }
+                    } else {
+                        Dropdown {
+                            items: chat_engine.read().available_models.iter().map(|model| {
+                                DropdownItem::new(model.id.clone(), model.name.clone())
+                            }).collect(),
+                            selected: chat_engine.read().selected_model.clone(),
+                            onselect: move |model_id: String| {
+                                chat_engine.write().set_selected_model(model_id);
+                            },
+                            placeholder: "Select Model".to_string(),
+                            class: Some("min-w-0 flex-1".to_string()),
+                        }
+                    }
+                }
+                
+                // Message input row
                 div { class: "flex space-x-2",
-                    Input {
-                        value: Some(current_message.read().clone()),
-                        placeholder: Some("Ask about LaTeX, document structure, or get writing help...".to_string()),
-                        onchange: move |value| {
-                            current_message.set(value);
+                    div { class: "flex-1",
+                        Input {
+                            value: Some(current_message.read().clone()),
+                            placeholder: Some("Ask about LaTeX, document structure, or get writing help...".to_string()),
+                            onchange: move |value| {
+                                current_message.set(value);
+                            }
                         }
                     }
                     
                     Button {
                         variant: ButtonVariant::Primary,
-                        disabled: chat_engine.read().is_streaming || current_message.read().trim().is_empty(),
+                        disabled: chat_engine.read().is_streaming || current_message.read().trim().is_empty() || chat_engine.read().selected_model.is_none(),
                         onclick: move |_| {
                             let message = current_message.read().clone();
-                            if !message.trim().is_empty() {
+                            if !message.trim().is_empty() && chat_engine.read().selected_model.is_some() {
                                 // Add user message
                                 chat_engine.write().add_user_message(message);
                                 current_message.set(String::new());
@@ -140,16 +204,24 @@ pub fn WebAIChatInterface(capabilities: Signal<BrowserCapabilities>) -> Element 
 
 #[component]
 fn ChatBubble(message: ChatMessage) -> Element {
-    let bg_class = if message.is_user() {
-        "bg-blue-500 text-white ml-auto"
+    let (bg_class, alignment_class) = if message.is_user() {
+        (
+            "bg-zinc-900 dark:bg-zinc-100 text-zinc-50 dark:text-zinc-900",
+            "ml-auto"
+        )
     } else {
-        "bg-gray-100 dark:bg-gray-700 text-gray-900 dark:text-gray-100 mr-auto"
+        (
+            "bg-zinc-100 dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100",
+            "mr-auto"
+        )
     };
     
     rsx! {
         div { 
-            class: "max-w-xs lg:max-w-md px-4 py-2 rounded-lg {bg_class}",
-            "{message.content}"
+            class: "max-w-sm lg:max-w-md px-3 py-2 rounded-lg {bg_class} {alignment_class}",
+            p { class: "text-sm leading-relaxed whitespace-pre-wrap",
+                "{message.content}"
+            }
         }
     }
 }

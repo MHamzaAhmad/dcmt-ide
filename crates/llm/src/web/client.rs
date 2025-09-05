@@ -6,6 +6,7 @@ use wasm_bindgen_futures::JsFuture;
 use web_sys::{Request, RequestInit, RequestMode, Response, ReadableStreamDefaultReader};
 
 /// Web-based LLM client using fetch API and web streams
+#[derive(Debug)]
 pub struct WebLlmClient {
     config: LlmClientConfig,
 }

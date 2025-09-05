@@ -490,7 +490,7 @@ fn CleanupDialog(
     let mut cleanup_options = use_signal(|| CleanupOptions {
         discard_unstaged: false,
         discard_staged: false,
-        discard_untracked: true,
+        discard_untracked: false,
         create_backup: true,
     });
 

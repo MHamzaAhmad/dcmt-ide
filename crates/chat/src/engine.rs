@@ -3,6 +3,9 @@
 use crate::message::{ChatMessage, MessageRole};
 use serde::{Serialize, Deserialize};
 
+#[cfg(any(feature = "web", feature = "desktop"))]
+use latex_ide_llm::{LlmClient, Provider, create_client};
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ModelConfig {
     pub id: String,
@@ -30,19 +33,72 @@ pub struct ChatEngine {
     pub available_models: Vec<ModelConfig>,
     pub selected_model: Option<String>,
     pub is_streaming: bool,
+    pub is_loading_models: bool,
+    pub model_load_error: Option<String>,
 }
 
 impl ChatEngine {
     pub fn new() -> Self {
         Self {
             messages: Vec::new(),
-            available_models: Self::default_models(),
-            selected_model: Some("gpt-4o".to_string()),
+            available_models: Vec::new(),
+            selected_model: None,
             is_streaming: false,
+            is_loading_models: false,
+            model_load_error: None,
         }
     }
     
-    fn default_models() -> Vec<ModelConfig> {
+    /// Load models from the LLM API
+    #[cfg(any(feature = "web", feature = "desktop"))]
+    pub async fn load_models(&mut self) -> Result<(), String> {
+        self.is_loading_models = true;
+        self.model_load_error = None;
+        
+        let client = create_client(Default::default());
+        
+        match client.list_models(None).await {
+            Ok(response) => {
+                self.available_models = response.data
+                    .into_iter()
+                    .map(|model| {
+                        let provider = Provider::from_model_name(&model.id);
+                        ModelConfig::new(
+                            model.id.clone(),
+                            format!("{} ({})", model.id, provider.as_str()),
+                            provider.as_str().to_string(),
+                        )
+                    })
+                    .collect();
+                
+                // Set default model if none selected and models are available
+                if self.selected_model.is_none() && !self.available_models.is_empty() {
+                    self.selected_model = Some(self.available_models[0].id.clone());
+                }
+                
+                self.is_loading_models = false;
+                tracing::info!("Loaded {} models from API", self.available_models.len());
+                Ok(())
+            }
+            Err(e) => {
+                self.is_loading_models = false;
+                let error_msg = format!("Failed to load models: {}", e);
+                self.model_load_error = Some(error_msg.clone());
+                tracing::error!("{}", error_msg);
+                
+                // Fallback to default models
+                self.available_models = Self::fallback_models();
+                if self.selected_model.is_none() && !self.available_models.is_empty() {
+                    self.selected_model = Some(self.available_models[0].id.clone());
+                }
+                
+                Err(error_msg)
+            }
+        }
+    }
+    
+    /// Fallback models when API is not available
+    fn fallback_models() -> Vec<ModelConfig> {
         vec![
             ModelConfig::new(
                 "gpt-4o".to_string(),
@@ -50,19 +106,14 @@ impl ChatEngine {
                 "openai".to_string(),
             ),
             ModelConfig::new(
-                "claude-sonnet".to_string(),
-                "Claude 3.5 Sonnet".to_string(),
+                "claude-3-5-sonnet-20241022".to_string(),
+                "Claude 3.5 Sonnet (Anthropic)".to_string(),
                 "anthropic".to_string(),
             ),
             ModelConfig::new(
-                "gemini-pro".to_string(),
-                "Gemini Pro".to_string(),
-                "google".to_string(),
-            ),
-            ModelConfig::new(
-                "llama-3.1".to_string(),
-                "Llama 3.1 (via Ollama)".to_string(),
-                "ollama".to_string(),
+                "gemini-1.5-pro".to_string(),
+                "Gemini 1.5 Pro (Google)".to_string(),
+                "gemini".to_string(),
             ),
         ]
     }

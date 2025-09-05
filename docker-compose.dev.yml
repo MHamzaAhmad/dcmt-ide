@@ -25,6 +25,7 @@ services:
       - WORKSPACE_DIR=/app/workspace
       - SAMPLE_WORKSPACE_DIR=/app/workspace/sample
       - LATEX_COMPILER_PATH=/usr/bin/pdflatex
+      - LLM_BASE_URL=https://api.researgent.com/api/v1
       - OPENAI_API_KEY=${OPENAI_API_KEY:-}
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
       - GEMINI_API_KEY=${GEMINI_API_KEY:-}

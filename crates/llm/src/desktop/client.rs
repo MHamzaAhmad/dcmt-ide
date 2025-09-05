@@ -3,6 +3,7 @@ use futures::stream::{Stream, StreamExt};
 use std::pin::Pin;
 
 /// Desktop LLM client using reqwest with full async support
+#[derive(Debug)]
 pub struct DesktopLlmClient {
     client: reqwest::Client,
     config: LlmClientConfig,

@@ -340,6 +340,9 @@ If webtransport-server fails to compile in Docker:
 # Database
 DATABASE_URL=sqlite:///app/data/latex_ide.db
 
+# LLM Configuration
+LLM_BASE_URL=http://localhost:3003
+
 # AI Models (optional)
 OPENAI_API_KEY=your-key
 ANTHROPIC_API_KEY=your-key  

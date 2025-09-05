@@ -1,6 +1,9 @@
 pub mod types;
 pub mod client;
 
+use std::pin::Pin;
+use futures::stream::Stream;
+
 // Platform-specific modules
 #[cfg(feature = "web")]
 pub mod web;
@@ -18,20 +21,58 @@ pub use web::WebLlmClient;
 #[cfg(feature = "desktop")]
 pub use desktop::DesktopLlmClient;
 
-/// Create a platform-appropriate LLM client
-#[cfg(feature = "web")]
-pub fn create_client(config: LlmClientConfig) -> impl LlmClient {
-    WebLlmClient::new(config)
+/// Platform-specific LLM client enum
+#[derive(Debug)]
+pub enum PlatformLlmClient {
+    #[cfg(feature = "web")]
+    Web(WebLlmClient),
+    #[cfg(feature = "desktop")]
+    Desktop(DesktopLlmClient),
+}
+
+impl LlmClient for PlatformLlmClient {
+    async fn list_models(&self, provider: Option<Provider>) -> Result<ModelsResponse, LlmError> {
+        match self {
+            #[cfg(feature = "web")]
+            PlatformLlmClient::Web(client) => client.list_models(provider).await,
+            #[cfg(feature = "desktop")]
+            PlatformLlmClient::Desktop(client) => client.list_models(provider).await,
+        }
+    }
+    
+    async fn chat_completions_stream(
+        &self, 
+        request: ChatCompletionRequest
+    ) -> Result<Pin<Box<dyn Stream<Item = Result<ChatCompletionChunk, LlmError>>>>, LlmError> {
+        match self {
+            #[cfg(feature = "web")]
+            PlatformLlmClient::Web(client) => client.chat_completions_stream(request).await,
+            #[cfg(feature = "desktop")]
+            PlatformLlmClient::Desktop(client) => client.chat_completions_stream(request).await,
+        }
+    }
 }
 
 /// Create a platform-appropriate LLM client
-#[cfg(feature = "desktop")]
-pub fn create_client(config: LlmClientConfig) -> impl LlmClient {
-    DesktopLlmClient::new(config)
+pub fn create_client(config: LlmClientConfig) -> PlatformLlmClient {
+    #[cfg(feature = "web")]
+    {
+        PlatformLlmClient::Web(WebLlmClient::new(config))
+    }
+    
+    #[cfg(all(feature = "desktop", not(feature = "web")))]
+    {
+        PlatformLlmClient::Desktop(DesktopLlmClient::new(config))
+    }
+    
+    #[cfg(not(any(feature = "web", feature = "desktop")))]
+    {
+        compile_error!("At least one of 'web' or 'desktop' features must be enabled")
+    }
 }
 
 /// Default client factory with default configuration
-pub fn create_default_client() -> impl LlmClient {
+pub fn create_default_client() -> PlatformLlmClient {
     create_client(LlmClientConfig::default())
 }
 

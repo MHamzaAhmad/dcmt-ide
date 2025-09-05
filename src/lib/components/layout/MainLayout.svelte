@@ -4,15 +4,20 @@
 	import VersionControlPanel from './VersionControlPanel.svelte';
 	import MonacoEditor from '../editor/MonacoEditor.svelte';
 	import PDFPreview from '../preview/PDFPreview.svelte';
+	import EditorHeader from './EditorHeader.svelte';
+	import ChatPanel from '../chat/ChatPanel.svelte';
+	import BottomChat from '../chat/BottomChat.svelte';
 	import { ResizablePaneGroup, ResizablePane, ResizableHandle } from '$lib/components/ui/resizable';
 	import { editorState } from '$lib/stores/editor.js';
 
 	let isFileExplorerOpen = $state(true);
 	let isVersionControlOpen = $state(false);
+	let activeTab = $state<'code' | 'chat'>('code');
 
 	$effect(() => {
 		isFileExplorerOpen = $editorState.isFileExplorerOpen;
 		isVersionControlOpen = $editorState.isVersionControlOpen;
+		activeTab = $editorState.activeTab;
 	});
 </script>
 
@@ -50,7 +55,21 @@
 
 			<!-- Editor Panel -->
 			<ResizablePane defaultSize={40} minSize={25} class="border-r">
-				<MonacoEditor />
+				<div class="h-full flex flex-col relative overflow-visible">
+					<EditorHeader />
+					<div class="flex-1 overflow-hidden">
+						{#if activeTab === 'code'}
+							<MonacoEditor />
+						{:else}
+							<ChatPanel />
+						{/if}
+					</div>
+					
+					<!-- Floating Bottom Chat (only visible in code view) -->
+					{#if activeTab === 'code'}
+						<BottomChat />
+					{/if}
+				</div>
 			</ResizablePane>
 			<ResizableHandle />
 			

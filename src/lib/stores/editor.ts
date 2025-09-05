@@ -5,6 +5,7 @@ export interface EditorState {
 	isFileExplorerOpen: boolean;
 	isVersionControlOpen: boolean;
 	editorContent: string;
+	activeTab: 'code' | 'chat';
 }
 
 function createEditorStore() {
@@ -12,7 +13,8 @@ function createEditorStore() {
 		activeFileId: null,
 		isFileExplorerOpen: true,
 		isVersionControlOpen: false,
-		editorContent: ''
+		editorContent: '',
+		activeTab: 'code'
 	};
 
 	const { subscribe, set, update } = writable<EditorState>(initialState);
@@ -32,6 +34,9 @@ function createEditorStore() {
 		},
 		setEditorContent: (content: string) => {
 			update(state => ({ ...state, editorContent: content }));
+		},
+		setActiveTab: (tab: 'code' | 'chat') => {
+			update(state => ({ ...state, activeTab: tab }));
 		}
 	};
 }

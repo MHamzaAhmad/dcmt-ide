@@ -6,8 +6,7 @@
 		FolderOpen, 
 		GitBranch, 
 		Sun, 
-		Moon, 
-		Menu 
+		Moon 
 	} from '@lucide/svelte';
 	import { theme } from '$lib/stores/theme.js';
 	import { editorState } from '$lib/stores/editor.js';
@@ -30,15 +29,14 @@
 	<header class="h-12 border-b bg-background flex items-center px-3 gap-2">
 		<!-- Logo/Brand -->
 		<div class="flex items-center gap-2 mr-4">
-			<Menu size={16} class="text-muted-foreground" />
-			<span class="text-sm font-medium">DCMT Editor</span>
+			<span class="text-sm font-medium">Researgent Editor</span>
 		</div>
 
-		<Separator orientation="vertical" class="h-6" />
+		<Separator orientation="vertical" />
 
 		<!-- File Explorer Toggle -->
 		<Tooltip>
-			<TooltipTrigger asChild>
+			<TooltipTrigger>
 				<Button
 					variant={isFileExplorerOpen ? 'default' : 'ghost'}
 					size="sm"
@@ -54,7 +52,7 @@
 
 		<!-- Version Control Toggle -->
 		<Tooltip>
-			<TooltipTrigger asChild>
+			<TooltipTrigger>
 				<Button
 					variant={isVersionControlOpen ? 'default' : 'ghost'}
 					size="sm"
@@ -73,7 +71,7 @@
 
 		<!-- Theme Toggle -->
 		<Tooltip>
-			<TooltipTrigger asChild>
+			<TooltipTrigger>
 				<Button
 					variant="ghost"
 					size="sm"

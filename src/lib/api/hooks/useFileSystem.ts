@@ -70,11 +70,14 @@ export function useWriteFileContent() {
 			queryClient.invalidateQueries({ 
 				queryKey: fileSystemKeys.fileContent(variables.path) 
 			});
-			// Also invalidate directory tree for the parent directory
-			const parentPath = variables.path.split('/').slice(0, -1).join('/');
-			queryClient.invalidateQueries({ 
-				queryKey: fileSystemKeys.directoryTree(parentPath) 
-			});
+			// Invalidate all parent directory queries in the hierarchy
+			const pathParts = variables.path.split('/');
+			for (let i = 0; i < pathParts.length; i++) {
+				const directoryPath = pathParts.slice(0, i).join('/');
+				queryClient.invalidateQueries({ 
+					queryKey: fileSystemKeys.directoryTree(directoryPath) 
+				});
+			}
 		},
 	});
 }
@@ -97,15 +100,12 @@ export function useCreateFile() {
 		}) =>
 			fileSystemApi.createFile(path, content, isDirectory),
 		onSuccess: (_, variables) => {
-			// Invalidate directory tree for parent directory
-			const parentPath = variables.path.split('/').slice(0, -1).join('/');
-			queryClient.invalidateQueries({ 
-				queryKey: fileSystemKeys.directoryTree(parentPath) 
-			});
-			// Invalidate root if creating at root level
-			if (!parentPath) {
+			// Invalidate all parent directory queries in the hierarchy
+			const pathParts = variables.path.split('/');
+			for (let i = 0; i < pathParts.length; i++) {
+				const directoryPath = pathParts.slice(0, i).join('/');
 				queryClient.invalidateQueries({ 
-					queryKey: fileSystemKeys.directoryTree('') 
+					queryKey: fileSystemKeys.directoryTree(directoryPath) 
 				});
 			}
 		},
@@ -125,15 +125,12 @@ export function useDeleteFile() {
 			queryClient.removeQueries({ 
 				queryKey: fileSystemKeys.fileContent(path) 
 			});
-			// Invalidate directory tree for parent directory
-			const parentPath = path.split('/').slice(0, -1).join('/');
-			queryClient.invalidateQueries({ 
-				queryKey: fileSystemKeys.directoryTree(parentPath) 
-			});
-			// Invalidate root if deleting from root level
-			if (!parentPath) {
+			// Invalidate all parent directory queries in the hierarchy
+			const pathParts = path.split('/');
+			for (let i = 0; i < pathParts.length; i++) {
+				const directoryPath = pathParts.slice(0, i).join('/');
 				queryClient.invalidateQueries({ 
-					queryKey: fileSystemKeys.directoryTree('') 
+					queryKey: fileSystemKeys.directoryTree(directoryPath) 
 				});
 			}
 		},
@@ -157,24 +154,21 @@ export function useRenameFile() {
 				queryKey: fileSystemKeys.fileContent(oldPath) 
 			});
 			
-			// Invalidate directory trees for both old and new parent directories
-			const oldParentPath = oldPath.split('/').slice(0, -1).join('/');
-			const newParentPath = newPath.split('/').slice(0, -1).join('/');
-			
-			queryClient.invalidateQueries({ 
-				queryKey: fileSystemKeys.directoryTree(oldParentPath) 
-			});
-			
-			if (oldParentPath !== newParentPath) {
+			// Invalidate all parent directory queries for old path hierarchy
+			const oldPathParts = oldPath.split('/');
+			for (let i = 0; i < oldPathParts.length; i++) {
+				const directoryPath = oldPathParts.slice(0, i).join('/');
 				queryClient.invalidateQueries({ 
-					queryKey: fileSystemKeys.directoryTree(newParentPath) 
+					queryKey: fileSystemKeys.directoryTree(directoryPath) 
 				});
 			}
 			
-			// Invalidate root if needed
-			if (!oldParentPath || !newParentPath) {
+			// Invalidate all parent directory queries for new path hierarchy
+			const newPathParts = newPath.split('/');
+			for (let i = 0; i < newPathParts.length; i++) {
+				const directoryPath = newPathParts.slice(0, i).join('/');
 				queryClient.invalidateQueries({ 
-					queryKey: fileSystemKeys.directoryTree('') 
+					queryKey: fileSystemKeys.directoryTree(directoryPath) 
 				});
 			}
 		},

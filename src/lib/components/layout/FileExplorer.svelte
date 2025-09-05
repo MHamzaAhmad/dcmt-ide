@@ -6,6 +6,7 @@
 	import { openFiles } from '$lib/stores/files.js';
 	import { editorState } from '$lib/stores/editor.js';
 	import { useDirectoryTree, useFileContent, useCreateFile, useDeleteFile, useRenameFile } from '$lib/api/hooks';
+	import { useAutoRefresh } from '$lib/api/hooks/useFileWatcher';
 
 	// Convert FileInfo to FileNode format for compatibility with existing components
 	interface FileNode {
@@ -20,6 +21,9 @@
 	const directoryQuery = useDirectoryTree('');
 	let selectedFilePath = $state<string>('');
 	
+	// Enable auto-refresh via file watcher
+	const fileWatcher = useAutoRefresh(true);
+	
 	// Create reactive file content query
 	let fileContentQuery = $derived(useFileContent(selectedFilePath, !!selectedFilePath));
 	
@@ -31,6 +35,7 @@
 
 	let renamingItem = $state<string | null>(null);
 	let renameValue = $state<string>('');
+	let creatingItem = $state<{path: string, isDirectory: boolean, parentPath: string, placeholder: FileNode} | null>(null);
 
 	// Convert API response to our FileNode format
 	function convertFileInfoToNode(fileInfo: any, parentPath: string = ''): FileNode {
@@ -45,13 +50,153 @@
 		};
 	}
 
-	// Reactive file tree conversion
-	let files = $derived($directoryQuery.data ? 
+	// Generate unique name with timestamp
+	function generateUniqueName(baseName: string, isDirectory: boolean = false): string {
+		const timestamp = Date.now();
+		if (isDirectory) {
+			return `${baseName}_${timestamp}`;
+		}
+		const parts = baseName.split('.');
+		if (parts.length > 1) {
+			const name = parts.slice(0, -1).join('.');
+			const ext = parts[parts.length - 1];
+			return `${name}_${timestamp}.${ext}`;
+		}
+		return `${baseName}_${timestamp}`;
+	}
+
+	// Add placeholder to file tree
+	function addPlaceholderToTree(nodes: FileNode[], placeholder: FileNode, parentPath: string): FileNode[] {
+		if (!parentPath) {
+			// Add to root level
+			return [...nodes, placeholder];
+		}
+
+		return nodes.map(node => {
+			if (node.path === parentPath && node.type === 'directory') {
+				// Add placeholder to this directory's children
+				return {
+					...node,
+					children: [...(node.children || []), placeholder]
+				};
+			} else if (node.children) {
+				// Recursively search in children
+				return {
+					...node,
+					children: addPlaceholderToTree(node.children, placeholder, parentPath)
+				};
+			}
+			return node;
+		});
+	}
+
+	// Base file tree from API
+	let baseFiles = $derived($directoryQuery.data ? 
 		($directoryQuery.data.children?.map((child: any) => convertFileInfoToNode(child)) || []) : 
 		[]);
 
+	// Current placeholder item - use the stored placeholder to avoid timestamp mismatches
+	let currentPlaceholder = $derived(creatingItem ? creatingItem.placeholder : null);
+
+	// Combined files with placeholder
+	let files = $derived.by(() => {
+		let result = [...baseFiles];
+		
+		if (currentPlaceholder && creatingItem) {
+			result = addPlaceholderToTree(result, currentPlaceholder, creatingItem.parentPath);
+		}
+
+		return result;
+	});
+
+	// Create placeholder item with stable ID
+	function createPlaceholderItem(parentPath: string = '', isDirectory: boolean = false): FileNode {
+		const baseName = isDirectory ? 'New Folder' : 'untitled.txt';
+		const uniqueName = generateUniqueName(baseName, isDirectory);
+		const fullPath = parentPath ? `${parentPath}/${uniqueName}` : uniqueName;
+		
+		// Use timestamp for stable ID to prevent re-render issues
+		const timestamp = Date.now();
+		const placeholderId = `placeholder_${timestamp}`;
+		
+		const placeholder: FileNode = {
+			id: placeholderId,
+			name: uniqueName,
+			path: fullPath,
+			type: isDirectory ? 'directory' : 'file',
+			children: isDirectory ? [] : undefined
+		};
+
+		return placeholder;
+	}
+
+	// Consolidated state reset function
+	function resetAllStates() {
+		creatingItem = null;
+		renamingItem = null;
+		renameValue = '';
+	}
+
+	// Start creation process
+	function startCreation(parentPath: string = '', isDirectory: boolean = false) {
+		// Prevent multiple simultaneous creations
+		if (creatingItem || $createFileMutation.isPending) {
+			return;
+		}
+
+		// Reset any existing states first
+		resetAllStates();
+		
+		// Create the placeholder and set all states synchronously
+		const placeholder = createPlaceholderItem(parentPath, isDirectory);
+		
+		// Set all states at once to avoid race conditions
+		creatingItem = { 
+			path: placeholder.path, 
+			isDirectory, 
+			parentPath,
+			placeholder
+		};
+		renamingItem = placeholder.path;
+		renameValue = placeholder.name;
+	}
+
+	// Cancel creation - reset states (placeholder will be removed automatically)
+	function cancelCreation() {
+		resetAllStates();
+	}
+
+	// Confirm creation - create the actual file/folder with the chosen name
+	async function confirmCreation() {
+		if (!creatingItem || !renameValue.trim()) {
+			cancelCreation();
+			return;
+		}
+
+		try {
+			const fullPath = creatingItem.parentPath ? 
+				`${creatingItem.parentPath}/${renameValue}` : 
+				renameValue;
+			
+			await $createFileMutation.mutateAsync({
+				path: fullPath,
+				content: creatingItem.isDirectory ? undefined : '',
+				isDirectory: creatingItem.isDirectory
+			});
+
+			// Reset state after successful creation
+			resetAllStates();
+		} catch (error) {
+			console.error('Failed to create item:', error);
+			// Keep creation state active so user can retry with different name
+			// Only reset rename states, not the creation placeholder
+			renamingItem = null;
+			renameValue = '';
+		}
+	}
+
 	async function handleFileClick(file: FileNode) {
-		if (file.type === 'file') {
+		if (file.type === 'file' && !file.id.startsWith('placeholder_')) {
 			// Set selected file path to trigger content loading
 			selectedFilePath = file.path;
 			
@@ -76,6 +221,48 @@
 		}
 	});
 
+	// Click-outside detection for cancelling creation
+	$effect(() => {
+		if (creatingItem) {
+			const handleClickOutside = (event: MouseEvent) => {
+				const target = event.target as HTMLElement;
+				// Check if click is outside the rename input and not on UI controls
+				if (!target.closest('input') && 
+					!target.closest('[data-tree-view]') && 
+					!target.closest('button') &&
+					!target.closest('[role="menu"]') &&
+					!target.closest('.tree-view')) {
+					cancelCreation();
+				}
+			};
+
+			// Small delay to avoid immediate cancellation when creating
+			const timeoutId = setTimeout(() => {
+				document.addEventListener('click', handleClickOutside);
+			}, 100);
+
+			return () => {
+				clearTimeout(timeoutId);
+				document.removeEventListener('click', handleClickOutside);
+			};
+		}
+	});
+
+	// Auto-focus input when starting creation or rename
+	$effect(() => {
+		if (renamingItem) {
+			// Small delay to ensure DOM is updated
+			setTimeout(() => {
+				const inputs = document.querySelectorAll('input');
+				const input = Array.from(inputs).find(inp => inp.value === renameValue);
+				if (input) {
+					input.focus();
+					input.select();
+				}
+			}, 10);
+		}
+	});
+
 	function getFileIcon(fileName: string) {
 		if (fileName.endsWith('.tex')) {
 			return FileText;
@@ -84,43 +271,18 @@
 	}
 
 	// Handler for creating a new file
-	async function handleCreateFile() {
-		try {
-			await $createFileMutation.mutateAsync({
-				path: 'untitled.txt',
-				content: '',
-				isDirectory: false
-			});
-		} catch (error) {
-			console.error('Failed to create file:', error);
-		}
+	function handleCreateFile() {
+		startCreation('', false);
 	}
 
 	// Handler for creating a new folder
-	async function handleCreateFolder() {
-		try {
-			await $createFileMutation.mutateAsync({
-				path: 'New Folder',
-				isDirectory: true
-			});
-		} catch (error) {
-			console.error('Failed to create folder:', error);
-		}
+	function handleCreateFolder() {
+		startCreation('', true);
 	}
 
 	// Context menu handlers
-	async function handleCreateFileInFolder(folderPath: string, isDirectory = false) {
-		try {
-			const itemName = isDirectory ? 'New Folder' : 'untitled.txt';
-			const fullPath = folderPath ? `${folderPath}/${itemName}` : itemName;
-			await $createFileMutation.mutateAsync({
-				path: fullPath,
-				content: isDirectory ? undefined : '',
-				isDirectory: isDirectory
-			});
-		} catch (error) {
-			console.error(`Failed to create ${isDirectory ? 'folder' : 'file'}:`, error);
-		}
+	function handleCreateFileInFolder(folderPath: string, isDirectory = false) {
+		startCreation(folderPath, isDirectory);
 	}
 
 
@@ -129,15 +291,26 @@
 			await $deleteFileMutation.mutateAsync(item.path);
 		} catch (error) {
 			console.error('Failed to delete item:', error);
+			// Could add user-visible error notification here
 		}
 	}
 
 	function handleRenameStart(item: FileNode) {
-		renamingItem = item.path;
-		renameValue = item.name;
+		// Only allow rename for non-placeholder items
+		if (!item.id.startsWith('placeholder_')) {
+			renamingItem = item.path;
+			renameValue = item.name;
+		}
 	}
 
 	async function handleRenameConfirm(item: FileNode) {
+		// Handle creation confirmation
+		if (creatingItem && creatingItem.path === item.path) {
+			await confirmCreation();
+			return;
+		}
+
+		// Handle regular rename
 		if (renameValue.trim() && renameValue !== item.name) {
 			try {
 				const parentPath = item.path.split('/').slice(0, -1).join('/');
@@ -148,6 +321,10 @@
 				});
 			} catch (error) {
 				console.error('Failed to rename item:', error);
+				// Reset rename state on error so user can try again
+				renamingItem = null;
+				renameValue = '';
+				return;
 			}
 		}
 		renamingItem = null;
@@ -155,6 +332,13 @@
 	}
 
 	function handleRenameCancel() {
+		// Handle creation cancellation
+		if (creatingItem) {
+			cancelCreation();
+			return;
+		}
+
+		// Handle regular rename cancellation
 		renamingItem = null;
 		renameValue = '';
 	}
@@ -206,15 +390,17 @@
 					<FolderPlus size={16} />
 					New Folder
 				</ContextMenu.Item>
-				<ContextMenu.Separator />
-				<ContextMenu.Item onclick={() => handleRenameStart(node)}>
-					<Edit size={16} />
-					Rename
-				</ContextMenu.Item>
-				<ContextMenu.Item variant="destructive" onclick={() => handleDeleteItem(node)}>
-					<Trash2 size={16} />
-					Delete
-				</ContextMenu.Item>
+				{#if !node.id.startsWith('placeholder_')}
+					<ContextMenu.Separator />
+					<ContextMenu.Item onclick={() => handleRenameStart(node)}>
+						<Edit size={16} />
+						Rename
+					</ContextMenu.Item>
+					<ContextMenu.Item variant="destructive" onclick={() => handleDeleteItem(node)}>
+						<Trash2 size={16} />
+						Delete
+					</ContextMenu.Item>
+				{/if}
 			</ContextMenu.Content>
 		</ContextMenu.Root>
 	{:else}
@@ -245,14 +431,16 @@
 			</TreeViewFile>
 			</ContextMenu.Trigger>
 			<ContextMenu.Content class="w-48">
-				<ContextMenu.Item onclick={() => handleRenameStart(node)}>
-					<Edit size={16} />
-					Rename
-				</ContextMenu.Item>
-				<ContextMenu.Item variant="destructive" onclick={() => handleDeleteItem(node)}>
-					<Trash2 size={16} />
-					Delete
-				</ContextMenu.Item>
+				{#if !node.id.startsWith('placeholder_')}
+					<ContextMenu.Item onclick={() => handleRenameStart(node)}>
+						<Edit size={16} />
+						Rename
+					</ContextMenu.Item>
+					<ContextMenu.Item variant="destructive" onclick={() => handleDeleteItem(node)}>
+						<Trash2 size={16} />
+						Delete
+					</ContextMenu.Item>
+				{/if}
 			</ContextMenu.Content>
 		</ContextMenu.Root>
 	{/if}

@@ -46,17 +46,13 @@ export function useFileWatcher(
 
 	function invalidateRelatedQueries(type: FileEventType, event: FileEventData) {
 		const path = event.path;
-		const parentPath = path.split('/').slice(0, -1).join('/');
+		const pathParts = path.split('/');
 		
-		// Always invalidate directory tree for parent directory
-		queryClient.invalidateQueries({ 
-			queryKey: fileSystemKeys.directoryTree(parentPath) 
-		});
-		
-		// Invalidate root directory if needed
-		if (!parentPath) {
+		// Invalidate all parent directory queries in the hierarchy
+		for (let i = 0; i < pathParts.length; i++) {
+			const directoryPath = pathParts.slice(0, i).join('/');
 			queryClient.invalidateQueries({ 
-				queryKey: fileSystemKeys.directoryTree('') 
+				queryKey: fileSystemKeys.directoryTree(directoryPath) 
 			});
 		}
 		

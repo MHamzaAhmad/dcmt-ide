@@ -22,6 +22,7 @@ latex-ide-file-manager = { path = "../../crates/file-manager", features = ["web"
 latex-ide-git-transport = { path = "../../crates/git-transport" }
 latex-ide-pdf-viewer = { path = "../../crates/pdf-viewer", features = ["web"] }
 latex-ide-git-manager = { path = "../../crates/git-manager", optional = true }
+latex-ide-llm = { path = "../../crates/llm", features = ["web"] }
 
 # WASM-specific Yrs bindings
 yrs = { workspace = true }

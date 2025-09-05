@@ -8,6 +8,7 @@ members = [
     "crates/chat",
     "crates/file-manager",
     "crates/latex-compiler",
+    "crates/llm",
     "crates/pdf-viewer",
     "crates/yrs-collab",
     "crates/webtransport-server",

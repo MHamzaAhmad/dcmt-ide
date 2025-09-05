@@ -1,0 +1,42 @@
+[package]
+name = "latex-ide-llm"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+# Core dependencies
+serde = { workspace = true }
+serde_json = { workspace = true }
+futures = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+
+# HTTP client (platform-specific features)
+reqwest = { workspace = true, default-features = false }
+
+# WASM-specific dependencies
+wasm-bindgen = { workspace = true, optional = true }
+wasm-bindgen-futures = { workspace = true, optional = true }
+js-sys = { workspace = true, optional = true }
+web-sys = { workspace = true, optional = true, features = [
+    "console", "Headers", "Request", "RequestInit", "RequestMode",
+    "Response", "Window", "ReadableStream", "ReadableStreamDefaultReader"
+] }
+
+# Desktop-specific dependencies  
+tokio = { workspace = true, optional = true }
+
+[features]
+default = []
+web = [
+    "reqwest/json", 
+    "wasm-bindgen", 
+    "wasm-bindgen-futures", 
+    "js-sys", 
+    "web-sys"
+]
+desktop = [
+    "reqwest/json", 
+    "reqwest/stream",
+    "tokio"
+]

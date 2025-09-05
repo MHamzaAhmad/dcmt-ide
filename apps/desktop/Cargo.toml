@@ -26,6 +26,7 @@ latex-ide-model-manager = { path = "../../crates/model-manager" }
 dcmt-ide-latex-compiler = { path = "../../crates/latex-compiler", features = ["git-integration"] }
 latex-ide-pdf-viewer = { path = "../../crates/pdf-viewer", features = ["desktop"] }
 latex-ide-git-manager = { path = "../../crates/git-manager" }
+latex-ide-llm = { path = "../../crates/llm", features = ["desktop"] }
 # latex-ide-version-control-ui = { path = "../../crates/version-control-ui" }  # Temporarily commented out
 
 # Native Yrs CRDT (no WASM overhead)

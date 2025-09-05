@@ -23,11 +23,23 @@ export function useCurrentProject(enabled: boolean = true) {
 			if (!isTauri()) {
 				return null;
 			}
-			return await fileSystemApi.getCurrentProject() || null;
+			
+			// Small delay to ensure Tauri is fully initialized
+			await new Promise(resolve => setTimeout(resolve, 100));
+			
+			try {
+				const result = await fileSystemApi.getCurrentProject();
+				return result || null;
+			} catch (error) {
+				console.error('Failed to get current project:', error);
+				// Return null instead of throwing to prevent the query from staying in loading state
+				return null;
+			}
 		},
 		enabled: enabled && isTauri(),
 		staleTime: 30000, // 30 seconds
-		retry: 1,
+		retry: 2,
+		retryDelay: 500, // Wait 500ms between retries
 	});
 }
 
@@ -128,32 +140,6 @@ export function useHasProject() {
 export function useWorkspaceReady() {
 	const currentProjectQuery = useCurrentProject();
 	
-	return () => {
-		const projectData = get(currentProjectQuery);
-		const hasProject = !!projectData.data;
-		const isLoading = projectData.isLoading;
-		const supportsProjects = isTauri();
-		
-		// For web, workspace is always ready (uses predefined /workspace)
-		// For desktop, workspace is ready when project is selected
-		const isReady = supportsProjects ? hasProject : true;
-		const needsSetup = supportsProjects && !hasProject && !isLoading;
-		
-		console.log('useWorkspaceReady state:', {
-			hasProject,
-			isLoading,
-			isReady,
-			needsSetup,
-			supportsProjects,
-			projectData: projectData.data
-		});
-		
-		return {
-			isReady,
-			isLoading,
-			needsSetup,
-			hasProject,
-			supportsProjects,
-		};
-	};
+	// Return the query store directly so components can reactively subscribe to it
+	return currentProjectQuery;
 }

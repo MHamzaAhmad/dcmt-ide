@@ -16,8 +16,10 @@
 	let isVersionControlOpen = $state(false);
 	let activeTab = $state<'code' | 'chat'>('code');
 
+	import { isTauri } from '$lib/utils/platform';
+	
 	// Check workspace readiness (project selection for desktop)
-	const workspaceQuery = useWorkspaceReady();
+	const currentProjectQuery = useWorkspaceReady();
 
 	$effect(() => {
 		isFileExplorerOpen = $editorState.isFileExplorerOpen;
@@ -25,12 +27,16 @@
 		activeTab = $editorState.activeTab;
 	});
 
-	// Reactive values for workspace state  
-	let workspaceState = $derived(workspaceQuery());
-	let isReady = $derived(workspaceState.isReady);
-	let isLoading = $derived(workspaceState.isLoading);
-	let needsSetup = $derived(workspaceState.needsSetup);
-	let supportsProjects = $derived(workspaceState.supportsProjects);
+	// Reactive values for workspace state using the query store
+	let hasProject = $derived(!!$currentProjectQuery.data);
+	let isLoading = $derived($currentProjectQuery.isLoading);
+	let supportsProjects = $derived(isTauri());
+	
+	// For web, workspace is always ready (uses predefined /workspace)
+	// For desktop, workspace is ready when project is selected
+	let isReady = $derived(supportsProjects ? hasProject && !isLoading : true);
+	let needsSetup = $derived(supportsProjects && !hasProject && !isLoading);
+
 </script>
 
 {#if needsSetup}

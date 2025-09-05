@@ -1,9 +1,10 @@
 <script lang="ts">
 	import { TreeView, TreeViewFile, TreeViewFolder } from '$lib/components/ui/tree-view';
-	import { File, Folder, FolderOpen, FileText, Loader2, AlertCircle } from '@lucide/svelte';
+	import { File, Folder, FolderOpen, FileText, Loader2, AlertCircle, FilePlus, FolderPlus } from '@lucide/svelte';
+	import { Button } from '$lib/components/ui/button';
 	import { openFiles } from '$lib/stores/files.js';
 	import { editorState } from '$lib/stores/editor.js';
-	import { useDirectoryTree, useFileContent, useAutoRefresh } from '$lib/api/hooks';
+	import { useDirectoryTree, useFileContent, useAutoRefresh, useCreateFile } from '$lib/api/hooks';
 	import type { FileInfo } from '$lib/api/types';
 
 	// Convert FileInfo to FileNode format for compatibility with existing components
@@ -24,6 +25,9 @@
 	
 	// Enable auto-refresh for real-time file watching
 	const fileWatcher = useAutoRefresh(true);
+	
+	// File creation mutation
+	const createFileMutation = useCreateFile();
 
 	// Convert API FileInfo to our FileNode format
 	function convertFileInfoToNode(fileInfo: FileInfo, parentPath: string = ''): FileNode {
@@ -75,11 +79,56 @@
 		}
 		return File;
 	}
+
+	// Handler for creating a new file
+	async function handleCreateFile() {
+		try {
+			await $createFileMutation.mutateAsync({
+				path: 'untitled.txt',
+				content: '',
+				isDirectory: false
+			});
+		} catch (error) {
+			console.error('Failed to create file:', error);
+		}
+	}
+
+	// Handler for creating a new folder
+	async function handleCreateFolder() {
+		try {
+			await $createFileMutation.mutateAsync({
+				path: 'New Folder',
+				isDirectory: true
+			});
+		} catch (error) {
+			console.error('Failed to create folder:', error);
+		}
+	}
 </script>
 
 <div class="h-full flex flex-col">
-	<div class="p-3 border-b">
+	<div class="p-3 border-b flex items-center justify-between">
 		<h3 class="text-sm font-medium">Explorer</h3>
+		<div class="flex items-center gap-1">
+			<Button 
+				variant="ghost" 
+				size="icon" 
+				class="h-6 w-6" 
+				onclick={handleCreateFile}
+				disabled={$createFileMutation.isPending}
+			>
+				<FilePlus size={16} />
+			</Button>
+			<Button 
+				variant="ghost" 
+				size="icon" 
+				class="h-6 w-6" 
+				onclick={handleCreateFolder}
+				disabled={$createFileMutation.isPending}
+			>
+				<FolderPlus size={16} />
+			</Button>
+		</div>
 	</div>
 	
 	<div class="flex-1 overflow-auto p-2">

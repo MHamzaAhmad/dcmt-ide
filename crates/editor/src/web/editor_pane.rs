@@ -145,7 +145,7 @@ pub fn WebEditorPane(
                                                     let file_path_clone = file_path.clone();
                                                     #[cfg(target_arch = "wasm32")]
                                                     wasm_bindgen_futures::spawn_local(async move {
-                                                        use latex_ide_file_manager::web::transport::{upload_file, FileTransportClient, TransportMessage as FileTransportMessage, FileOp};
+                                                        use latex_ide_file_manager::web::transport::{upload_file, FileTransportClient, TransportMessage as FileTransportMessage};
                                                         
                                                         // First, save the file
                                                         match upload_file(file_path_clone.clone(), new_content.clone().into_bytes()).await {

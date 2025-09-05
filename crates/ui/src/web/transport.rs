@@ -92,7 +92,7 @@ impl ConnectionManager {
         #[cfg(target_arch = "wasm32")]
         {
             tracing::debug!("🌐 Platform: WebAssembly (Browser)");
-            if let Some(window) = web_sys::window() {
+            if let Some(_window) = web_sys::window() {
                 tracing::debug!("  └─ Window object available");
                 // Note: Additional browser info can be added when needed
             }

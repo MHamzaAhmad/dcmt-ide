@@ -11,7 +11,7 @@ pub mod wasm_wrapper {
         view: EditorView,
         decorations: HashMap<String, DecorationType>,
         initialized: bool,
-        config: EditorConfig,
+        _config: EditorConfig,
     }
 
     impl CodeMirrorEditor {
@@ -125,7 +125,7 @@ pub mod wasm_wrapper {
                 view,
                 decorations: HashMap::new(),
                 initialized: true,
-                config,
+                _config: config,
             })
         }
 
@@ -166,7 +166,7 @@ pub mod wasm_wrapper {
         
         /// Get the DOM element of the editor
         pub fn dom(&self) -> web_sys::HtmlElement {
-            if let Ok(dom_method) = js_sys::Reflect::get(&self.view, &JsValue::from_str("dom")) {
+            if let Ok(_dom_method) = js_sys::Reflect::get(&self.view, &JsValue::from_str("dom")) {
                 if let Ok(dom_element) = js_sys::Reflect::get(&self.view, &JsValue::from_str("dom")) {
                     use wasm_bindgen::JsCast;
                     if let Ok(element) = dom_element.dyn_into::<web_sys::HtmlElement>() {
@@ -199,7 +199,7 @@ pub mod wasm_wrapper {
     impl CodeMirrorOps for CodeMirrorEditor {
         fn get_content(&self) -> String {
             // Get content from real CodeMirror state
-            if let Ok(state_method) = js_sys::Reflect::get(&self.view, &JsValue::from_str("state")) {
+            if let Ok(_state_method) = js_sys::Reflect::get(&self.view, &JsValue::from_str("state")) {
                 if let Ok(state) = js_sys::Reflect::get(&self.view, &JsValue::from_str("state")) {
                     if let Ok(doc) = js_sys::Reflect::get(&state, &JsValue::from_str("doc")) {
                         if let Ok(to_string_method) = js_sys::Reflect::get(&doc, &JsValue::from_str("toString")) {
@@ -221,7 +221,7 @@ pub mod wasm_wrapper {
             // Set content using CodeMirror transaction - this is more complex
             // For now, we can create a new state and replace it
             if let Ok(window) = web_sys::window().ok_or("No window") {
-                if let Ok(cm6) = js_sys::Reflect::get(&window, &JsValue::from_str("CM6")) {
+                if let Ok(_cm6) = js_sys::Reflect::get(&window, &JsValue::from_str("CM6")) {
                     // Create a simple change transaction
                     let state = js_sys::Reflect::get(&self.view, &JsValue::from_str("state")).unwrap_or(JsValue::NULL);
                     let doc_length = if let Ok(doc) = js_sys::Reflect::get(&state, &JsValue::from_str("doc")) {
@@ -258,7 +258,7 @@ pub mod wasm_wrapper {
             self.set_content(&formatted);
         }
         
-        fn add_decoration(&self, from: usize, to: usize, decoration_type: DecorationType) -> String {
+        fn add_decoration(&self, _from: usize, _to: usize, _decoration_type: DecorationType) -> String {
             let decoration_id = format!("decoration-{}", Uuid::new_v4().simple());
             // CodeMirror decoration implementation would go here
             decoration_id

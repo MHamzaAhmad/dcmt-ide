@@ -3,7 +3,7 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>LaTeX IDE - Collaborative LaTeX Editor</title>
+    <title>Researgent - Collaborative LaTeX Editor</title>
     
     <!-- TailwindCSS with dark mode support -->
     <script src="https://cdn.tailwindcss.com"></script>
@@ -134,7 +134,6 @@
                         ])
                     ];
                 } catch (e) {
-                    console.error('Error creating basicSetup extensions:', e);
                     // Return minimal setup if there's an error
                     return [
                         lineNumbers(),
@@ -146,24 +145,6 @@
             }
         };
         
-        console.log('CodeMirror 6 modules loaded and available globally');
-        
-        // Verify CM6 is properly accessible
-        if (typeof window.CM6 !== 'undefined') {
-            console.log('✅ CM6 global object confirmed available');
-            console.log('✅ CM6.basicSetup:', typeof window.CM6.basicSetup);
-            console.log('✅ CM6.lineNumbers:', typeof window.CM6.lineNumbers);
-            
-            // Test basic setup creation
-            try {
-                const testSetup = window.CM6.basicSetup();
-                console.log('✅ basicSetup test successful, extensions count:', testSetup.length);
-            } catch (e) {
-                console.error('❌ basicSetup test failed:', e);
-            }
-        } else {
-            console.error('❌ CM6 global object not found');
-        }
     </script>
     
     <!-- Progressive Web App manifest -->
@@ -204,7 +185,7 @@
     <div id="loading-screen" class="loading-screen">
         <div class="text-center">
             <div class="text-4xl mb-4">📝</div>
-            <h1 class="text-2xl font-bold text-gray-900 dark:text-white mb-2">LaTeX IDE</h1>
+            <h1 class="text-2xl font-bold text-gray-900 dark:text-white mb-2">Researgent</h1>
             <p class="text-gray-600 dark:text-gray-300 mb-4">Loading collaborative editor...</p>
             <div class="loading-spinner mb-4"></div>
             <div class="progress-bar">
@@ -233,7 +214,6 @@
             <ul class="text-left text-sm text-gray-600 dark:text-gray-300 mb-6">
                 <li>• Browser compatibility issues</li>
                 <li>• Network connectivity problems</li>
-                <li>• WebAssembly loading failure</li>
             </ul>
             <div class="space-x-4">
                 <button onclick="location.reload()" class="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600">
@@ -265,13 +245,7 @@
         }
 
         function reportError() {
-            const errorDetails = {
-                userAgent: navigator.userAgent,
-                timestamp: new Date().toISOString(),
-                url: location.href
-            };
-            console.error('Error report:', errorDetails);
-            alert('Error details have been logged to the console. Please share these with the development team.');
+            window.location.href = "https://researgent.com/#contact";
         }
 
         // Browser compatibility check

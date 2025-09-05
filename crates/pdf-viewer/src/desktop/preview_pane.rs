@@ -12,7 +12,7 @@ use latex_ide_git_manager::{SessionManager, GitRepository};
 pub fn DesktopPreviewPane(
     #[props(default)] session_manager: Option<Signal<Option<String>>>,
 ) -> Element {
-    let mut available_versions = use_signal(|| Vec::<String>::new());
+    let available_versions = use_signal(|| Vec::<String>::new());
     let mut current_version = use_signal(|| None::<String>);
     
     // Load available versions when session manager is ready (for desktop, this would be direct access)

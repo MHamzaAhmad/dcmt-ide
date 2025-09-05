@@ -3,7 +3,6 @@ use anyhow::Result;
 use chrono::Utc;
 use git2::{BranchType, Oid, Repository, Signature};
 use tracing::{info, warn};
-use std::fs;
 
 pub struct SessionManager {
     git_repo: GitRepository,

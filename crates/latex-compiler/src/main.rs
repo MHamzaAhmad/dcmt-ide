@@ -71,7 +71,7 @@ async fn main() -> anyhow::Result<()> {
     }
 }
 
-async fn verify_latex_installation() -> anyhow::Result<Vec<Engine>> {
+async fn _verify_latex_installation() -> anyhow::Result<Vec<Engine>> {
     let mut available_engines = Vec::new();
     
     for engine in [Engine::PdfLatex, Engine::XeLatex, Engine::LuaLatex] {

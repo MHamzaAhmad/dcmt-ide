@@ -1,8 +1,6 @@
 use latex_ide_ui::*;
 use crate::codemirror::{CodeMirrorProps, CodeMirrorOps};
 #[cfg(target_arch = "wasm32")]
-use crate::codemirror::DecorationType;
-#[cfg(target_arch = "wasm32")]
 use crate::codemirror::wrapper::{CodeMirrorEditor as Editor};
 
 #[cfg(target_arch = "wasm32")]
@@ -15,7 +13,7 @@ use {
 };
 
 #[component]
-pub fn WebCodeMirrorEditor(mut props: CodeMirrorProps) -> Element {
+pub fn WebCodeMirrorEditor(props: CodeMirrorProps) -> Element {
     let container_id = use_signal(|| format!("cm-editor-{}", uuid::Uuid::new_v4().simple()));
     let config = props.to_editor_config();
     

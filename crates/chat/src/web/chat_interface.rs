@@ -5,9 +5,9 @@ use crate::{ChatEngine, ChatMessage};
 use latex_ide_ui::*;
 use latex_ide_ui::button::ButtonVariant;
 
-#[cfg(target_arch = "wasm32")]
+#[cfg(all(target_arch = "wasm32", feature = "web"))]
 use wasm_bindgen_futures::spawn_local;
-#[cfg(target_arch = "wasm32")]
+#[cfg(all(target_arch = "wasm32", feature = "web"))]
 use gloo_timers::future::sleep;
 
 /// Browser capabilities for web-specific features
@@ -117,7 +117,7 @@ pub fn WebAIChatInterface(capabilities: Signal<BrowserCapabilities>) -> Element 
                                 chat_engine.write().set_streaming(true);
                                 
                                 // Simulate AI response (replace with actual API call)
-                                #[cfg(target_arch = "wasm32")]
+                                #[cfg(all(target_arch = "wasm32", feature = "web"))]
                                 {
                                     let mut engine = chat_engine.clone();
                                     spawn_local(async move {

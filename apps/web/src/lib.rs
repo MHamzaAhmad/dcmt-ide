@@ -1,6 +1,6 @@
 use dioxus::prelude::*;
 use latex_ide_ui::*;
-use dioxus_signals::{Signal, Readable};
+use dioxus_signals::Readable;
 use dioxus_hooks::{use_signal, use_effect};
 use wasm_bindgen::prelude::*;
 
@@ -61,12 +61,12 @@ fn App() -> Element {
     let _browser_capabilities = use_signal(|| convert_capabilities(&local_capabilities.read()));
     
     // Sidebar state
-    let mut sidebar_view = use_signal(|| SidebarView::Explorer);
+    let sidebar_view = use_signal(|| SidebarView::Explorer);
     
     // Git integration
     let git_client = use_signal(|| WebGitClient::new());
     let git_status = use_signal(|| None::<GitStatusResponse>);
-    let mut pdf_refresh_trigger = use_signal(|| 0u32);
+    let pdf_refresh_trigger = use_signal(|| 0u32);
     // Session manager now works via transport layer for all builds
     let session_manager = use_signal(|| None::<String>);
     
@@ -97,7 +97,7 @@ fn App() -> Element {
             tracing::info!("📡 Spawned Git initialization async task");
             
             // First try to initialize the Git repository (or connect to existing one)
-            let mut git_transport = git_client.write();
+            let git_transport = git_client.write();
             tracing::info!("🔧 Acquired Git transport lock, attempting repository initialization");
             
             // Try to initialize - this gracefully handles both new and existing repos
@@ -120,7 +120,7 @@ fn App() -> Element {
             // Try to start a Git session regardless of init result
             // This handles both new repos (after init) and existing repos
             tracing::info!("🌿 Attempting to start Git session");
-            let mut git_transport = git_client.write();
+            let git_transport = git_client.write();
             
             match git_transport.start_session().await {
                 Ok(branch_name) => {
@@ -145,7 +145,7 @@ fn App() -> Element {
                 // Enhanced header with sidebar controls
                 AppHeader {
                     sidebar_view: sidebar_view,
-                    git_status: use_signal(move || git_status.read().as_ref().map(convert_git_status)),
+                    git_status: use_signal(move || git_status.read().as_ref().map(_convert_git_status)),
                 }
                 
                 div { class: "flex-1 flex overflow-hidden",
@@ -218,7 +218,7 @@ fn App() -> Element {
 }
 
 // Convert GitStatusResponse to GitStatus for AppHeader
-fn convert_git_status(status: &GitStatusResponse) -> GitStatus {
+fn _convert_git_status(status: &GitStatusResponse) -> GitStatus {
     GitStatus {
         current_branch: status.current_branch.clone(),
         session_branch: status.session_branch.clone(),

@@ -142,7 +142,7 @@ async fn compile_latex(tex_file: &Path, user_engine: &str) -> Result<Vec<u8>, St
 }
 
 /// Try compiling with latexmk (recommended)
-async fn try_latexmk(tex_file: &Path, workspace: &Path, user_engine: &str) -> Result<std::process::Output, String> {
+async fn try_latexmk(tex_file: &Path, _workspace: &Path, user_engine: &str) -> Result<std::process::Output, String> {
     info!("Attempting compilation with latexmk");
     
     // Detect the appropriate engine based on file content and user preference

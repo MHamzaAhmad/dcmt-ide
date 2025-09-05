@@ -10,7 +10,7 @@ use std::collections::HashMap;
 use wasm_bindgen_futures::spawn_local;
 
 /// Helper function to build tree structure from flat file list
-fn build_file_tree(flat_files: Vec<FileItem>) -> Vec<FileItem> {
+fn _build_file_tree(flat_files: Vec<FileItem>) -> Vec<FileItem> {
     use std::collections::HashMap;
     use std::path::PathBuf;
     
@@ -106,19 +106,19 @@ fn build_file_tree(flat_files: Vec<FileItem>) -> Vec<FileItem> {
     }
     
     // Sort everything recursively  
-    sort_items_recursive(&mut root_items);
+    _sort_items_recursive(&mut root_items);
     
     tracing::info!("Built file tree with {} root items", root_items.len());
     
     // Log the tree structure for debugging
     for item in &root_items {
-        log_tree_structure(item, 0);
+        _log_tree_structure(item, 0);
     }
     
     root_items
 }
 
-fn sort_items_recursive(items: &mut Vec<FileItem>) {
+fn _sort_items_recursive(items: &mut Vec<FileItem>) {
     items.sort_by(|a, b| {
         match (a.is_directory(), b.is_directory()) {
             (true, false) => std::cmp::Ordering::Less,
@@ -129,12 +129,12 @@ fn sort_items_recursive(items: &mut Vec<FileItem>) {
     
     for item in items {
         if let Some(ref mut children) = item.children {
-            sort_items_recursive(children);
+            _sort_items_recursive(children);
         }
     }
 }
 
-fn log_tree_structure(item: &FileItem, depth: usize) {
+fn _log_tree_structure(item: &FileItem, depth: usize) {
     let indent = "  ".repeat(depth);
     let icon = if item.is_directory() { "📁" } else { "📄" };
     let children_count = item.children.as_ref().map_or(0, |c| c.len());
@@ -149,13 +149,13 @@ fn log_tree_structure(item: &FileItem, depth: usize) {
     
     if let Some(children) = &item.children {
         for child in children {
-            log_tree_structure(child, depth + 1);
+            _log_tree_structure(child, depth + 1);
         }
     }
 }
 
 // Helper function to recursively sort children
-fn sort_children(items: &mut Vec<FileItem>) {
+fn _sort_children(items: &mut Vec<FileItem>) {
     items.sort_by(|a, b| {
         match (a.is_directory(), b.is_directory()) {
             (true, false) => std::cmp::Ordering::Less,
@@ -166,7 +166,7 @@ fn sort_children(items: &mut Vec<FileItem>) {
     
     for item in items {
         if let Some(ref mut children) = item.children {
-            sort_children(children);
+            _sort_children(children);
         }
     }
 }
@@ -216,7 +216,7 @@ pub fn WebFileTree(
                                 connected.set(true);
                             }
                             
-                            let tree = build_file_tree(files.clone());
+                            let tree = _build_file_tree(files.clone());
                             file_tree.set(tree);
                             loading.set(false);
                             
@@ -670,7 +670,7 @@ fn refresh_file_tree(
                     
                     match fetch_file_list().await {
                         Ok(files) => {
-                            let tree = build_file_tree(files);
+                            let tree = _build_file_tree(files);
                             file_tree.set(tree);
                             loading.set(false);
                             tracing::info!("File tree refreshed successfully");
@@ -858,13 +858,13 @@ fn download_workspace_as_zip(
     }
 }
 
-fn collect_all_files(items: &[FileItem]) -> Vec<FileItem> {
+fn _collect_all_files(items: &[FileItem]) -> Vec<FileItem> {
     let mut all_files = Vec::new();
     
     for item in items {
         if item.is_directory() {
             if let Some(children) = &item.children {
-                all_files.extend(collect_all_files(children));
+                all_files.extend(_collect_all_files(children));
             }
         } else {
             all_files.push(item.clone());

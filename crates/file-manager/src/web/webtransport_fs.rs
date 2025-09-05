@@ -41,7 +41,7 @@ impl WebTransportFileSystem {
     
     
     #[cfg(target_arch = "wasm32")]
-    async fn send_file_operation(&self, operation: FileOp) -> FileSystemResult<TransportMessage> {
+    async fn _send_file_operation(&self, operation: FileOp) -> FileSystemResult<TransportMessage> {
         use super::transport::FileTransportClient;
         
         let mut client = FileTransportClient::new();
@@ -53,7 +53,7 @@ impl WebTransportFileSystem {
     }
 
     #[cfg(not(target_arch = "wasm32"))]
-    async fn send_file_operation(&self, _operation: FileOp) -> FileSystemResult<TransportMessage> {
+    async fn _send_file_operation_non_wasm(&self, _operation: FileOp) -> FileSystemResult<TransportMessage> {
         Err(FileSystemError::IoError("WebTransport not supported on non-WASM platforms".to_string()))
     }
 }

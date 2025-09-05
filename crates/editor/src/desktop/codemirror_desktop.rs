@@ -18,7 +18,7 @@ pub struct DesktopCodeMirrorState {
     decorations: HashMap<String, DecorationType>,
     #[allow(dead_code)]
     last_content: String,
-    config: EditorConfig,
+    _config: EditorConfig,
 }
 
 impl DesktopCodeMirrorState {
@@ -32,7 +32,7 @@ impl DesktopCodeMirrorState {
             initialized: false,
             decorations: HashMap::new(),
             last_content: String::new(),
-            config,
+            _config: config,
         }
     }
 }
@@ -59,7 +59,7 @@ impl CodeMirrorOps for DesktopCodeMirrorState {
         String::new()
     }
     
-    fn set_content(&self, content: &str) {
+    fn set_content(&self, _content: &str) {
         #[cfg(all(not(target_arch = "wasm32"), feature = "desktop"))]
         {
             let script = format!(
@@ -162,7 +162,7 @@ impl CodeMirrorOps for DesktopCodeMirrorState {
         }
     }
     
-    fn add_decoration(&self, from: usize, to: usize, decoration_type: DecorationType) -> String {
+    fn add_decoration(&self, _from: usize, _to: usize, _decoration_type: DecorationType) -> String {
         let decoration_id = Uuid::new_v4().to_string();
         
         #[cfg(all(not(target_arch = "wasm32"), feature = "desktop"))]
@@ -209,7 +209,7 @@ impl CodeMirrorOps for DesktopCodeMirrorState {
         decoration_id
     }
     
-    fn remove_decoration(&self, decoration_id: &str) {
+    fn remove_decoration(&self, _decoration_id: &str) {
         #[cfg(all(not(target_arch = "wasm32"), feature = "desktop"))]
         {
             let script = format!(
@@ -237,7 +237,7 @@ impl CodeMirrorOps for DesktopCodeMirrorState {
         }
     }
     
-    fn scroll_to_line(&self, line: usize) {
+    fn scroll_to_line(&self, _line: usize) {
         #[cfg(all(not(target_arch = "wasm32"), feature = "desktop"))]
         {
             let script = format!(
@@ -277,7 +277,7 @@ impl CodeMirrorOps for DesktopCodeMirrorState {
     
     fn highlight_line(&self, line: usize) {
         // Add temporary highlight decoration
-        let decoration_id = self.add_decoration(
+        let _decoration_id = self.add_decoration(
             line * 80, // Approximate line start position
             (line + 1) * 80, // Approximate line end position
             DecorationType::SyncHighlight
@@ -306,19 +306,25 @@ impl CodeMirrorOps for DesktopCodeMirrorState {
 }
 
 #[component]
-pub fn DesktopCodeMirrorEditor(mut props: CodeMirrorProps) -> Element {
+pub fn DesktopCodeMirrorEditor(props: CodeMirrorProps) -> Element {
     let config = props.to_editor_config();
     let editor_state = use_signal(|| DesktopCodeMirrorState::new_with_config(config.clone()));
-    let mut initialization_error = use_signal(|| None::<String>);
-    let mut editor_ready = use_signal(|| false);
+    let initialization_error = use_signal(|| None::<String>);
+    let editor_ready = use_signal(|| false);
+    let props_class = props.class.clone();
+    let props_enable_pdf_sync = props.enable_pdf_sync;
+    let props_enable_ai_suggestions = props.enable_ai_suggestions;
+    let _props_on_change = props.on_change.clone();
+    let props_content = props.content.clone();
+    let _props_config = props.to_editor_config();
     
     // Initialize CodeMirror via enhanced webview integration
     use_effect(move || {
         #[cfg(all(not(target_arch = "wasm32"), feature = "desktop"))]
         {
             let container_id = editor_state.read().editor_id.clone();
-            let initial_content = props.content.read().clone();
-            let config = props.to_editor_config();
+            let initial_content = props_content.read().clone();
+            let config = props_config.clone();
             
             let init_script = format!(
                 r#"
@@ -456,21 +462,22 @@ pub fn DesktopCodeMirrorEditor(mut props: CodeMirrorProps) -> Element {
     use_effect(move || {
         #[cfg(all(not(target_arch = "wasm32"), feature = "desktop"))]
         if *editor_ready.read() {
-            let new_content = props.content.read();
+            let new_content = props_content.read();
             editor_state.read().set_content(&new_content);
         }
     });
     
-    // Event handlers with enhanced functionality
+    // Event handlers with enhanced functionality  
+    let _props_content_for_format = props_content.clone();
     let handle_format = move |_| {
         #[cfg(all(not(target_arch = "wasm32"), feature = "desktop"))]
         if *editor_ready.read() {
             editor_state.read().format();
             
             // Update content signal with formatted content
-            if let Some(on_change) = &props.on_change {
+            if let Some(on_change) = &props_on_change {
                 let formatted_content = editor_state.read().get_content();
-                props.content.set(formatted_content.clone());
+                props_content_for_format.set(formatted_content.clone());
                 on_change.call(formatted_content);
             }
         }
@@ -495,7 +502,7 @@ pub fn DesktopCodeMirrorEditor(mut props: CodeMirrorProps) -> Element {
     rsx! {
         div {
             class: format!("h-full flex flex-col bg-white dark:bg-gray-900 {}", 
-                props.class.as_ref().unwrap_or(&String::new())),
+                props_class.as_ref().unwrap_or(&String::new())),
             
             // Error display
             if let Some(error) = initialization_error.read().as_ref() {
@@ -523,7 +530,7 @@ pub fn DesktopCodeMirrorEditor(mut props: CodeMirrorProps) -> Element {
                     "📝 Format LaTeX"
                 }
                 
-                if props.enable_ai_suggestions {
+                if props_enable_ai_suggestions {
                     button {
                         class: format!("px-3 py-1 text-sm rounded focus:outline-none focus:ring-2 focus:ring-opacity-50 {}",
                             if *editor_ready.read() {
@@ -538,7 +545,7 @@ pub fn DesktopCodeMirrorEditor(mut props: CodeMirrorProps) -> Element {
                     }
                 }
                 
-                if props.enable_pdf_sync {
+                if props_enable_pdf_sync {
                     button {
                         class: format!("px-3 py-1 text-sm rounded focus:outline-none focus:ring-2 focus:ring-opacity-50 {}",
                             if *editor_ready.read() {

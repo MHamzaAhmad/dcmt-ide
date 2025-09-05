@@ -2,18 +2,14 @@ use dioxus::prelude::*;
 use dioxus_signals::{Signal, Readable, Writable};
 use dioxus_hooks::{use_signal, use_effect};
 use latex_ide_ui::*;
-use latex_ide_ui::button::{ButtonVariant, ButtonSize};
-use latex_ide_ui::web::transport::{use_connection_manager, ConnectionManager, TransportMessage, ConnectionState, TransportType};
-use crate::controls::PDFControls;
+use latex_ide_ui::web::transport::{use_connection_manager, ConnectionManager, ConnectionState, TransportType, TransportMessage};
 #[cfg(feature = "native-git")]
 use latex_ide_git_manager::{SessionManager, GitRepository, HistoryViewer};
 use chrono::{DateTime, Utc};
 
 #[cfg(target_arch = "wasm32")]
 use {
-    wasm_bindgen::prelude::*,
     wasm_bindgen_futures::spawn_local,
-    gloo_timers,
     js_sys,
     web_sys,
 };
@@ -53,7 +49,7 @@ pub fn WebPreviewPane(
     let connection_manager = use_connection_manager("localhost:3001".to_string());
     let connection_manager_clone1 = connection_manager.clone();
     let connection_manager_clone2 = connection_manager.clone();
-    let connection_manager_clone3 = connection_manager.clone();
+    let _connection_manager_clone3 = connection_manager.clone();
     let connection_manager_clone4 = connection_manager.clone();
     let connection_manager_clone5 = connection_manager.clone();
     let connection_manager_clone6 = connection_manager.clone();
@@ -179,7 +175,7 @@ pub fn WebPreviewPane(
             }
         });
     }
-    let current_file_name_for_closure = current_file_name.clone();
+    let _current_file_name_for_closure = current_file_name.clone();
     
     rsx! {
         div { class: "h-full bg-zinc-50 dark:bg-zinc-950 border-l border-zinc-200 dark:border-zinc-800 flex flex-col",
@@ -246,8 +242,8 @@ pub fn WebPreviewPane(
                                 selected: current_version.read().clone(),
                                 onselect: move |version: String| {
                                     let mut current_ver = current_version.clone();
-                                    let mut status = compilation_status.clone();
-                                    let mut pdf = pdf_url.clone();
+                                    let status = compilation_status.clone();
+                                    let pdf = pdf_url.clone();
                                     let content = document_content.read().clone();
                                     let file_name = current_file_name_for_dropdown.clone().unwrap_or_else(|| "document".to_string());
                                     let connection_mgr = connection_manager_clone6.clone();
@@ -459,7 +455,7 @@ fn create_pdf_url(pdf_data: Vec<u8>) -> Option<String> {
 }
 
 #[cfg(not(target_arch = "wasm32"))]
-fn create_pdf_url(_pdf_data: Vec<u8>) -> Option<String> {
+fn _create_pdf_url(_pdf_data: Vec<u8>) -> Option<String> {
     // Desktop implementation would save to file and return file:// URL
     None
 }
@@ -469,9 +465,9 @@ fn compile_latex_with_transport(
     content: String,
     file_name: String,
     mut status: Signal<CompilationStatus>,
-    mut pdf_url: Signal<Option<String>>,
-    mut available_versions: Signal<Vec<String>>,
-    mut current_version: Signal<Option<String>>,
+    pdf_url: Signal<Option<String>>,
+    available_versions: Signal<Vec<String>>,
+    current_version: Signal<Option<String>>,
     connection_manager: &ConnectionManager,
 ) {
     status.set(CompilationStatus::Compiling);
@@ -521,8 +517,8 @@ fn compile_latex_with_transport(
             let mut status_clone = status.clone();
             let mut pdf_clone = pdf_url.clone();
             let file_name_for_handler = file_name.clone();
-            let mut versions_clone = available_versions.clone();
-            let mut current_ver_clone = current_version.clone();
+            let versions_clone = available_versions.clone();
+            let current_ver_clone = current_version.clone();
             
             let _ = connection_manager.setup_message_handler(move |message| {
                 if let TransportMessage::CompilationResult { success, pdf_data, log, .. } = message {
@@ -618,15 +614,15 @@ fn compile_latex_with_transport(
 }
 
 
-fn format_timestamp_from_iso(timestamp_iso: &str) -> String {
+fn _format_timestamp_from_iso(timestamp_iso: &str) -> String {
     // Parse ISO timestamp and format it for display
     match chrono::DateTime::parse_from_rfc3339(timestamp_iso) {
-        Ok(timestamp) => format_timestamp(timestamp.with_timezone(&Utc)),
+        Ok(timestamp) => _format_timestamp(timestamp.with_timezone(&Utc)),
         Err(_) => timestamp_iso.to_string()
     }
 }
 
-fn format_timestamp(timestamp: DateTime<Utc>) -> String {
+fn _format_timestamp(timestamp: DateTime<Utc>) -> String {
     let now = Utc::now();
     let duration = now.signed_duration_since(timestamp);
     

@@ -14,15 +14,15 @@ impl VersionControlState {
         Self {}
     }
     
-    pub fn has_changes(&self) -> bool {
+    pub fn _has_changes(&self) -> bool {
         false
     }
     
-    pub fn get_current_branch(&self) -> Option<String> {
+    pub fn _get_current_branch(&self) -> Option<String> {
         Some("main".to_string())
     }
     
-    pub fn get_session_branch(&self) -> Option<String> {
+    pub fn _get_session_branch(&self) -> Option<String> {
         None
     }
 }
@@ -43,7 +43,7 @@ pub struct AppState {
 }
 
 #[derive(Clone, Debug, PartialEq)]
-pub struct Project {
+pub struct _Project {
     pub id: Uuid,
     pub name: String,
     pub root_path: String,
@@ -111,7 +111,7 @@ impl AppState {
         Ok(doc_id)
     }
 
-    pub fn save_document(&self, doc_id: Uuid, file_path: &str) -> Result<(), std::io::Error> {
+    pub fn _save_document(&self, doc_id: Uuid, file_path: &str) -> Result<(), std::io::Error> {
         if let Some(doc) = self.open_documents.read().get(&doc_id) {
             let content = doc.get_content();
             std::fs::write(file_path, content)?;
@@ -119,7 +119,7 @@ impl AppState {
         Ok(())
     }
 
-    pub fn close_document(&mut self, doc_id: Uuid) {
+    pub fn _close_document(&mut self, doc_id: Uuid) {
         self.open_documents.write().remove(&doc_id);
         
         // If this was the active document, switch to another one
@@ -129,7 +129,7 @@ impl AppState {
         }
     }
 
-    pub fn get_active_document(&self) -> Option<LaTeXDocument> {
+    pub fn _get_active_document(&self) -> Option<LaTeXDocument> {
         if let Some(doc_id) = *self.active_document.read() {
             self.open_documents.read().get(&doc_id).cloned()
         } else {
@@ -137,17 +137,17 @@ impl AppState {
         }
     }
 
-    pub fn toggle_sidebar(&mut self) {
+    pub fn _toggle_sidebar(&mut self) {
         let mut ui_state = self.ui_state.write();
         ui_state.sidebar_collapsed = !ui_state.sidebar_collapsed;
     }
 
-    pub fn toggle_theme(&mut self) {
+    pub fn _toggle_theme(&mut self) {
         let mut ui_state = self.ui_state.write();
         ui_state.current_theme = ui_state.current_theme.toggle();
     }
 
-    pub fn set_editor_split(&mut self, split: f32) {
+    pub fn _set_editor_split(&mut self, split: f32) {
         let mut ui_state = self.ui_state.write();
         ui_state.editor_split = split.clamp(20.0, 80.0);
     }

@@ -37,7 +37,7 @@ pub struct FileInfo {
     pub modified: Option<u64>,
 }
 
-/// Global singleton client instance - using thread_local for WASM compatibility
+// Global singleton client instance - using thread_local for WASM compatibility
 #[cfg(target_arch = "wasm32")]
 thread_local! {
     static GLOBAL_CLIENT: std::cell::RefCell<Option<Rc<RefCell<FileTransportClient>>>> = std::cell::RefCell::new(None);

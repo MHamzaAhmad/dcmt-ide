@@ -6,14 +6,14 @@ use latex_ide_ui::web::hooks::detect_webtransport_support;
 use {
     wasm_bindgen::prelude::*,
     wasm_bindgen::closure::Closure,
-    web_sys::{WebSocket, MessageEvent, BinaryType},
+    web_sys::{MessageEvent, BinaryType},
     js_sys::Uint8Array,
     gloo_timers,
 };
 
 /// Web-specific Git operations client that communicates via WebTransport with WebSocket fallback
 pub struct WebGitTransport {
-    server_url: String,
+    _server_url: String,
     webtransport_supported: bool,
 }
 
@@ -27,7 +27,7 @@ impl WebGitTransport {
         tracing::info!("WebGitTransport initialized with WebTransport support: {}", webtransport_supported);
         
         Self {
-            server_url,
+            _server_url: server_url,
             webtransport_supported,
         }
     }

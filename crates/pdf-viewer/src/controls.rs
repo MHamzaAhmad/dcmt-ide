@@ -2,12 +2,6 @@ use latex_ide_ui::*;
 use latex_ide_ui::button::ButtonVariant;
 use crate::PDFDocument;
 
-#[cfg(target_arch = "wasm32")]
-use {
-    dioxus_hooks::use_effect,
-    wasm_bindgen_futures::spawn_local,
-};
-
 #[derive(Clone, Debug)]
 pub struct VersionInfo {
     pub version: String,

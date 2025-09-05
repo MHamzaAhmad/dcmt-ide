@@ -19,7 +19,7 @@ use latex_ide_pdf_viewer::desktop::DesktopPreviewPane;
 mod state;
 use state::AppState;
 
-const WINDOW_TITLE: &str = "LaTeX IDE - Desktop";
+const _WINDOW_TITLE: &str = "LaTeX IDE - Desktop";
 
 fn main() -> Result<()> {
     // Initialize logging

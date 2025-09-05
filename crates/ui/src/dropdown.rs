@@ -1,8 +1,5 @@
 use crate::*;
 
-#[cfg(target_arch = "wasm32")]
-use wasm_bindgen::JsCast;
-
 #[derive(Clone, PartialEq)]
 pub struct DropdownItem {
     pub id: String,

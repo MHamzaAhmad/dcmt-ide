@@ -62,7 +62,7 @@ export interface FileContent {
 export interface CreateFileRequest {
 	path: string;
 	content?: string;
-	is_directory: boolean;
+	is_dir: boolean;
 }
 
 export interface UpdateFileRequest {

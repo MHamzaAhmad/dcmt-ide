@@ -21,7 +21,7 @@ pub fn files_router() -> Router<Arc<FileService>> {
         .route("/*path", delete(files::delete_file_or_directory))
         
         // Rename endpoint
-        .route("/rename/*old_path/*new_path", post(files::rename_file))
+        .route("/rename", post(files::rename_file))
         
         // Server status
         .route("/status", get(files::get_server_status))

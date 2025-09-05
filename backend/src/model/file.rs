@@ -31,6 +31,12 @@ pub struct UpdateFileRequest {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RenameRequest {
+    pub old_path: String,
+    pub new_path: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FileOperation {
     pub operation: String,
     pub path: String,

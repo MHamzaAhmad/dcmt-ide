@@ -1,4 +1,4 @@
-use crate::model::{CreateFileRequest, UpdateFileRequest};
+use crate::model::{CreateFileRequest, UpdateFileRequest, RenameRequest};
 use crate::svc::FileService;
 use axum::{
     extract::{Path, State},
@@ -129,15 +129,12 @@ pub async fn delete_file_or_directory(
 }
 
 pub async fn rename_file(
-    Path((old_path, new_path)): Path<(String, String)>,
     State(service): State<Arc<FileService>>,
+    RequestJson(request): RequestJson<RenameRequest>,
 ) -> Result<Json<Value>, StatusCode> {
-    let old_path = urlencoding::decode(&old_path).map_err(|_| StatusCode::BAD_REQUEST)?.to_string();
-    let new_path = urlencoding::decode(&new_path).map_err(|_| StatusCode::BAD_REQUEST)?.to_string();
+    info!("Renaming {} to {}", request.old_path, request.new_path);
     
-    info!("Renaming {} to {}", old_path, new_path);
-    
-    match service.rename_file(&old_path, &new_path).await {
+    match service.rename_file(&request.old_path, &request.new_path).await {
         Ok(()) => Ok(Json(json!({
             "success": true,
             "message": "Renamed successfully"

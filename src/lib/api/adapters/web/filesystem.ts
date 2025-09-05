@@ -41,7 +41,7 @@ export class WebFileSystemAdapter implements FileSystemOperations {
 		try {
 			const request: UpdateFileRequest = { content };
 			const response = await apiClient.put<{ success: boolean; message: string }>(
-				`/api/files/content/${encodeURIComponent(path)}`, 
+				`/api/files/${encodeURIComponent(path)}`, 
 				request
 			);
 			
@@ -59,10 +59,10 @@ export class WebFileSystemAdapter implements FileSystemOperations {
 			const request: CreateFileRequest = { 
 				path, 
 				content, 
-				is_directory: isDirectory 
+				is_dir: isDirectory 
 			};
 			const response = await apiClient.post<{ success: boolean; message: string }>(
-				'/api/files/create', 
+				'/api/files', 
 				request
 			);
 			
@@ -93,8 +93,8 @@ export class WebFileSystemAdapter implements FileSystemOperations {
 	async renameFile(oldPath: string, newPath: string): Promise<void> {
 		try {
 			const response = await apiClient.post<{ success: boolean; message: string }>(
-				`/api/files/rename/${encodeURIComponent(oldPath)}/${encodeURIComponent(newPath)}`,
-				{}
+				'/api/files/rename',
+				{ old_path: oldPath, new_path: newPath }
 			);
 			
 			if (!response.success) {

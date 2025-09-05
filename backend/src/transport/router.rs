@@ -17,10 +17,9 @@ pub async fn create_router(config: Config) -> Result<Router> {
     // Main application router
     let app = Router::new()
         .nest("/api", api_routes)
-        .nest("/ws", websocket_router())
+        .nest("/ws", websocket_router().with_state(file_service))
         .layer(create_cors_layer())
-        .layer(create_trace_layer())
-        .with_state(file_service);
+        .layer(create_trace_layer());
 
     Ok(app)
 }

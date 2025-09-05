@@ -9,7 +9,7 @@ export interface APIState {
 
 function createAPIStore() {
 	const initialState: APIState = {
-		baseURL: import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080',
+		baseURL: import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001',
 		isConnected: false,
 		connectionError: null
 	};

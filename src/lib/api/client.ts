@@ -5,7 +5,7 @@ export class APIClient {
 	private token: string;
 
 	constructor(baseURL: string = '') {
-		this.baseURL = baseURL || import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080';
+		this.baseURL = baseURL || import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001';
 		this.token = ''; // TODO: Add authentication token when auth is implemented
 	}
 

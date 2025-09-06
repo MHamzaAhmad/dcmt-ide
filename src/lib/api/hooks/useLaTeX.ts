@@ -3,6 +3,7 @@ import { createMutation, createQuery, useQueryClient } from '@tanstack/svelte-qu
 import { get } from 'svelte/store';
 import { platformApi } from '../adapters';
 import type { LaTeXCompileRequest, LaTeXCompileResponse } from '../types';
+import { LaTeXProvider } from '../types';
 
 // Query Keys
 export const latexKeys = {
@@ -37,12 +38,16 @@ export function useCompileLatex() {
  */
 export function useAutoCompileLatex() {
 	const mutation = useCompileLatex();
-	const mutationStore = get(mutation);
 	
 	const compileWithDefaults = async (
-		provider: LaTeXCompileRequest['provider'] = 'auto'
+		provider: LaTeXCompileRequest['provider'] = LaTeXProvider.Auto
 	): Promise<LaTeXCompileResponse> => {
-		return mutationStore.mutateAsync({ provider });
+		return new Promise((resolve, reject) => {
+			get(mutation).mutate({ provider }, {
+				onSuccess: (data) => resolve(data),
+				onError: (error) => reject(error)
+			});
+		});
 	};
 
 	// Return the mutation store itself (for reactive access with $)
@@ -50,7 +55,7 @@ export function useAutoCompileLatex() {
 	return {
 		subscribe: mutation.subscribe,
 		compileWithDefaults,
-		get isCompiling() { return get(mutation).isPending; },
+		get isCompiling() { return get(mutation).status === 'pending'; },
 		get error() { return get(mutation).error; },
 		get data() { return get(mutation).data; },
 		reset: () => get(mutation).reset(),
@@ -86,7 +91,12 @@ export function usePDFCompilation() {
 		});
 		
 		try {
-			const result = await compileMutation.mutateAsync(request);
+			const result = await new Promise<LaTeXCompileResponse>((resolve, reject) => {
+				get(compileMutation).mutate(request, {
+					onSuccess: (data) => resolve(data),
+					onError: (error) => reject(error)
+				});
+			});
 			
 			// Update compilation status
 			queryClient.setQueryData(latexKeys.compileStatus(), {
@@ -110,7 +120,7 @@ export function usePDFCompilation() {
 	return {
 		...compileMutation,
 		compileAndUpdateCache,
-		isCompiling: compileMutation.isPending,
+		get isCompiling() { return get(compileMutation).status === 'pending'; },
 	};
 }
 
@@ -125,4 +135,18 @@ export function useRefreshLatex() {
 			queryKey: latexKeys.all 
 		});
 	};
+}
+
+/**
+ * Hook to find the main LaTeX file with documentclass
+ */
+export function useFindMainLatexFile() {
+	return createQuery({
+		queryKey: [...latexKeys.all, 'findMain'],
+		queryFn: async (): Promise<string> => {
+			return await platformApi.findMainLatexFile();
+		},
+		retry: 1,
+		staleTime: 5 * 60 * 1000, // 5 minutes
+	});
 }

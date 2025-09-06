@@ -54,3 +54,48 @@ pub async fn compile_latex(
         }
     }
 }
+
+#[tauri::command]
+pub async fn find_main_latex_file(
+    project_state: State<'_, ProjectState>,
+) -> Result<String, String> {
+    debug!("Find main LaTeX file command received");
+
+    // Check if a project is currently selected
+    let workspace_path = {
+        let state_guard = project_state.read().map_err(|e| {
+            error!("Failed to acquire project state read lock: {}", e);
+            "Failed to read project state".to_string()
+        })?;
+
+        match state_guard.as_ref() {
+            Some(project_info) => {
+                info!("Finding main LaTeX file in project: {}", project_info.name);
+                std::path::PathBuf::from(&project_info.path)
+            }
+            None => {
+                return Err("No project selected. Please select a project folder first".to_string());
+            }
+        }
+    };
+
+    // Create LaTeX service for the current workspace
+    let latex_service = LaTeXService::new(workspace_path.clone());
+    
+    // Find main LaTeX file
+    match latex_service.find_main_tex_file().await {
+        Ok(tex_file_path) => {
+            let relative_path = tex_file_path.strip_prefix(&workspace_path)
+                .unwrap_or(&tex_file_path)
+                .to_string_lossy()
+                .to_string();
+            
+            info!("Found main LaTeX file: {}", relative_path);
+            Ok(relative_path)
+        }
+        Err(e) => {
+            error!("Failed to find main LaTeX file: {}", e);
+            Err(e)
+        }
+    }
+}

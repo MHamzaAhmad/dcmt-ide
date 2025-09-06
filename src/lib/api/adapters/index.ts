@@ -78,6 +78,10 @@ export class UnifiedPlatformApi implements PlatformAPI {
 		return await this.adapter.readFileContent(path);
 	}
 
+	async readFileRaw(path: string): Promise<string> {
+		return await this.adapter.readFileRaw(path);
+	}
+
 	async writeFileContent(path: string, content: string) {
 		return await this.adapter.writeFileContent(path, content);
 	}
@@ -99,8 +103,18 @@ export class UnifiedPlatformApi implements PlatformAPI {
 	}
 
 	// LaTeX operations
-	async compileLatex(request: LaTeXCompileRequest): Promise<LaTeXCompileResponse | undefined> {
-		return await this.adapter.compileLatex?.(request);
+	async compileLatex(request: LaTeXCompileRequest): Promise<LaTeXCompileResponse> {
+		if (!this.adapter.compileLatex) {
+			throw new Error('LaTeX compilation not supported on this platform');
+		}
+		return await this.adapter.compileLatex(request);
+	}
+
+	async findMainLatexFile(): Promise<string> {
+		if (!this.adapter.findMainLatexFile) {
+			throw new Error('LaTeX main file finding not supported on this platform');
+		}
+		return await this.adapter.findMainLatexFile();
 	}
 
 	// Platform-specific utilities

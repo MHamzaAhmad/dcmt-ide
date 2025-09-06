@@ -163,4 +163,12 @@ impl LaTeXService {
         
         available_engines
     }
+
+    pub async fn find_main_tex_file(&self) -> Result<PathBuf> {
+        self.repository.find_main_tex_file().await
+    }
+
+    pub fn get_workspace_path(&self) -> &PathBuf {
+        &self.repository.workspace_path
+    }
 }

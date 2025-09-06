@@ -2,6 +2,10 @@
 	import { onMount, onDestroy } from 'svelte';
 	import { Button } from '$lib/components/ui/button';
 	import { ZoomIn, ZoomOut, RotateCw, Download, FileText } from '@lucide/svelte';
+	import { useFileWatcher } from '$lib/api/hooks/useFileWatcher';
+	import { useFindMainLatexFile } from '$lib/api/hooks/useLaTeX';
+	import { useWorkspaceReady } from '$lib/api/hooks/useProject';
+	import { fileSystemApi } from '$lib/api/adapters';
 
 	// Props
 	interface Props {
@@ -22,30 +26,99 @@
 	let error = $state<string | null>(null);
 	let compilationErrors = $state<string[]>([]);
 	let isCompiling = $state(false);
+	let currentPdfPath = $state<string | null>(null);
 
-	const mockPdfPath = '/sample.pdf'; // This would be generated from LaTeX compilation
+	import { platformApi } from '$lib/api/adapters';
+	
+	// Initialize workspace and LaTeX file detection
+	const workspaceQuery = useWorkspaceReady();
+	const mainLatexFileQuery = useFindMainLatexFile();
+	
+	// Initialize file watcher for PDF updates
+	const fileWatcher = useFileWatcher((eventType, event) => {
+		// Handle file watcher events for PDF files
+		if (eventType === 'created' || eventType === 'modified') {
+			const path = event.path;
+			if (path.endsWith('.pdf') && currentPdfPath && path === currentPdfPath) {
+				console.log('PDF file updated, reloading:', path);
+				// Reload the current PDF
+				loadPDFByPath(path);
+			}
+		}
+	}, true);
 
-	// Convert relative path from LaTeX compilation to accessible URL
-	function convertToAccessiblePath(relativePath: string): string {
-		// For desktop (Tauri), we'll need to use the Tauri API to read files
-		// For web, we'll need to serve files through the backend
-		// For now, we'll construct a URL that can be served by the backend
-		const baseUrl = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001';
-		
-		// Remove leading slash if present and ensure proper path formatting
-		const cleanPath = relativePath.startsWith('/') ? relativePath.slice(1) : relativePath;
-		
-		// Construct the URL for accessing the PDF file
-		return `${baseUrl}/files/workspace/${cleanPath}`;
+	// Load PDF from file path using the unified platform API
+	async function loadPDFFromPath(relativePath: string): Promise<string> {
+		try {
+			// Remove leading slash if present
+			const cleanPath = relativePath.startsWith('/') ? relativePath.slice(1) : relativePath;
+			
+			// Use platform-specific raw file reading
+			const pdfUrl = await platformApi.readFileRaw(cleanPath);
+			return pdfUrl;
+		} catch (error) {
+			console.error('Failed to load PDF from path:', error);
+			throw error;
+		}
 	}
 
-	onMount(async () => {
-		await loadPDFJS();
-		// Load a sample PDF or show placeholder
-		showPlaceholder();
+	// Function to check for existing PDFs in workspace
+	async function checkForExistingPDF(): Promise<string | null> {
+		try {
+			// Get main LaTeX file from query
+			const mainTexFile = $mainLatexFileQuery.data;
+			if (!mainTexFile) {
+				console.log('No main LaTeX file found, checking for any PDF files');
+				return null;
+			}
+			
+			// Check if corresponding PDF exists
+			const pdfPath = mainTexFile.replace(/\.tex$/, '.pdf');
+			console.log('Checking for existing PDF:', pdfPath);
+			
+			const pdfExists = await fileSystemApi.fileExists(pdfPath);
+			if (pdfExists) {
+				console.log('Found existing PDF:', pdfPath);
+				return pdfPath;
+			}
+			
+			console.log('No existing PDF found for main LaTeX file');
+			return null;
+		} catch (error) {
+			console.error('Error checking for existing PDF:', error);
+			return null;
+		}
+	}
+
+	onMount(() => {
+		// Initialize async components
+		(async () => {
+			await loadPDFJS();
+			
+			// Check for existing PDF files in workspace
+			const existingPdfPath = await checkForExistingPDF();
+			if (existingPdfPath) {
+				// Load existing PDF
+				console.log('Loading existing PDF on mount:', existingPdfPath);
+				currentPdfPath = existingPdfPath;
+				const pdfUrl = await loadPDFFromPath(existingPdfPath);
+				await loadPDF(pdfUrl);
+			} else {
+				// Show placeholder if no PDF found
+				showPlaceholder();
+			}
+		})();
+		
+		// Start file watcher
+		fileWatcher.start();
 		
 		// Listen for LaTeX compilation events
-		const handleLatexCompiled = (event: CustomEvent) => {
+		function handleLatexCompiled(event: Event) {
+			const customEvent = event as CustomEvent;
+			return handleLatexCompiledAsync(customEvent);
+		}
+		
+		const handleLatexCompiledAsync = async (event: CustomEvent) => {
 			const { outputFile, message } = event.detail;
 			isCompiling = false;
 			compilationErrors = [];
@@ -53,13 +126,25 @@
 			
 			if (outputFile) {
 				console.log('LaTeX compiled successfully:', message);
-				// Convert relative path to accessible URL
-				const pdfUrl = convertToAccessiblePath(outputFile);
-				loadPDF(pdfUrl);
+				try {
+					// Update current PDF path for file watcher
+					currentPdfPath = outputFile;
+					// Load PDF using platform-specific API
+					const pdfUrl = await loadPDFFromPath(outputFile);
+					loadPDF(pdfUrl);
+				} catch (err) {
+					console.error('Failed to load compiled PDF:', err);
+					error = 'Failed to load compiled PDF';
+				}
 			}
 		};
 		
-		const handleLatexError = (event: CustomEvent) => {
+		function handleLatexError(event: Event) {
+			const customEvent = event as CustomEvent;
+			return handleLatexErrorAsync(customEvent);
+		}
+		
+		const handleLatexErrorAsync = (event: CustomEvent) => {
 			const { errors, message } = event.detail;
 			console.error('LaTeX compilation failed:', message, errors);
 			
@@ -83,17 +168,64 @@
 			compilationErrors = [];
 		};
 		
-		window.addEventListener('latex-compiled', handleLatexCompiled as EventListener);
-		window.addEventListener('latex-compile-error', handleLatexError as EventListener);
-		window.addEventListener('latex-compiling', handleLatexCompiling as EventListener);
+		window.addEventListener('latex-compiled', handleLatexCompiled);
+		window.addEventListener('latex-compile-error', handleLatexError);
+		window.addEventListener('latex-compiling', handleLatexCompiling);
 		
 		// Cleanup event listeners
 		return () => {
-			window.removeEventListener('latex-compiled', handleLatexCompiled as EventListener);
-			window.removeEventListener('latex-compile-error', handleLatexError as EventListener);
-			window.removeEventListener('latex-compiling', handleLatexCompiling as EventListener);
+			window.removeEventListener('latex-compiled', handleLatexCompiled);
+			window.removeEventListener('latex-compile-error', handleLatexError);
+			window.removeEventListener('latex-compiling', handleLatexCompiling);
 		};
 	});
+
+	// Reactive effect to monitor workspace and main LaTeX file changes
+	$effect(() => {
+		const workspaceData = $workspaceQuery.data;
+		const mainLatexFile = $mainLatexFileQuery.data;
+		
+		// Only react if workspace is ready and we have a main LaTeX file
+		if (workspaceData !== undefined && mainLatexFile && !isLoading && !pdfDoc) {
+			console.log('Workspace or main LaTeX file changed, checking for PDF:', mainLatexFile);
+			
+			// Check for PDF asynchronously (don't block reactive effects)
+			Promise.resolve().then(async () => {
+				try {
+					const existingPdfPath = await checkForExistingPDF();
+					if (existingPdfPath && existingPdfPath !== currentPdfPath) {
+						console.log('Found PDF after workspace change:', existingPdfPath);
+						currentPdfPath = existingPdfPath;
+						const pdfUrl = await loadPDFFromPath(existingPdfPath);
+						await loadPDF(pdfUrl);
+					}
+				} catch (error) {
+					console.error('Error loading PDF after workspace change:', error);
+				}
+			});
+		}
+	});
+
+	// Reactive effect to render PDF when canvas becomes available
+	$effect(() => {
+		// If we have a PDF document but canvas wasn't ready before, try to render now
+		if (pdfDoc && canvas && !isLoading) {
+			console.log('Canvas became available, rendering PDF page...');
+			renderPage();
+		}
+	});
+
+	// Public method to load a PDF by path - can be called externally
+	export async function loadPDFByPath(relativePath: string) {
+		try {
+			currentPdfPath = relativePath;
+			const pdfUrl = await loadPDFFromPath(relativePath);
+			await loadPDF(pdfUrl);
+		} catch (err) {
+			console.error('Failed to load PDF by path:', err);
+			error = `Failed to load PDF: ${relativePath}`;
+		}
+	}
 
 	async function loadPDFJS() {
 		try {
@@ -127,7 +259,7 @@
 			const loadingTask = pdfjsLib.getDocument(pdfPath);
 			
 			// Add progress tracking
-			loadingTask.onProgress = (progressData) => {
+			loadingTask.onProgress = (progressData: any) => {
 				console.log('PDF loading progress:', progressData);
 			};
 			
@@ -135,7 +267,13 @@
 			totalPages = pdfDoc.numPages;
 			currentPage = 1;
 			
-			await renderPage();
+			// Wait for canvas to be available before rendering
+			if (canvas) {
+				await renderPage();
+			} else {
+				// If canvas is not ready yet, the reactive statement will handle rendering
+				console.log('PDF loaded but canvas not ready yet, waiting...');
+			}
 			console.log('PDF loaded successfully:', totalPages, 'pages');
 		} catch (err) {
 			console.error('Error loading PDF:', err);
@@ -160,13 +298,21 @@
 	}
 
 	async function renderPage() {
-		if (!pdfDoc || !canvas) return;
+		if (!pdfDoc || !canvas) {
+			console.log('Cannot render page: pdfDoc or canvas not ready', { pdfDoc: !!pdfDoc, canvas: !!canvas });
+			return;
+		}
 
 		try {
 			const page = await pdfDoc.getPage(currentPage);
 			const viewport = page.getViewport({ scale, rotation });
 			
 			const context = canvas.getContext('2d');
+			if (!context) {
+				console.error('Failed to get canvas 2d context');
+				return;
+			}
+			
 			canvas.height = viewport.height;
 			canvas.width = viewport.width;
 
@@ -176,6 +322,7 @@
 			};
 
 			await page.render(renderContext).promise;
+			console.log('PDF page rendered successfully');
 		} catch (err) {
 			console.error('Error rendering page:', err);
 			error = 'Failed to render PDF page';
@@ -246,6 +393,8 @@
 		if (pdfDoc) {
 			pdfDoc.destroy();
 		}
+		// Stop file watcher
+		fileWatcher.stop();
 	});
 </script>
 

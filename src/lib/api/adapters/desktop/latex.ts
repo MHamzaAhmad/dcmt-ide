@@ -23,4 +23,14 @@ export class DesktopLatexAdapter implements LaTeXOperations {
 			};
 		}
 	}
+
+	async findMainLatexFile(): Promise<string> {
+		try {
+			const response = await invoke<string>('find_main_latex_file');
+			return response;
+		} catch (error) {
+			console.error('Desktop LaTeX find main file failed:', error);
+			throw error;
+		}
+	}
 }

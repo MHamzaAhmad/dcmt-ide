@@ -4,6 +4,7 @@
 	import { editorState } from '$lib/stores/editor.js';
 	import { theme } from '$lib/stores/theme.js';
 	import { useWriteFileContent, useAutoCompileLatex } from '$lib/api/hooks';
+	import { LaTeXProvider } from '$lib/api/types';
 	import { debounce } from '$lib/utils/debounce';
 	import type * as Monaco from 'monaco-editor';
 
@@ -76,7 +77,7 @@
 			// Dispatch compilation start event
 			window.dispatchEvent(new CustomEvent('latex-compiling'));
 			
-			const result = await latexCompilation.compileWithDefaults('auto');
+			const result = await latexCompilation.compileWithDefaults(LaTeXProvider.Auto);
 			
 			if (result.success) {
 				console.log('LaTeX compilation successful:', result.output_file);
@@ -303,7 +304,7 @@
 			{/if}
 			
 			{#if activeFile && isLatexFile(activeFile.path)}
-				{#if $latexCompilation.isCompiling}
+				{#if latexCompilation.isCompiling}
 					<span class="ml-2 text-xs text-blue-500">Compiling LaTeX...</span>
 				{:else if $latexCompilation.data?.success}
 					<span class="ml-2 text-xs text-green-500">✓ Compiled</span>

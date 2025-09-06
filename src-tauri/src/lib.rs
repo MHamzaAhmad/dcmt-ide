@@ -41,6 +41,7 @@ pub fn run() {
             greet,
             get_directory_tree,
             read_file_content,
+            read_file_raw,
             write_file_content,
             create_file,
             delete_file,
@@ -52,7 +53,8 @@ pub fn run() {
             get_current_project,
             clear_project,
             get_project_info,
-            compile_latex
+            compile_latex,
+            find_main_latex_file
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -1,4 +1,4 @@
-use crate::models::{FileInfo, FileContent, CreateFileRequest};
+use crate::models::{FileInfo, FileContent, FileContentRaw, CreateFileRequest};
 use crate::services::{FileService, emit_rename_event};
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -33,6 +33,41 @@ pub async fn read_file_content(
             error!("Failed to read file content for '{}': {}", path, e);
             e.to_string()
         })
+}
+
+#[tauri::command]
+pub async fn read_file_raw(
+    path: String,
+    service: State<'_, FileServiceState>,
+) -> Result<FileContentRaw, String> {
+    debug!("Command: read_file_raw({})", path);
+    
+    let content = service.read_file_raw(&path)
+        .map_err(|e| {
+            error!("Failed to read raw file content for '{}': {}", path, e);
+            e.to_string()
+        })?;
+    
+    let file_path = service.get_workspace_path().join(&path);
+    let metadata = std::fs::metadata(&file_path)
+        .map_err(|e| {
+            error!("Failed to get file metadata for '{}': {}", path, e);
+            e.to_string()
+        })?;
+    
+    // Encode as base64 for JavaScript compatibility
+    let base64_content = base64::Engine::encode(&base64::engine::general_purpose::STANDARD, &content);
+    
+    Ok(FileContentRaw {
+        path,
+        content: base64_content,
+        size: metadata.len(),
+        modified: metadata.modified()
+            .ok()
+            .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+            .map(|d| d.as_secs())
+            .unwrap_or(0),
+    })
 }
 
 #[tauri::command]
@@ -181,7 +216,7 @@ pub async fn batch_file_operations(
         };
 
         let success = result.is_ok();
-        let error = result.as_ref().err().map(|e| e.clone());
+        let error = result.as_ref().err().cloned();
         
         results.push(BatchResult {
             index,
@@ -190,7 +225,7 @@ pub async fn batch_file_operations(
         });
 
         // Stop on first error if requested
-        if let Err(_) = result {
+        if result.is_err() {
             if operation.stop_on_error.unwrap_or(false) {
                 break;
             }

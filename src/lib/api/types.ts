@@ -86,6 +86,7 @@ export interface PlatformAPI {
 	// File operations
 	getDirectoryTree(path: string): Promise<FileInfo>;
 	readFileContent(path: string): Promise<FileContent>;
+	readFileRaw(path: string): Promise<string>;
 	writeFileContent(path: string, content: string): Promise<void>;
 	createFile(path: string, content?: string, isDirectory?: boolean): Promise<void>;
 	deleteFile(path: string): Promise<void>;
@@ -94,12 +95,14 @@ export interface PlatformAPI {
 	
 	// LaTeX compilation
 	compileLatex?(request: LaTeXCompileRequest): Promise<LaTeXCompileResponse>;
+	findMainLatexFile?(): Promise<string>;
 }
 
 // Specific interfaces for different API categories
 export interface FileSystemOperations {
 	getDirectoryTree(path: string): Promise<FileInfo>;
 	readFileContent(path: string): Promise<FileContent>;
+	readFileRaw(path: string): Promise<string>; // Returns URL to raw file data
 	writeFileContent(path: string, content: string): Promise<void>;
 	createFile(path: string, content?: string, isDirectory?: boolean): Promise<void>;
 	deleteFile(path: string): Promise<void>;
@@ -115,6 +118,7 @@ export interface ProjectOperations {
 
 export interface LaTeXOperations {
 	compileLatex(request: LaTeXCompileRequest): Promise<LaTeXCompileResponse>;
+	findMainLatexFile(): Promise<string>;
 }
 
 // File Watcher Interface

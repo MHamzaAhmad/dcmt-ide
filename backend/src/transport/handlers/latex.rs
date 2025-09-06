@@ -42,3 +42,32 @@ pub async fn compile_latex(
         }
     }
 }
+
+#[debug_handler]
+pub async fn find_main_latex_file(
+    State(service): State<Arc<LaTeXService>>,
+) -> Result<Json<Value>, StatusCode> {
+    info!("Finding main LaTeX file request received");
+    
+    match service.find_main_tex_file().await {
+        Ok(tex_file_path) => {
+            let relative_path = tex_file_path.strip_prefix(service.get_workspace_path())
+                .unwrap_or(&tex_file_path)
+                .to_string_lossy()
+                .to_string();
+            
+            info!("Found main LaTeX file: {}", relative_path);
+            Ok(Json(json!({
+                "success": true,
+                "main_file": relative_path
+            })))
+        }
+        Err(e) => {
+            error!("Failed to find main LaTeX file: {}", e);
+            Ok(Json(json!({
+                "success": false,
+                "message": e.to_string()
+            })))
+        }
+    }
+}

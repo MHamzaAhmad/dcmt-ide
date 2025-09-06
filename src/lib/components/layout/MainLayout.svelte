@@ -11,6 +11,9 @@
 	import { ResizablePaneGroup, ResizablePane, ResizableHandle } from '$lib/components/ui/resizable';
 	import { editorState } from '$lib/stores/editor.js';
 	import { useWorkspaceReady } from '$lib/api/hooks';
+	import { useFindMainLatexFile } from '$lib/api/hooks/useLaTeX';
+	import { openFiles } from '$lib/stores/files.js';
+	import { fileSystemApi } from '$lib/api/adapters';
 
 	let isFileExplorerOpen = $state(true);
 	let isVersionControlOpen = $state(false);
@@ -20,12 +23,91 @@
 	
 	// Check workspace readiness (project selection for desktop)
 	const currentProjectQuery = useWorkspaceReady();
+	
+	// Find main LaTeX file on startup
+	const mainLatexFileQuery = useFindMainLatexFile();
 
 	$effect(() => {
 		isFileExplorerOpen = $editorState.isFileExplorerOpen;
 		isVersionControlOpen = $editorState.isVersionControlOpen;
 		activeTab = $editorState.activeTab;
 	});
+
+	// Auto-load main LaTeX file and PDF on startup
+	$effect(() => {
+		// Debug: Log all condition values
+		console.log('MainLayout effect conditions:', {
+			mainLatexData: $mainLatexFileQuery.data,
+			currentProjectData: $currentProjectQuery.data,
+			isReady,
+			supportsProjects,
+			openFilesLength: $openFiles.length,
+			platform: isTauri() ? 'desktop' : 'web'
+		});
+		
+		// For web: don't require currentProjectQuery.data, for desktop: require it
+		const shouldProceed = $mainLatexFileQuery.data && isReady && 
+			(supportsProjects ? $currentProjectQuery.data : true);
+		
+		console.log('🔍 Condition evaluation:', {
+			shouldProceed,
+			hasMainLatexData: !!$mainLatexFileQuery.data,
+			isReady,
+			projectCondition: supportsProjects ? !!$currentProjectQuery.data : true
+		});
+			
+		if (shouldProceed) {
+			const mainTexFile = $mainLatexFileQuery.data;
+			console.log('Found main LaTeX file:', mainTexFile);
+			
+			// Auto-open the main .tex file if no files are currently open
+			if ($openFiles.length === 0) {
+				autoLoadMainFiles(mainTexFile);
+			}
+		}
+	});
+
+	async function autoLoadMainFiles(mainTexPath: string) {
+		console.log('🚀 autoLoadMainFiles called with path:', mainTexPath);
+		console.log('Platform:', isTauri() ? 'desktop' : 'web');
+		
+		try {
+			// Open the main .tex file in the editor
+			console.log('Auto-loading main LaTeX file:', mainTexPath);
+			
+			// Read the file content
+			console.log('🔍 About to call fileSystemApi.readFileContent...');
+			const fileContent = await fileSystemApi.readFileContent(mainTexPath);
+			console.log('✅ File content loaded successfully:', {
+				path: fileContent.path,
+				size: fileContent.content.length,
+				modified: fileContent.modified
+			});
+			
+			// Add to open files
+			console.log('📁 Adding file to open files...');
+			openFiles.openFile({
+				id: mainTexPath,
+				path: mainTexPath,
+				name: mainTexPath.split('/').pop() || mainTexPath,
+				content: fileContent.content
+			});
+			
+			// Set as active file
+			console.log('🎯 Setting as active file...');
+			editorState.setActiveFile(mainTexPath);
+			
+			// PDF loading is now handled by PDFPreview component automatically
+			
+			console.log('✨ Main LaTeX file and associated files loaded successfully');
+		} catch (error) {
+			console.error('❌ Failed to auto-load main files:', error);
+			console.error('Error details:', {
+				message: error instanceof Error ? error.message : 'Unknown error',
+				stack: error instanceof Error ? error.stack : 'No stack trace'
+			});
+		}
+	}
 
 	// Reactive values for workspace state using the query store
 	let hasProject = $derived(!!$currentProjectQuery.data);

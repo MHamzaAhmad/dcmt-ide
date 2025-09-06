@@ -108,11 +108,21 @@ export class WebFileSystemAdapter implements FileSystemOperations {
 
 	async fileExists(path: string): Promise<boolean> {
 		try {
-			// We can check if a file exists by trying to get its info
-			await this.readFileContent(path);
-			return true;
+			// For binary files (like PDFs), use HEAD request to /api/files/raw/ endpoint
+			const baseUrl = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001';
+			const url = `${baseUrl}/api/files/raw/${encodeURIComponent(path)}`;
+			
+			const response = await fetch(url, { method: 'HEAD' });
+			return response.ok;
 		} catch (error) {
+			// File doesn't exist or other error - return false without logging
 			return false;
 		}
+	}
+
+	async readFileRaw(path: string): Promise<string> {
+		const baseUrl = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001';
+		const url = `${baseUrl}/api/files/raw/${encodeURIComponent(path)}?t=${Date.now()}`;
+		return url;
 	}
 }

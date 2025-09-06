@@ -23,6 +23,7 @@ export class WebApiAdapter implements PlatformAPI {
 	// Spread filesystem operations
 	getDirectoryTree = this.fileSystem.getDirectoryTree.bind(this.fileSystem);
 	readFileContent = this.fileSystem.readFileContent.bind(this.fileSystem);
+	readFileRaw = this.fileSystem.readFileRaw.bind(this.fileSystem);
 	writeFileContent = this.fileSystem.writeFileContent.bind(this.fileSystem);
 	createFile = this.fileSystem.createFile.bind(this.fileSystem);
 	deleteFile = this.fileSystem.deleteFile.bind(this.fileSystem);
@@ -36,6 +37,7 @@ export class WebApiAdapter implements PlatformAPI {
 
 	// LaTeX operations
 	compileLatex = this.latex.compileLatex.bind(this.latex);
+	findMainLatexFile = this.latex.findMainLatexFile.bind(this.latex);
 
 	// Web-specific functionality
 	getWebSocket = () => this.websocket;

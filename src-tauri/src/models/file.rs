@@ -25,6 +25,14 @@ pub struct FileContent {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FileContentRaw {
+    pub path: String,
+    pub content: String, // base64 encoded binary data
+    pub size: u64,
+    pub modified: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CreateFileRequest {
     pub path: String,
     pub content: Option<String>,

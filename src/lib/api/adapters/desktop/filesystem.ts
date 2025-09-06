@@ -73,4 +73,55 @@ export class DesktopFileSystemAdapter implements FileSystemOperations {
 			return false;
 		}
 	}
+
+	async readFileRaw(path: string): Promise<string> {
+		try {
+			interface FileContentRaw {
+				path: string;
+				content: string; // base64 encoded
+				size: number;
+				modified: number;
+			}
+
+			const result = await invoke<FileContentRaw>('read_file_raw', { path });
+			
+			// Convert base64 to blob URL
+			const binary = atob(result.content);
+			const bytes = new Uint8Array(binary.length);
+			for (let i = 0; i < binary.length; i++) {
+				bytes[i] = binary.charCodeAt(i);
+			}
+			
+			// Create blob with appropriate MIME type
+			const mimeType = this.getMimeType(path);
+			const blob = new Blob([bytes], { type: mimeType });
+			const url = URL.createObjectURL(blob);
+			
+			return url;
+		} catch (error) {
+			console.error('Failed to read raw file content:', error);
+			throw new Error(`Failed to read raw file content: ${error}`);
+		}
+	}
+
+	private getMimeType(path: string): string {
+		const ext = path.split('.').pop()?.toLowerCase() || '';
+		const mimeTypes: Record<string, string> = {
+			'pdf': 'application/pdf',
+			'png': 'image/png',
+			'jpg': 'image/jpeg',
+			'jpeg': 'image/jpeg',
+			'gif': 'image/gif',
+			'svg': 'image/svg+xml',
+			'txt': 'text/plain',
+			'tex': 'text/plain',
+			'log': 'text/plain',
+			'aux': 'text/plain',
+			'html': 'text/html',
+			'css': 'text/css',
+			'js': 'application/javascript',
+			'json': 'application/json',
+		};
+		return mimeTypes[ext] || 'application/octet-stream';
+	}
 }

@@ -14,6 +14,7 @@ pub fn files_router() -> Router<Arc<FileService>> {
         
         // File content endpoints
         .route("/content/*path", get(files::get_file_content))
+        .route("/raw/*path", get(files::get_file_raw))
         
         // File operations
         .route("/", post(files::create_file_or_directory))

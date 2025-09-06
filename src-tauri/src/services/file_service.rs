@@ -55,25 +55,23 @@ impl FileService {
             
             match fs::read_dir(path) {
                 Ok(entries) => {
-                    for entry in entries {
-                        if let Ok(entry) = entry {
-                            let child_path = entry.path();
-                            let child_relative = if relative_path.is_empty() {
-                                child_path.file_name()
-                                    .unwrap_or_default()
-                                    .to_string_lossy()
-                                    .to_string()
-                            } else {
-                                format!("{}/{}", relative_path, child_path.file_name()
-                                    .unwrap_or_default()
-                                    .to_string_lossy())
-                            };
+                    for entry in entries.flatten() {
+                        let child_path = entry.path();
+                        let child_relative = if relative_path.is_empty() {
+                            child_path.file_name()
+                                .unwrap_or_default()
+                                .to_string_lossy()
+                                .to_string()
+                        } else {
+                            format!("{}/{}", relative_path, child_path.file_name()
+                                .unwrap_or_default()
+                                .to_string_lossy())
+                        };
 
-                            match self.build_file_info(&child_path, &child_relative) {
-                                Ok(child_info) => children.push(child_info),
-                                Err(e) => {
-                                    warn!("Failed to build info for child {:?}: {}", child_path, e);
-                                }
+                        match self.build_file_info(&child_path, &child_relative) {
+                            Ok(child_info) => children.push(child_info),
+                            Err(e) => {
+                                warn!("Failed to build info for child {:?}: {}", child_path, e);
                             }
                         }
                     }
@@ -135,6 +133,33 @@ impl FileService {
                 .map(|d| d.as_secs())
                 .unwrap_or(0),
         })
+    }
+
+    pub fn read_file_raw(&self, relative_path: &str) -> FileResult<Vec<u8>> {
+        let path = self.workspace_path.join(relative_path);
+        
+        debug!("Reading raw file content: {:?}", path);
+
+        if !path.exists() {
+            return Err(FileError::NotFound {
+                path: relative_path.to_string(),
+            });
+        }
+
+        if path.is_dir() {
+            return Err(FileError::InvalidPath {
+                path: relative_path.to_string(),
+            });
+        }
+
+        let content = fs::read(&path).map_err(|e| match e.kind() {
+            std::io::ErrorKind::PermissionDenied => FileError::PermissionDenied {
+                path: relative_path.to_string(),
+            },
+            _ => FileError::from(e),
+        })?;
+
+        Ok(content)
     }
 
     pub fn write_file_content(&self, relative_path: &str, content: &str) -> FileResult<()> {

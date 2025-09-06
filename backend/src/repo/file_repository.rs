@@ -103,6 +103,25 @@ impl FileRepository {
         })
     }
 
+    pub async fn read_file_raw(&self, path: &str) -> Result<Vec<u8>> {
+        let full_path = self.get_full_path(path)?;
+        
+        debug!("Reading raw file content: {:?}", full_path);
+        
+        if !full_path.exists() {
+            return Err(anyhow::anyhow!("File does not exist: {}", path));
+        }
+
+        if full_path.is_dir() {
+            return Err(anyhow::anyhow!("Cannot read content of directory: {}", path));
+        }
+
+        let content = fs::read(&full_path).await
+            .with_context(|| format!("Failed to read raw file: {}", path))?;
+
+        Ok(content)
+    }
+
     pub async fn create_file(&self, path: &str, content: Option<&str>, is_dir: bool) -> Result<()> {
         let full_path = self.get_full_path(path)?;
         

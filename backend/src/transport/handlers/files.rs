@@ -2,9 +2,10 @@ use crate::model::{CreateFileRequest, UpdateFileRequest, RenameRequest};
 use crate::svc::FileService;
 use axum::{
     extract::{Path, State},
-    http::StatusCode,
-    response::Json,
+    http::{StatusCode, header},
+    response::{Json, IntoResponse},
     Json as RequestJson,
+    body::Bytes,
 };
 use serde_json::{json, Value};
 use std::sync::Arc;
@@ -157,4 +158,46 @@ pub async fn get_server_status(
             .unwrap()
             .as_millis()
     }))
+}
+
+pub async fn get_file_raw(
+    Path(path): Path<String>,
+    State(service): State<Arc<FileService>>,
+) -> Result<impl IntoResponse, StatusCode> {
+    let path = urlencoding::decode(&path).map_err(|_| StatusCode::BAD_REQUEST)?.to_string();
+    
+    info!("Getting raw file content for: {}", path);
+    
+    match service.get_file_raw(&path).await {
+        Ok(content) => {
+            // Determine content type based on file extension
+            let content_type = get_content_type(&path);
+            
+            Ok((
+                [(header::CONTENT_TYPE, content_type)],
+                Bytes::from(content)
+            ))
+        }
+        Err(e) => {
+            error!("Failed to get raw file content: {}", e);
+            Err(StatusCode::NOT_FOUND)
+        }
+    }
+}
+
+fn get_content_type(path: &str) -> &'static str {
+    let ext = path.split('.').next_back().unwrap_or("").to_lowercase();
+    match ext.as_str() {
+        "pdf" => "application/pdf",
+        "png" => "image/png",
+        "jpg" | "jpeg" => "image/jpeg",
+        "gif" => "image/gif",
+        "svg" => "image/svg+xml",
+        "txt" | "tex" | "log" | "aux" => "text/plain",
+        "html" => "text/html",
+        "css" => "text/css",
+        "js" => "application/javascript",
+        "json" => "application/json",
+        _ => "application/octet-stream",
+    }
 }

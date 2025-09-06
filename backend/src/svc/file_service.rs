@@ -139,6 +139,10 @@ impl FileService {
         self.repository.read_file_content(path).await
     }
 
+    pub async fn get_file_raw(&self, path: &str) -> Result<Vec<u8>> {
+        self.repository.read_file_raw(path).await
+    }
+
     pub async fn create_file_or_directory(&self, request: CreateFileRequest) -> Result<()> {
         let content = request.content.as_deref();
         self.repository.create_file(&request.path, content, request.is_dir).await?;

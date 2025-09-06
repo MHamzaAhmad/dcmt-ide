@@ -137,7 +137,7 @@ impl LaTeXService {
         ))
     }
 
-    async fn find_main_tex_file(&self) -> Result<PathBuf, String> {
+    pub async fn find_main_tex_file(&self) -> Result<PathBuf, String> {
         let mut tex_files = Vec::new();
         
         // Find all .tex files in the workspace
@@ -285,13 +285,12 @@ impl LaTeXService {
             let line = line.trim();
             
             // Look for common LaTeX error patterns
-            if line.starts_with("!") || 
+            if (line.starts_with("!") || 
                line.contains("Error:") || 
                line.contains("error:") ||
-               (line.contains(":") && line.contains("undefined")) {
-                if !errors.contains(&line.to_string()) {
-                    errors.push(line.to_string());
-                }
+               (line.contains(":") && line.contains("undefined"))) 
+               && !errors.contains(&line.to_string()) {
+                errors.push(line.to_string());
             }
         }
         

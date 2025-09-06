@@ -91,6 +91,9 @@ export interface PlatformAPI {
 	deleteFile(path: string): Promise<void>;
 	renameFile(oldPath: string, newPath: string): Promise<void>;
 	fileExists(path: string): Promise<boolean>;
+	
+	// LaTeX compilation
+	compileLatex?(request: LaTeXCompileRequest): Promise<LaTeXCompileResponse>;
 }
 
 // Specific interfaces for different API categories
@@ -110,6 +113,10 @@ export interface ProjectOperations {
 	clearProject?(): Promise<void>;
 }
 
+export interface LaTeXOperations {
+	compileLatex(request: LaTeXCompileRequest): Promise<LaTeXCompileResponse>;
+}
+
 // File Watcher Interface
 export interface FileWatcherOperations {
 	isActive(): boolean;
@@ -127,4 +134,30 @@ export interface FileEventData {
 		new_path?: string;
 	};
 	timestamp: number;
+}
+
+// LaTeX Compilation Types
+export interface LaTeXCompileRequest {
+	provider: LaTeXProvider;
+}
+
+export interface LaTeXCompileResponse {
+	success: boolean;
+	message: string;
+	errors?: string[];
+	output_file?: string;
+}
+
+export enum LaTeXProvider {
+	Auto = 'auto',
+	Pdflatex = 'pdflatex',
+	Xelatex = 'xelatex',
+	Lualatex = 'lualatex'
+}
+
+export interface LaTeXCompileError {
+	error: string;
+	message: string;
+	line?: number;
+	file?: string;
 }

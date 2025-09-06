@@ -3,7 +3,7 @@
 	import { openFiles } from '$lib/stores/files.js';
 	import { editorState } from '$lib/stores/editor.js';
 	import { theme } from '$lib/stores/theme.js';
-	import { useWriteFileContent } from '$lib/api/hooks';
+	import { useWriteFileContent, useAutoCompileLatex } from '$lib/api/hooks';
 	import { debounce } from '$lib/utils/debounce';
 	import type * as Monaco from 'monaco-editor';
 
@@ -17,6 +17,9 @@
 	
 	// File save mutation
 	const writeFileMutation = useWriteFileContent();
+	
+	// LaTeX compilation
+	const latexCompilation = useAutoCompileLatex();
 	
 	// Detect language from file extension
 	function getLanguageFromPath(path: string): string {
@@ -48,6 +51,12 @@
 		return languageMap[ext || ''] || 'plaintext';
 	}
 
+	// Check if file is a LaTeX file
+	function isLatexFile(path: string): boolean {
+		const ext = path.split('.').pop()?.toLowerCase();
+		return ext === 'tex';
+	}
+
 	$effect(() => {
 		currentTheme = $theme;
 		if (editor) {
@@ -56,6 +65,42 @@
 			});
 		}
 	});
+
+	// Create debounced LaTeX compilation function
+	const debouncedCompileLatex = debounce(async (filePath: string) => {
+		if (!isLatexFile(filePath)) return;
+		
+		try {
+			console.log('Compiling LaTeX file:', filePath);
+			
+			// Dispatch compilation start event
+			window.dispatchEvent(new CustomEvent('latex-compiling'));
+			
+			const result = await latexCompilation.compileWithDefaults('auto');
+			
+			if (result.success) {
+				console.log('LaTeX compilation successful:', result.output_file);
+				// Dispatch custom event for PDF preview to update
+				window.dispatchEvent(new CustomEvent('latex-compiled', { 
+					detail: { 
+						outputFile: result.output_file,
+						message: result.message 
+					} 
+				}));
+			} else {
+				console.error('LaTeX compilation failed:', result.errors);
+				// Show error notification (could be enhanced with a toast system)
+				window.dispatchEvent(new CustomEvent('latex-compile-error', { 
+					detail: { 
+						errors: result.errors || [],
+						message: result.message 
+					} 
+				}));
+			}
+		} catch (error) {
+			console.error('LaTeX compilation error:', error);
+		}
+	}, 1500); // Slightly longer delay for compilation
 
 	// Create debounced save function
 	const debouncedSave = debounce(async (fileId: string, content: string) => {
@@ -73,6 +118,11 @@
 			
 			// Mark as saved
 			openFiles.markFileSaved(fileId);
+			
+			// Trigger LaTeX compilation after successful save
+			if (isLatexFile(file.path)) {
+				debouncedCompileLatex(file.path);
+			}
 		} catch (error) {
 			console.error('Failed to save file:', error);
 			openFiles.setSaveStatus(fileId, 'error');
@@ -232,8 +282,9 @@
 		if (editor) {
 			editor.dispose();
 		}
-		// Cancel any pending saves
+		// Cancel any pending saves and compilations
 		debouncedSave.cancel();
+		debouncedCompileLatex.cancel();
 	});
 </script>
 
@@ -249,6 +300,16 @@
 				<span class="ml-2 text-xs text-muted-foreground">Saving...</span>
 			{:else if activeFile?.saveStatus === 'error'}
 				<span class="ml-2 text-xs text-destructive">Save failed</span>
+			{/if}
+			
+			{#if activeFile && isLatexFile(activeFile.path)}
+				{#if $latexCompilation.isCompiling}
+					<span class="ml-2 text-xs text-blue-500">Compiling LaTeX...</span>
+				{:else if $latexCompilation.data?.success}
+					<span class="ml-2 text-xs text-green-500">✓ Compiled</span>
+				{:else if $latexCompilation.error || ($latexCompilation.data && !$latexCompilation.data.success)}
+					<span class="ml-2 text-xs text-red-500">✗ Compile failed</span>
+				{/if}
 			{/if}
 		</div>
 	{/if}

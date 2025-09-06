@@ -2,7 +2,7 @@
 import { isTauri } from '$lib/utils/platform';
 import { DesktopApiAdapter } from './desktop';
 import { WebApiAdapter } from './web';
-import type { PlatformAPI, ProjectInfo } from '../types';
+import type { PlatformAPI, ProjectInfo, LaTeXCompileRequest, LaTeXCompileResponse } from '../types';
 
 // Create singleton instances lazily
 let desktopAdapter: DesktopApiAdapter | null = null;
@@ -96,6 +96,11 @@ export class UnifiedPlatformApi implements PlatformAPI {
 
 	async fileExists(path: string) {
 		return await this.adapter.fileExists(path);
+	}
+
+	// LaTeX operations
+	async compileLatex(request: LaTeXCompileRequest): Promise<LaTeXCompileResponse | undefined> {
+		return await this.adapter.compileLatex?.(request);
 	}
 
 	// Platform-specific utilities

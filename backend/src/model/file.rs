@@ -73,10 +73,7 @@ pub fn sanitize_path(path: &str) -> Result<PathBuf, String> {
     let path = PathBuf::from(path);
     
     // Check for path traversal attempts
-    if path.components().any(|comp| match comp {
-        std::path::Component::ParentDir => true,
-        _ => false,
-    }) {
+    if path.components().any(|comp| matches!(comp, std::path::Component::ParentDir)) {
         return Err("Path traversal detected".to_string());
     }
 

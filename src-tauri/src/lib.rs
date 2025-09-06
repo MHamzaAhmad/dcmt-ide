@@ -4,6 +4,7 @@ mod models;
 
 use commands::filesystem::*;
 use commands::project::{ProjectInfo, *};
+use commands::latex::*;
 use std::sync::Arc;
 use tauri::Manager;
 use tracing::info;
@@ -50,7 +51,8 @@ pub fn run() {
             select_project_folder,
             get_current_project,
             clear_project,
-            get_project_info
+            get_project_info,
+            compile_latex
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

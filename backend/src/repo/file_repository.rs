@@ -66,7 +66,7 @@ impl FileRepository {
         if is_dir && include_children {
             if let Ok(mut entries) = fs::read_dir(path).await {
                 while let Ok(Some(entry)) = entries.next_entry().await {
-                    match self.build_file_info(&entry.path(), false).await {
+                    match self.build_file_info(&entry.path(), true).await {
                         Ok(child_info) => file_info.add_child(child_info),
                         Err(e) => {
                             warn!("Failed to read entry {:?}: {}", entry.path(), e);

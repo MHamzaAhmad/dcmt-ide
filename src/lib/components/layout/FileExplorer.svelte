@@ -1,12 +1,14 @@
 <script lang="ts">
+	import { onMount, onDestroy } from 'svelte';
 	import { TreeView, TreeViewFile, TreeViewFolder } from '$lib/components/ui/tree-view';
 	import { File, Folder, FolderOpen, FileText, Loader2, AlertCircle, FilePlus, FolderPlus, Edit, Trash2 } from '@lucide/svelte';
 	import { Button } from '$lib/components/ui/button';
 	import * as ContextMenu from "$lib/components/ui/context-menu/index.js";
 	import { openFiles } from '$lib/stores/files.js';
 	import { editorState } from '$lib/stores/editor.js';
-	import { useDirectoryTree, useFileContent, useCreateFile, useDeleteFile, useRenameFile } from '$lib/api/hooks';
-	import { useAutoRefresh } from '$lib/api/hooks/useFileWatcher';
+	import { useDirectoryTree, useCreateFile, useDeleteFile, useRenameFile } from '$lib/api/hooks';
+	import { useFileWatcher } from '$lib/api/hooks/useFileWatcher';
+	import { fileSystemApi } from '$lib/api/adapters';
 
 	// Convert FileInfo to FileNode format for compatibility with existing components
 	interface FileNode {
@@ -19,13 +21,10 @@
 
 	// Use our unified file system API
 	const directoryQuery = useDirectoryTree('');
-	let selectedFilePath = $state<string>('');
+	let isLoadingFile = $state<boolean>(false);
 	
-	// Enable auto-refresh via file watcher
-	const fileWatcher = useAutoRefresh(true);
-	
-	// Create reactive file content query
-	let fileContentQuery = $derived(useFileContent(selectedFilePath, !!selectedFilePath));
+	// Initialize file watcher manually with controlled lifecycle
+	const fileWatcher = useFileWatcher(undefined, true);
 	
 	
 	// File mutations
@@ -197,29 +196,46 @@
 
 	async function handleFileClick(file: FileNode) {
 		if (file.type === 'file' && !file.id.startsWith('placeholder_')) {
-			// Set selected file path to trigger content loading
-			selectedFilePath = file.path;
+			// Prevent multiple clicks while loading
+			if (isLoadingFile) return;
 			
-			// For now, open with placeholder content - the query will update it
-			openFiles.openFile({
-				id: file.id,
-				name: file.name,
-				path: file.path,
-				content: 'Loading...' // This will be updated by the file content query
-			});
+			// Check if file is already open
+			const existingFile = $openFiles.find(f => f.id === file.path);
+			if (existingFile) {
+				// Just switch to the already opened file
+				editorState.setActiveFile(file.path);
+				return;
+			}
 			
-			editorState.setActiveFile(file.id);
+			// Set loading state
+			isLoadingFile = true;
+			
+			try {
+				// Load file content directly using the API
+				const fileContent = await fileSystemApi.readFileContent(file.path);
+				
+				// Open file with the loaded content
+				openFiles.openFile({
+					id: file.path, // Use path as ID for consistency
+					name: file.name,
+					path: file.path,
+					content: fileContent.content
+				});
+				
+				// Mark as saved since we just loaded from disk
+				openFiles.markFileSaved(file.path);
+				
+				// Set as active file
+				editorState.setActiveFile(file.path);
+			} catch (error) {
+				console.error('Failed to load file:', error);
+				// Could show a toast notification here
+			} finally {
+				// Reset loading state
+				isLoadingFile = false;
+			}
 		}
 	}
-
-	// Watch for file content changes and update the opened file
-	$effect(() => {
-		if (selectedFilePath && $fileContentQuery.data) {
-			// Update the opened file with the loaded content
-			const fileId = selectedFilePath;
-			openFiles.updateFileContent(fileId, $fileContentQuery.data.content);
-		}
-	});
 
 	// Click-outside detection for cancelling creation
 	$effect(() => {
@@ -343,7 +359,16 @@
 		renameValue = '';
 	}
 
+	// Lifecycle management for file watcher - temporarily disabled for testing
+	onMount(() => {
+		// Start file watcher after component is mounted
+		// fileWatcher.start(); // Temporarily disabled
+	});
 
+	onDestroy(() => {
+		// Clean up file watcher on component destroy
+		fileWatcher.destroy();
+	});
 </script>
 
 {#snippet treeNodeSnippet(node: FileNode)}

@@ -5,7 +5,7 @@ import { DesktopFileWatcher } from '../adapters/desktop/fileWatcher';
 import { WebFileWatcher } from '../adapters/web/fileWebSocket';
 import type { FileEventData } from '../types';
 import { fileSystemKeys } from './useFileSystem';
-import { writable } from 'svelte/store';
+import { writable, get } from 'svelte/store';
 
 export type FileEventType = 'created' | 'modified' | 'deleted' | 'renamed';
 export type FileEventCallback = (type: FileEventType, event: FileEventData) => void;
@@ -29,6 +29,7 @@ export function useFileWatcher(
 	
 	let cleanup: (() => void) | null = null;
 	let fileWatcher: DesktopFileWatcher | WebFileWatcher | null = null;
+	let isInitialized = false;
 
 	function handleFileEvent(type: FileEventType, event: FileEventData) {
 		console.log(`File ${type}:`, event);
@@ -92,11 +93,12 @@ export function useFileWatcher(
 	}
 
 	function startWatching() {
-		// Check current listening state
-		let currentlyListening = false;
-		isListening.subscribe(value => currentlyListening = value)();
+		// Check current listening state without creating subscription
+		const currentlyListening = get(isListening);
 		
-		if (!enabled || currentlyListening || fileWatcher) return;
+		if (!enabled || currentlyListening || fileWatcher || isInitialized) return;
+		
+		isInitialized = true;
 
 		if (isTauri()) {
 			// Desktop: Use Tauri file watcher
@@ -141,13 +143,11 @@ export function useFileWatcher(
 		}
 		
 		isListening.set(false);
+		isInitialized = false;
 		console.log('Stopped file watcher');
 	}
 
-	// Auto-start if enabled
-	if (enabled) {
-		startWatching();
-	}
+	// Don't auto-start, let components control initialization
 
 	return {
 		isListening,

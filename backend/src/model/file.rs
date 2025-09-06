@@ -5,7 +5,7 @@ use std::path::PathBuf;
 pub struct FileInfo {
     pub path: String,
     pub name: String,
-    pub is_dir: bool,
+    pub file_type: String, // "Directory" or "File"
     pub size: Option<u64>,
     pub modified: Option<u64>,
     pub children: Option<Vec<FileInfo>>,
@@ -55,7 +55,7 @@ impl FileInfo {
         Self {
             path,
             name,
-            is_dir,
+            file_type: if is_dir { "Directory".to_string() } else { "File".to_string() },
             size,
             modified,
             children: if is_dir { Some(Vec::new()) } else { None },

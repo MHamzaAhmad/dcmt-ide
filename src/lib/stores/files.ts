@@ -14,7 +14,10 @@ export interface OpenFile {
 	name: string;
 	path: string;
 	content: string;
+	originalContent: string;
 	isDirty: boolean;
+	saveStatus: 'idle' | 'saving' | 'saved' | 'error';
+	lastSavedAt?: number;
 }
 
 function createFileStore() {
@@ -84,11 +87,16 @@ function createOpenFilesStore() {
 		subscribe,
 		set,
 		update,
-		openFile: (file: Omit<OpenFile, 'isDirty'>) => {
+		openFile: (file: Omit<OpenFile, 'isDirty' | 'saveStatus' | 'originalContent' | 'lastSavedAt'>) => {
 			update(files => {
 				const exists = files.find(f => f.id === file.id);
 				if (exists) return files;
-				return [...files, { ...file, isDirty: false }];
+				return [...files, { 
+					...file, 
+					originalContent: file.content,
+					isDirty: false,
+					saveStatus: 'idle'
+				}];
 			});
 		},
 		closeFile: (fileId: string) => {
@@ -98,7 +106,20 @@ function createOpenFilesStore() {
 			update(files => 
 				files.map(f => 
 					f.id === fileId 
-						? { ...f, content, isDirty: f.content !== content }
+						? { ...f, content, isDirty: content !== f.originalContent }
+						: f
+				)
+			);
+		},
+		setSaveStatus: (fileId: string, status: 'idle' | 'saving' | 'saved' | 'error') => {
+			update(files => 
+				files.map(f => 
+					f.id === fileId 
+						? { 
+							...f, 
+							saveStatus: status,
+							lastSavedAt: status === 'saved' ? Date.now() : f.lastSavedAt
+						}
 						: f
 				)
 			);
@@ -106,7 +127,15 @@ function createOpenFilesStore() {
 		markFileSaved: (fileId: string) => {
 			update(files => 
 				files.map(f => 
-					f.id === fileId ? { ...f, isDirty: false } : f
+					f.id === fileId 
+						? { 
+							...f, 
+							originalContent: f.content,
+							isDirty: false,
+							saveStatus: 'saved',
+							lastSavedAt: Date.now()
+						}
+						: f
 				)
 			);
 		}

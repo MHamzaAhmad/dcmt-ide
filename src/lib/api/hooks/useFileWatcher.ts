@@ -1,5 +1,5 @@
 // Unified File Watcher Hook
-import { useQueryClient } from '@tanstack/svelte-query';
+import { useQueryClient, type QueryClient } from '@tanstack/svelte-query';
 import { isTauri } from '$lib/utils/platform';
 import { DesktopFileWatcher } from '../adapters/desktop/fileWatcher';
 import { WebFileWatcher } from '../adapters/web/fileWebSocket';
@@ -14,18 +14,29 @@ export type FileEventCallback = (type: FileEventType, event: FileEventData) => v
  * Hook for listening to file system changes
  * @param callback Optional callback to handle file events
  * @param enabled Whether to enable file watching
+ * @param queryClient Optional QueryClient instance
  * @returns File watcher state and controls
  */
 export function useFileWatcher(
 	callback?: FileEventCallback,
-	enabled: boolean = true
+	enabled: boolean = true,
+	queryClient?: QueryClient
 ) {
 	// Use writable stores instead of $state
 	const isListening = writable(false);
 	const eventCount = writable(0);
 	const lastEvent = writable<{ type: FileEventType; event: FileEventData } | null>(null);
 	
-	const queryClient = useQueryClient();
+	// Try to get queryClient from context if not provided, but don't fail if not available
+	let queryClientInstance: QueryClient | undefined = queryClient;
+	try {
+		if (!queryClientInstance) {
+			queryClientInstance = useQueryClient();
+		}
+	} catch (error) {
+		// Not in component context, that's okay if queryClient was provided
+		console.debug('useFileWatcher: Unable to get queryClient from context, query invalidation will be skipped');
+	}
 	
 	let cleanup: (() => void) | null = null;
 	let fileWatcher: DesktopFileWatcher | WebFileWatcher | null = null;
@@ -46,13 +57,15 @@ export function useFileWatcher(
 	}
 
 	function invalidateRelatedQueries(type: FileEventType, event: FileEventData) {
+		if (!queryClientInstance) return; // Skip if no queryClient available
+		
 		const path = event.path;
 		const pathParts = path.split('/');
 		
 		// Invalidate all parent directory queries in the hierarchy
 		for (let i = 0; i < pathParts.length; i++) {
 			const directoryPath = pathParts.slice(0, i).join('/');
-			queryClient.invalidateQueries({ 
+			queryClientInstance.invalidateQueries({ 
 				queryKey: fileSystemKeys.directoryTree(directoryPath) 
 			});
 		}
@@ -67,7 +80,7 @@ export function useFileWatcher(
 			case 'modified':
 				// Invalidate file content for modified files
 				if (!event.metadata.is_directory) {
-					queryClient.invalidateQueries({ 
+					queryClientInstance.invalidateQueries({ 
 						queryKey: fileSystemKeys.fileContent(path) 
 					});
 				}
@@ -76,7 +89,7 @@ export function useFileWatcher(
 			case 'renamed':
 				// Remove old file from cache and invalidate new path
 				if (event.metadata.old_path) {
-					queryClient.removeQueries({ 
+					queryClientInstance.removeQueries({ 
 						queryKey: fileSystemKeys.fileContent(event.metadata.old_path) 
 					});
 				}
@@ -84,7 +97,7 @@ export function useFileWatcher(
 				// Invalidate both old and new parent directories
 				if (event.metadata.old_path) {
 					const oldParentPath = event.metadata.old_path.split('/').slice(0, -1).join('/');
-					queryClient.invalidateQueries({ 
+					queryClientInstance.invalidateQueries({ 
 						queryKey: fileSystemKeys.directoryTree(oldParentPath) 
 					});
 				}
@@ -167,6 +180,6 @@ export function useFileWatcher(
  * Simple hook that just enables file watching with query invalidation
  * Most components will use this instead of the full useFileWatcher
  */
-export function useAutoRefresh(enabled: boolean = true) {
-	return useFileWatcher(undefined, enabled);
+export function useAutoRefresh(enabled: boolean = true, queryClient?: QueryClient) {
+	return useFileWatcher(undefined, enabled, queryClient);
 }

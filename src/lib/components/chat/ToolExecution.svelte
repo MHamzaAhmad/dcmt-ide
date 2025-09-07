@@ -131,7 +131,13 @@
 			<span>Tool Execution</span>
 			{#if sortedResults.length > 1}
 				<Badge variant="outline" class="text-xs">
-					{sortedResults.length}
+					{sortedResults.length} tools
+				</Badge>
+			{/if}
+			{#if sortedResults.some(r => r.status === 'executing')}
+				<Badge variant="default" class="text-xs gap-1 animate-pulse">
+					<div class="w-2 h-2 bg-current rounded-full animate-ping"></div>
+					Active
 				</Badge>
 			{/if}
 		</div>
@@ -144,26 +150,43 @@
 				{@const hasResult = result.result && result.result.trim().length > 0}
 				{@const hasError = result.error && result.error.trim().length > 0}
 
-				<Card class="border-l-4 {result.status === 'executing' ? 'border-l-blue-500' : result.status === 'completed' ? 'border-l-green-500' : 'border-l-red-500'}">
+				<Card class="border-l-4 {result.status === 'executing' ? 'border-l-blue-500 bg-blue-50/30 dark:bg-blue-950/10' : result.status === 'completed' ? 'border-l-green-500' : 'border-l-red-500'} transition-all duration-300">
 					<CardHeader class="pb-2">
 						<Collapsible>
 							<CollapsibleTrigger 
-								class="flex items-center justify-between w-full text-left hover:bg-muted/50 rounded p-2 -m-2"
+								class="flex items-center justify-between w-full text-left hover:bg-muted/50 rounded p-2 -m-2 transition-colors"
 								onclick={() => toggleExpanded(result.tool_call_id)}
 							>
 								<div class="flex items-center gap-3">
 									<div class="flex items-center gap-2">
-										<ToolIcon size={16} class="text-muted-foreground" />
+										<!-- Sequence indicator -->
+										<div class="w-6 h-6 rounded-full bg-muted text-muted-foreground flex items-center justify-center text-xs font-mono {result.status === 'executing' ? 'bg-blue-500 text-white animate-pulse' : result.status === 'completed' ? 'bg-green-500 text-white' : result.status === 'error' ? 'bg-red-500 text-white' : ''}">
+											{sortedResults.length - index}
+										</div>
+										
+										<div class="relative">
+											<ToolIcon size={16} class="text-muted-foreground {result.status === 'executing' ? 'animate-pulse' : ''}" />
+											{#if result.status === 'executing'}
+												<div class="absolute -top-1 -right-1 w-3 h-3">
+													<div class="w-full h-full bg-blue-500 rounded-full animate-ping opacity-75"></div>
+													<div class="absolute top-0 left-0 w-full h-full bg-blue-500 rounded-full"></div>
+												</div>
+											{/if}
+										</div>
 										<span class="font-medium text-sm">
 											{formatToolName(result.tool_name)}
 										</span>
 									</div>
 									
-									<Badge variant={getStatusBadgeVariant(result.status)} class="gap-1 text-xs">
-										<StatusIcon size={12} />
+									<Badge variant={getStatusBadgeVariant(result.status)} class="gap-1 text-xs {result.status === 'executing' ? 'animate-pulse' : ''}">
+										<StatusIcon size={12} class={result.status === 'executing' ? 'animate-spin' : ''} />
 										{result.status}
 										{#if result.status === 'executing'}
-											<div class="w-2 h-2 bg-current rounded-full animate-pulse"></div>
+											<div class="flex gap-0.5">
+												<div class="w-1 h-1 bg-current rounded-full animate-bounce" style="animation-delay: 0ms"></div>
+												<div class="w-1 h-1 bg-current rounded-full animate-bounce" style="animation-delay: 100ms"></div>
+												<div class="w-1 h-1 bg-current rounded-full animate-bounce" style="animation-delay: 200ms"></div>
+											</div>
 										{/if}
 									</Badge>
 								</div>
@@ -240,14 +263,20 @@
 											</div>
 										</div>
 									{:else if result.status === 'executing'}
-										<div class="bg-blue-50 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-800 rounded p-3">
-											<div class="flex items-center gap-2">
-												<div class="flex gap-1">
-													<div class="w-2 h-2 bg-blue-500 rounded-full animate-bounce" style="animation-delay: 0ms"></div>
-													<div class="w-2 h-2 bg-blue-500 rounded-full animate-bounce" style="animation-delay: 150ms"></div>
-													<div class="w-2 h-2 bg-blue-500 rounded-full animate-bounce" style="animation-delay: 300ms"></div>
+										<div class="bg-gradient-to-r from-blue-50 to-blue-100 dark:from-blue-950/20 dark:to-blue-900/20 border border-blue-200 dark:border-blue-800 rounded p-3 animate-pulse">
+											<div class="flex items-center gap-3">
+												<div class="relative">
+													<div class="w-4 h-4 border-2 border-blue-300 border-t-blue-600 rounded-full animate-spin"></div>
 												</div>
-												<span class="text-sm text-blue-700 dark:text-blue-300">Executing...</span>
+												<div class="flex flex-col">
+													<span class="text-sm font-medium text-blue-700 dark:text-blue-300">Executing {formatToolName(result.tool_name)}...</span>
+													<div class="flex items-center gap-1 mt-1">
+														<div class="h-1 w-16 bg-blue-200 dark:bg-blue-800 rounded-full overflow-hidden">
+															<div class="h-full bg-blue-500 animate-pulse" style="width: {Math.random() * 80 + 20}%"></div>
+														</div>
+														<span class="text-xs text-blue-600 dark:text-blue-400">Working...</span>
+													</div>
+												</div>
 											</div>
 										</div>
 									{/if}

@@ -135,6 +135,13 @@
 		{#if message.content}
 			<div class="text-sm whitespace-pre-wrap">
 				{message.content}
+				{#if agentMessage?.streaming && agentMessage?.status === 'streaming'}
+					<span class="animate-pulse">▋</span>
+				{/if}
+			</div>
+		{:else if agentMessage?.streaming && agentMessage?.status === 'streaming'}
+			<div class="text-sm text-muted-foreground italic">
+				<span class="animate-pulse">Thinking...</span>
 			</div>
 		{/if}
 		
@@ -153,16 +160,5 @@
 			</Card>
 		{/if}
 		
-		<!-- Streaming Indicator (for messages being streamed) -->
-		{#if agentMessage?.streaming && agentMessage?.status === 'streaming'}
-			<div class="flex items-center gap-2 text-xs text-muted-foreground">
-				<div class="flex gap-1">
-					<div class="w-1.5 h-1.5 bg-blue-500 rounded-full animate-bounce" style="animation-delay: 0ms"></div>
-					<div class="w-1.5 h-1.5 bg-blue-500 rounded-full animate-bounce" style="animation-delay: 150ms"></div>
-					<div class="w-1.5 h-1.5 bg-blue-500 rounded-full animate-bounce" style="animation-delay: 300ms"></div>
-				</div>
-				<span>Assistant is typing...</span>
-			</div>
-		{/if}
 	</div>
 </div>

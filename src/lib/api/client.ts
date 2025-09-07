@@ -6,7 +6,7 @@ export class APIClient {
 
 	constructor(baseURL: string = '') {
 		this.baseURL = baseURL || import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001';
-		this.token = ''; // TODO: Add authentication token when auth is implemented
+		this.token = ''; // Authentication token placeholder
 	}
 
 	private async request<T>(
@@ -20,7 +20,7 @@ export class APIClient {
 			...(options.headers as Record<string, string> || {}),
 		};
 
-		// TODO: Add authentication header when token is available
+		// Add authentication header when token is available
 		if (this.token) {
 			headers['Authorization'] = `Bearer ${this.token}`;
 		}

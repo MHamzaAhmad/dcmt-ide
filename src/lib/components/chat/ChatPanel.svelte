@@ -14,7 +14,7 @@
 	import { modelsAPI } from '$lib/api/models';
 	import type { ChatMessage as ChatMessageType, LLMModel, AgentChatMessage, LiteLLMModel } from '$lib/api/types';
 	import { Send, Bot, AlertCircle, Wifi, WifiOff, Settings, Loader2, Maximize2, Minimize2, ChevronDown, ChevronUp } from '@lucide/svelte';
-	import { createQuery } from '@tanstack/svelte-query';
+	import { createQuery, useQueryClient } from '@tanstack/svelte-query';
 	
 	interface Props {
 		mode?: 'docked' | 'floating';
@@ -133,7 +133,13 @@
 		}
 	});
 	
+	// Get queryClient in component context
+	const queryClient = useQueryClient();
+	
 	onMount(async () => {
+		// Pass queryClient to agent store
+		agentStore.setQueryClient(queryClient);
+		
 		// Initialize agent system
 		if (isAgentMode) {
 			await agentStore.initialize();
@@ -201,6 +207,8 @@
 		isAgentMode = !isAgentMode;
 		// Clear messages when switching modes
 		if (isAgentMode) {
+			// Pass queryClient when re-initializing
+			agentStore.setQueryClient(queryClient);
 			agentStore.initialize();
 		} else {
 			chatStore.clearMessages();
@@ -343,33 +351,9 @@
 					</div>
 				{/if}
 				
-				<!-- Streaming Content Display -->
-				{#if isAgentMode && streamingContent && isProcessing}
-					<div class="flex gap-3 p-4 bg-muted/30">
-						<div class="w-8 h-8 rounded-full bg-muted flex items-center justify-center">
-							<Bot size={16} class="text-muted-foreground" />
-						</div>
-						<div class="flex-1">
-							<div class="flex items-center gap-2 mb-2">
-								<span class="text-sm font-medium">Assistant</span>
-								{#if selectedModel}
-									<span class="text-xs text-muted-foreground">• {selectedModel.id}</span>
-								{/if}
-								<Badge variant="outline" class="gap-1 text-xs">
-									<Loader2 size={12} class="animate-spin" />
-									Streaming...
-								</Badge>
-							</div>
-							<div class="text-sm whitespace-pre-wrap">
-								{streamingContent}
-								<span class="animate-pulse">▋</span>
-							</div>
-						</div>
-					</div>
-				{/if}
 				
-				<!-- Processing Indicator -->
-				{#if (isAgentMode ? isProcessing : isLoading)}
+				<!-- Processing Indicator (only show when no streaming message) -->
+				{#if (isAgentMode ? (isProcessing && !streamingContent) : isLoading)}
 					<div class="flex gap-3 p-4 bg-muted/30">
 						<div class="w-8 h-8 rounded-full bg-muted flex items-center justify-center">
 							<Bot size={16} class="text-muted-foreground animate-pulse" />
@@ -378,7 +362,7 @@
 							<div class="flex items-center gap-2">
 								<span class="text-sm font-medium">Assistant</span>
 								<span class="text-xs text-muted-foreground">
-									• {isAgentMode && toolResults.size > 0 ? 'Using tools...' : 'Thinking...'}
+									• {isAgentMode && toolResults.size > 0 ? 'Using tools...' : 'Processing...'}
 								</span>
 							</div>
 							<div class="flex gap-1 mt-2">

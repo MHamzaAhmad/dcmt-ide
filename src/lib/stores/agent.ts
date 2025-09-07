@@ -1,7 +1,8 @@
 import { writable } from 'svelte/store';
 import { browser } from '$app/environment';
-import { isDesktop } from '$lib/utils/platform';
 import { agentAPI } from '$lib/api/agent';
+import { useAgentEvents, useAgentFileSync } from '$lib/api/hooks';
+import type { QueryClient } from '@tanstack/svelte-query';
 import type { 
     AgentEvent, 
     AgentChatMessage, 
@@ -36,11 +37,14 @@ export interface AgentState {
     // UI State
     isProcessing: boolean;
     streamingContent: string;
+    streamingMessageId: string | null;
     currentJobId: string | null;
     
-    // Events
+    // Events & File Sync
     recentEvents: AgentEvent[];
     maxRecentEvents: number;
+    fileSyncActive: boolean;
+    fileOperationsCount: number;
 }
 
 function createAgentStore() {
@@ -63,26 +67,36 @@ function createAgentStore() {
         
         isProcessing: false,
         streamingContent: '',
+        streamingMessageId: null,
         currentJobId: null,
         
         recentEvents: [],
-        maxRecentEvents: 50
+        maxRecentEvents: 50,
+        fileSyncActive: false,
+        fileOperationsCount: 0
     };
 
     const { subscribe, set, update } = writable<AgentState>(initialState);
 
-    // Event handlers
-    let eventUnsubscriber: (() => void) | null = null;
-    let sessionUnsubscriber: (() => void) | null = null;
+    // Unified event and file sync management
+    let agentEvents: ReturnType<typeof useAgentEvents> | null = null;
+    let agentFileSync: ReturnType<typeof useAgentFileSync> | null = null;
+    let isInitialized = false;
+    let queryClient: QueryClient | undefined;
 
     const store = {
         subscribe,
         set,
         update,
 
+        // Set the query client (should be called from component context)
+        setQueryClient(client: QueryClient): void {
+            queryClient = client;
+        },
+
         // Initialization
         async initialize(): Promise<void> {
-            if (!browser) return;
+            if (!browser || isInitialized) return;
 
             try {
                 // Check availability
@@ -102,22 +116,18 @@ function createAgentStore() {
                     availableTools: tools
                 }));
 
-                // Set up event listeners for web platform
-                if (!isDesktop()) {
-                    const agentWebSocket = await agentAPI.getWebSocketAdapter();
-                    if (agentWebSocket) {
-                        eventUnsubscriber = agentWebSocket.onAny((event: AgentEvent) => {
-                            store.handleAgentEvent(event);
-                        });
-                    }
-                }
+                isInitialized = true;
+                console.log('Agent store initialized successfully');
 
             } catch (error) {
+                const errorMessage = error instanceof Error ? error.message : 'Failed to initialize agent';
+                console.error('Agent store initialization failed:', errorMessage);
+                
                 update(state => ({
                     ...state,
                     isAvailable: false,
                     isConnected: false,
-                    connectionError: error instanceof Error ? error.message : 'Failed to initialize agent'
+                    connectionError: errorMessage
                 }));
             }
         },
@@ -159,26 +169,50 @@ function createAgentStore() {
         async createSession(): Promise<string> {
             const sessionId = agentAPI.generateSessionId();
             
+            // Set up unified event handling for this session
+            agentEvents = useAgentEvents({
+                sessionId,
+                onAgentEvent: store.handleAgentEvent,
+                onFileEvent: (type, event) => {
+                    console.log(`File event from agent session: ${type}`, event);
+                },
+                enabled: true,
+                queryClient
+            });
+
+            // Set up file synchronization
+            agentFileSync = useAgentFileSync({
+                sessionId,
+                enabled: true,
+                onFileChanged: (path, changeType) => {
+                    console.log(`Agent modified file: ${path} (${changeType})`);
+                },
+                onAgentFileOperation: (tool, path, result) => {
+                    update(state => ({
+                        ...state,
+                        fileOperationsCount: state.fileOperationsCount + 1
+                    }));
+                },
+                queryClient
+            });
+
+            // Subscribe to backend agent events
+            await agentAPI.subscribeToEvents(sessionId);
+            await agentAPI.setCurrentSessionId(sessionId);
+            
+            // Start event handlers
+            await agentEvents.start(sessionId);
+            await agentFileSync.start();
+            
             update(state => ({
                 ...state,
                 currentSessionId: sessionId,
-                messages: []
+                messages: [],
+                fileSyncActive: true,
+                connectionError: null
             }));
 
-            // Subscribe to session events
-            await agentAPI.subscribeToEvents(sessionId);
-            await agentAPI.setCurrentSessionId(sessionId);
-
-            // For web platform, subscribe to WebSocket events
-            if (!isDesktop()) {
-                const agentWebSocket = await agentAPI.getWebSocketAdapter();
-                if (agentWebSocket) {
-                    sessionUnsubscriber = agentWebSocket.onSession(sessionId, (event: AgentEvent) => {
-                        store.handleAgentEvent(event);
-                    });
-                }
-            }
-
+            console.log(`Created agent session with unified event handling: ${sessionId}`);
             return sessionId;
         },
 
@@ -190,9 +224,15 @@ function createAgentStore() {
                 await agentAPI.unsubscribeFromEvents(state.currentSessionId);
             }
 
-            if (sessionUnsubscriber) {
-                sessionUnsubscriber();
-                sessionUnsubscriber = null;
+            // Clean up unified event handlers
+            if (agentEvents) {
+                agentEvents.destroy();
+                agentEvents = null;
+            }
+
+            if (agentFileSync) {
+                agentFileSync.destroy();
+                agentFileSync = null;
             }
 
             update(state => ({
@@ -203,8 +243,13 @@ function createAgentStore() {
                 activeToolResults: new Map(),
                 isProcessing: false,
                 streamingContent: '',
-                currentJobId: null
+                streamingMessageId: null,
+                currentJobId: null,
+                fileSyncActive: false,
+                fileOperationsCount: 0
             }));
+            
+            console.log('Cleared agent session and cleaned up event handlers');
         },
 
         // Message handling
@@ -303,9 +348,9 @@ function createAgentStore() {
             });
         },
 
-        // Event handling
+        // Event handling (now used by unified hooks)
         handleAgentEvent(event: AgentEvent): void {
-            console.log('Agent event received:', event);
+            console.log('Agent event received via unified hooks:', event);
 
             // Add to recent events
             update(state => ({
@@ -323,17 +368,50 @@ function createAgentStore() {
                     break;
 
                 case 'LLMCallStart':
+                    // Create a streaming message when LLM starts
+                    const streamingMessage: AgentChatMessage = {
+                        id: `msg-streaming-${Date.now()}`,
+                        role: 'assistant',
+                        content: '',
+                        timestamp: new Date(),
+                        status: 'streaming',
+                        streaming: true,
+                        model: store.getCurrentState().selectedModel?.id
+                    };
+                    
+                    store.addMessage(streamingMessage);
+                    
                     update(state => ({
                         ...state,
-                        streamingContent: ''
+                        streamingContent: '',
+                        streamingMessageId: streamingMessage.id
                     }));
                     break;
 
                 case 'LLMStreaming':
-                    update(state => ({
-                        ...state,
-                        streamingContent: state.streamingContent + event.content
-                    }));
+                    update(state => {
+                        const newContent = state.streamingContent + event.content;
+                        
+                        // Update the streaming message with new content
+                        if (state.streamingMessageId) {
+                            const messages = state.messages.map(msg => 
+                                msg.id === state.streamingMessageId
+                                    ? { ...msg, content: newContent }
+                                    : msg
+                            );
+                            
+                            return {
+                                ...state,
+                                streamingContent: newContent,
+                                messages
+                            };
+                        }
+                        
+                        return {
+                            ...state,
+                            streamingContent: newContent
+                        };
+                    });
                     break;
 
                 case 'ToolExecuting':
@@ -353,27 +431,66 @@ function createAgentStore() {
                         result: event.result,
                         completed_at: new Date()
                     });
+                    
+                    // File operations are handled by agentFileSync
+                    console.log(`Tool completed: ${event.tool}`);
                     break;
 
                 case 'JobComplete':
-                    // Add assistant message
-                    const assistantMessage: AgentChatMessage = {
-                        id: `msg-${Date.now()}`,
-                        role: 'assistant',
-                        content: event.response,
-                        timestamp: new Date(),
-                        status: 'completed',
-                        model: store.getCurrentState().selectedModel?.id
-                    };
+                    // Use streaming content if available, otherwise parse response
+                    const currentState = store.getCurrentState();
+                    const currentStreamingContent = currentState.streamingContent;
+                    let finalContent = currentStreamingContent || '';
+                    
+                    // If no streaming content, try to parse the response
+                    if (!finalContent && event.response) {
+                        try {
+                            // Check if response is JSON
+                            const parsed = JSON.parse(event.response);
+                            // Extract message content from common JSON structures
+                            finalContent = parsed.message || parsed.content || parsed.response || event.response;
+                        } catch {
+                            // Not JSON, use as-is
+                            finalContent = event.response;
+                        }
+                    }
+                    
+                    // Update the streaming message to completed status or add new message
+                    if (currentState.streamingMessageId) {
+                        // Update existing streaming message
+                        update(state => ({
+                            ...state,
+                            messages: state.messages.map(msg => 
+                                msg.id === state.streamingMessageId
+                                    ? { ...msg, content: finalContent, status: 'completed', streaming: false }
+                                    : msg
+                            ),
+                            isProcessing: false,
+                            streamingContent: '',
+                            streamingMessageId: null,
+                            currentJobId: null
+                        }));
+                    } else {
+                        // Add new assistant message if no streaming message exists
+                        const assistantMessage: AgentChatMessage = {
+                            id: `msg-${Date.now()}`,
+                            role: 'assistant',
+                            content: finalContent,
+                            timestamp: new Date(),
+                            status: 'completed',
+                            model: currentState.selectedModel?.id
+                        };
 
-                    store.addMessage(assistantMessage);
+                        store.addMessage(assistantMessage);
 
-                    update(state => ({
-                        ...state,
-                        isProcessing: false,
-                        streamingContent: '',
-                        currentJobId: null
-                    }));
+                        update(state => ({
+                            ...state,
+                            isProcessing: false,
+                            streamingContent: '',
+                            streamingMessageId: null,
+                            currentJobId: null
+                        }));
+                    }
 
                     // Clear completed tool results after a delay
                     setTimeout(() => {
@@ -407,24 +524,60 @@ function createAgentStore() {
             return currentState!;
         },
 
-        // Cleanup
-        async destroy(): Promise<void> {
-            if (eventUnsubscriber) {
-                eventUnsubscriber();
-                eventUnsubscriber = null;
+        // Session switching
+        async switchSession(newSessionId: string): Promise<void> {
+            const currentState = store.getCurrentState();
+            
+            if (currentState.currentSessionId === newSessionId) {
+                return; // Already on this session
             }
             
-            if (sessionUnsubscriber) {
-                sessionUnsubscriber();
-                sessionUnsubscriber = null;
+            // Clean up current session without clearing state
+            if (agentEvents) {
+                await agentEvents.switchSession(newSessionId);
             }
+            
+            if (agentFileSync) {
+                await agentFileSync.switchSession(newSessionId);
+            }
+            
+            // Subscribe to new session
+            await agentAPI.subscribeToEvents(newSessionId);
+            await agentAPI.setCurrentSessionId(newSessionId);
+            
+            update(state => ({
+                ...state,
+                currentSessionId: newSessionId,
+                connectionError: null
+            }));
+            
+            console.log(`Switched to agent session: ${newSessionId}`);
+        },
 
-            if (!isDesktop()) {
-                const agentWebSocket = await agentAPI.getWebSocketAdapter();
-                if (agentWebSocket) {
-                    agentWebSocket.destroy();
-                }
+        // Get sync status
+        getSyncStatus() {
+            return {
+                fileSyncActive: agentFileSync?.isInitialized() || false,
+                eventsActive: agentEvents?.getCurrentSessionId() !== null,
+                currentSession: store.getCurrentState().currentSessionId
+            };
+        },
+
+        // Cleanup
+        async destroy(): Promise<void> {
+            // Clean up unified event handlers
+            if (agentEvents) {
+                agentEvents.destroy();
+                agentEvents = null;
             }
+            
+            if (agentFileSync) {
+                agentFileSync.destroy();
+                agentFileSync = null;
+            }
+            
+            isInitialized = false;
+            console.log('Agent store destroyed and cleaned up');
         }
     };
 

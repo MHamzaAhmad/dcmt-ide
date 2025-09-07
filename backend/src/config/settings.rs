@@ -5,6 +5,12 @@ use anyhow::Result;
 pub struct Config {
     pub workspace_path: PathBuf,
     pub server: ServerConfig,
+    pub agent: AgentConfig,
+}
+
+#[derive(Debug, Clone)]
+pub struct AgentConfig {
+    pub litellm_base_url: String,
 }
 
 #[derive(Debug, Clone)]
@@ -30,9 +36,13 @@ impl Config {
             .parse::<u16>()
             .map_err(|e| anyhow::anyhow!("Invalid DCMT_PORT value: {}", e))?;
         
+        let litellm_base_url = std::env::var("LITELLM_BASE_URL")
+            .unwrap_or_else(|_| "http://0.0.0.0:4000".to_string());
+        
         Ok(Config {
             workspace_path,
             server: ServerConfig { host, port },
+            agent: AgentConfig { litellm_base_url },
         })
     }
 }

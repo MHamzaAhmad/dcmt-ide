@@ -16,6 +16,14 @@ export function isTauri(): boolean {
 }
 
 /**
+ * Detect if the application is running in desktop/Tauri environment
+ * @returns true if running in desktop, false if running in web browser
+ */
+export function isDesktop(): boolean {
+	return isTauri();
+}
+
+/**
  * Detect if the application is running in web browser
  * @returns true if running in web browser, false if running in Tauri
  */

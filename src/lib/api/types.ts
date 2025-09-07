@@ -165,3 +165,102 @@ export interface LaTeXCompileError {
 	line?: number;
 	file?: string;
 }
+
+// Agent System Types
+export interface LiteLLMModel {
+	id: string;
+	object: string;
+	created: number;
+	owned_by: string;
+}
+
+export interface LiteLLMModelsResponse {
+	data: LiteLLMModel[];
+	object: string;
+}
+
+export interface AgentChatRequest {
+	session_id: string;
+	message: string;
+	model: string;
+}
+
+export interface AgentChatResponse {
+	session_id: string;
+	job_id: string;
+}
+
+export interface AgentSessionInfo {
+	id: string;
+	user_id?: string;
+	message_count: number;
+	created_at: string;
+	last_activity: string;
+}
+
+export interface AgentToolDefinition {
+	type: string; // "function"
+	function: {
+		name: string;
+		description: string;
+		parameters: any; // JSON schema
+	};
+}
+
+// Agent Event Types for real-time updates
+export type AgentEvent = 
+	| { type: 'JobQueued'; job_id: string; session_id: string }
+	| { type: 'LLMCallStart'; model: string }
+	| { type: 'LLMStreaming'; content: string }
+	| { type: 'ToolCallRequested'; tool: string; args: any }
+	| { type: 'ToolExecuting'; tool: string }
+	| { type: 'ToolCompleted'; tool: string; result: string }
+	| { type: 'ParallelToolsStart'; count: number }
+	| { type: 'ParallelToolsComplete'; count: number }
+	| { type: 'LLMCallComplete' }
+	| { type: 'JobComplete'; response: string }
+	| { type: 'Error'; message: string };
+
+// Enhanced ChatMessage for agent support
+export interface AgentChatMessage extends ChatMessage {
+	tool_calls?: AgentToolCall[];
+	tool_call_id?: string;
+	streaming?: boolean;
+	job_id?: string;
+	status?: 'sending' | 'streaming' | 'tool_execution' | 'completed' | 'error';
+	error?: string;
+}
+
+export interface AgentToolCall {
+	id: string;
+	type: string;
+	function: {
+		name: string;
+		arguments: string; // JSON string
+	};
+}
+
+export interface AgentToolResult {
+	tool_call_id: string;
+	tool_name: string;
+	status: 'executing' | 'completed' | 'error';
+	result?: string;
+	error?: string;
+	started_at?: Date;
+	completed_at?: Date;
+}
+
+// Agent Operations Interface
+export interface AgentOperations {
+	listModels(): Promise<LiteLLMModelsResponse>;
+	sendMessage(request: AgentChatRequest): Promise<AgentChatResponse>;
+	subscribeToEvents(sessionId: string): Promise<void>;
+	unsubscribeFromEvents(sessionId: string): Promise<void>;
+	getSessionInfo(sessionId: string): Promise<AgentSessionInfo | null>;
+	listSessions(): Promise<AgentSessionInfo[]>;
+	clearSession(sessionId: string): Promise<boolean>;
+	getAvailableTools(): Promise<AgentToolDefinition[]>;
+	isAgentAvailable(): Promise<boolean>;
+	getCurrentSessionId(): string | null;
+	setCurrentSessionId(sessionId: string): void;
+}

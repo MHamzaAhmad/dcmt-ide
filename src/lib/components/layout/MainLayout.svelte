@@ -6,7 +6,6 @@
 	import PDFPreview from '../preview/PDFPreview.svelte';
 	import EditorHeader from './EditorHeader.svelte';
 	import ChatPanel from '../chat/ChatPanel.svelte';
-	import BottomChat from '../chat/BottomChat.svelte';
 	import WelcomeScreen from '../welcome/WelcomeScreen.svelte';
 	import { ResizablePaneGroup, ResizablePane, ResizableHandle } from '$lib/components/ui/resizable';
 	import { editorState } from '$lib/stores/editor.js';
@@ -180,9 +179,9 @@
 							{/if}
 						</div>
 						
-						<!-- Floating Bottom Chat (only visible in code view) -->
+						<!-- Floating Chat (only visible in code view) -->
 						{#if activeTab === 'code'}
-							<BottomChat />
+							<ChatPanel mode="floating" />
 						{/if}
 					</div>
 				</ResizablePane>

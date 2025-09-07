@@ -9,22 +9,15 @@
 	import WelcomeScreen from '../welcome/WelcomeScreen.svelte';
 	import { ResizablePaneGroup, ResizablePane, ResizableHandle } from '$lib/components/ui/resizable';
 	import { editorState } from '$lib/stores/editor.js';
-	import { useWorkspaceReady } from '$lib/api/hooks';
-	import { useFindMainLatexFile } from '$lib/api/hooks/useLaTeX';
 	import { openFiles } from '$lib/stores/files.js';
 	import { fileSystemApi } from '$lib/api/adapters';
+	import { workspaceStore, orchestrator } from '$lib/stores';
 
 	let isFileExplorerOpen = $state(true);
 	let isVersionControlOpen = $state(false);
 	let activeTab = $state<'code' | 'chat'>('code');
 
 	import { isTauri } from '$lib/utils/platform';
-	
-	// Check workspace readiness (project selection for desktop)
-	const currentProjectQuery = useWorkspaceReady();
-	
-	// Find main LaTeX file on startup
-	const mainLatexFileQuery = useFindMainLatexFile();
 
 	$effect(() => {
 		isFileExplorerOpen = $editorState.isFileExplorerOpen;
@@ -32,39 +25,24 @@
 		activeTab = $editorState.activeTab;
 	});
 
-	// Auto-load main LaTeX file and PDF on startup
+	// Get reactive store states
+	const workspaceState = $derived($workspaceStore);
+	const orchestratorState = $derived($orchestrator);
+
+	// Auto-load main LaTeX file when new reactive stores are ready
 	$effect(() => {
-		// Debug: Log all condition values
-		console.log('MainLayout effect conditions:', {
-			mainLatexData: $mainLatexFileQuery.data,
-			currentProjectData: $currentProjectQuery.data,
-			isReady,
-			supportsProjects,
-			openFilesLength: $openFiles.length,
-			platform: isTauri() ? 'desktop' : 'web'
-		});
-		
-		// For web: don't require currentProjectQuery.data, for desktop: require it
-		const shouldProceed = $mainLatexFileQuery.data && isReady && 
-			(supportsProjects ? $currentProjectQuery.data : true);
-		
-		console.log('🔍 Condition evaluation:', {
-			shouldProceed,
-			hasMainLatexData: !!$mainLatexFileQuery.data,
-			isReady,
-			projectCondition: supportsProjects ? !!$currentProjectQuery.data : true
-		});
+		// Wait for both orchestrator and workspace to be ready
+		if (orchestratorState.isReady && workspaceState.isReady && workspaceState.mainLatexFile) {
+			console.log('MainLayout: New reactive stores ready - main LaTeX file:', workspaceState.mainLatexFile);
 			
-		if (shouldProceed) {
-			const mainTexFile = $mainLatexFileQuery.data;
-			console.log('Found main LaTeX file:', mainTexFile);
-			
-			// Auto-open the main .tex file if no files are currently open
+			// Auto-open the main LaTeX file if no files are currently open in the old system
 			if ($openFiles.length === 0) {
-				autoLoadMainFiles(mainTexFile);
+				console.log('MainLayout: Auto-loading main LaTeX file from reactive store:', workspaceState.mainLatexFile);
+				autoLoadMainFiles(workspaceState.mainLatexFile);
 			}
 		}
 	});
+
 
 	async function autoLoadMainFiles(mainTexPath: string) {
 		console.log('🚀 autoLoadMainFiles called with path:', mainTexPath);
@@ -108,15 +86,13 @@
 		}
 	}
 
-	// Reactive values for workspace state using the query store
-	let hasProject = $derived(!!$currentProjectQuery.data);
-	let isLoading = $derived($currentProjectQuery.isLoading);
+	// Use the new reactive store system for readiness
+	let isReady = $derived(orchestratorState.isReady);
+	let isLoading = $derived(orchestratorState.isInitializing);
 	let supportsProjects = $derived(isTauri());
 	
-	// For web, workspace is always ready (uses predefined /workspace)
-	// For desktop, workspace is ready when project is selected
-	let isReady = $derived(supportsProjects ? hasProject && !isLoading : true);
-	let needsSetup = $derived(supportsProjects && !hasProject && !isLoading);
+	// For desktop, we still need project selection, but simplified
+	let needsSetup = $derived(false); // TODO: Add proper project selection for desktop later
 
 </script>
 
@@ -129,7 +105,7 @@
 		<div class="text-center space-y-4">
 			<div class="h-8 w-8 animate-spin rounded-full border-2 border-primary border-t-transparent mx-auto"></div>
 			<p class="text-muted-foreground">
-				{supportsProjects ? 'Loading project...' : 'Initializing workspace...'}
+				Initializing DCMT Editor...
 			</p>
 		</div>
 	</div>

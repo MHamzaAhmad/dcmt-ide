@@ -2,6 +2,9 @@ import { writable } from 'svelte/store';
 import { browser } from '$app/environment';
 import { agentAPI } from '$lib/api/agent';
 import { useAgentEvents, useAgentFileSync } from '$lib/api/hooks';
+import { workspaceStore } from './workspace';
+import { latexStore } from './latex';
+import { pdfStore } from './pdf';
 import type { QueryClient } from '@tanstack/svelte-query';
 import type { 
     AgentEvent, 
@@ -186,12 +189,16 @@ function createAgentStore() {
                 enabled: true,
                 onFileChanged: (path, changeType) => {
                     console.log(`Agent modified file: ${path} (${changeType})`);
+                    // Integrate with new store system
+                    store.handleAgentFileChange(path, changeType);
                 },
                 onAgentFileOperation: (tool, path, result) => {
                     update(state => ({
                         ...state,
                         fileOperationsCount: state.fileOperationsCount + 1
                     }));
+                    // Integrate with new store system
+                    store.handleAgentToolOperation(tool, path, result);
                 },
                 queryClient
             });
@@ -561,6 +568,107 @@ function createAgentStore() {
                 eventsActive: agentEvents?.getCurrentSessionId() !== null,
                 currentSession: store.getCurrentState().currentSessionId
             };
+        },
+
+        // Store integration methods
+        handleAgentFileChange(path: string, changeType: 'created' | 'modified' | 'deleted' | 'renamed'): void {
+            console.log(`AgentStore: Integrating file change ${changeType} on ${path}`);
+            
+            // For file operations that affect content, we need to parse the result
+            // This method is called after the file system has been updated
+            if (changeType === 'modified' || changeType === 'created') {
+                // The workspace store will handle reloading the file
+                // LaTeX and PDF stores will react automatically
+            }
+        },
+
+        handleAgentToolOperation(tool: string, path: string, result: any): void {
+            console.log(`AgentStore: Integrating tool operation ${tool} on ${path}`);
+            
+            try {
+                // Extract content from result for content-modifying operations
+                let content: string | undefined;
+                
+                if (tool === 'update_file' || tool === 'write_file' || tool === 'create_file') {
+                    // Try to extract content from various result formats
+                    if (typeof result === 'string') {
+                        // Result might contain content or success message
+                        const contentMatch = result.match(/(?:content|file).*?:\s*["']([^"']+)["']/i);
+                        if (contentMatch) {
+                            content = contentMatch[1];
+                        }
+                    }
+                }
+                
+                // Integrate with workspace store
+                workspaceStore.handleAgentFileOperation(tool, path, content);
+                
+                // Notify LaTeX store for .tex files
+                if (path.endsWith('.tex')) {
+                    latexStore.handleAgentFileOperation(tool, path);
+                }
+                
+                // Notify PDF store for .pdf files
+                if (path.endsWith('.pdf')) {
+                    pdfStore.handleAgentFileOperation(tool, path);
+                }
+                
+            } catch (error) {
+                console.error('AgentStore: Error integrating tool operation:', error);
+            }
+        },
+
+        // Enhanced file operation tracking with store integration
+        async handleEnhancedFileOperation(operation: {
+            tool: string;
+            path: string;
+            args?: any;
+            result?: string;
+        }): Promise<void> {
+            const { tool, path, args, result } = operation;
+            
+            console.log(`AgentStore: Enhanced file operation - ${tool} on ${path}`);
+            
+            try {
+                switch (tool) {
+                    case 'read_file':
+                        // Ensure file is loaded in workspace
+                        await workspaceStore.loadFile(path, true);
+                        break;
+                        
+                    case 'write_file':
+                    case 'create_file':
+                        // Extract content and update workspace
+                        if (args?.content) {
+                            await workspaceStore.handleAgentFileOperation(tool, path, args.content);
+                        }
+                        break;
+                        
+                    case 'update_file':
+                        // For updates, we need to reload the file to get the latest content
+                        setTimeout(async () => {
+                            try {
+                                await workspaceStore.loadFile(path, true);
+                            } catch (error) {
+                                console.warn('Failed to reload updated file:', error);
+                            }
+                        }, 100);
+                        break;
+                        
+                    case 'delete_file':
+                        await workspaceStore.handleAgentFileOperation(tool, path);
+                        break;
+                }
+                
+                // Update operation count
+                update(state => ({
+                    ...state,
+                    fileOperationsCount: state.fileOperationsCount + 1
+                }));
+                
+            } catch (error) {
+                console.error('AgentStore: Error in enhanced file operation handling:', error);
+            }
         },
 
         // Cleanup

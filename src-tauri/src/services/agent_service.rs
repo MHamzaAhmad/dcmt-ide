@@ -3,6 +3,7 @@ use std::sync::Arc;
 use std::time::Duration;
 use futures::future::join_all;
 use reqwest::Client;
+use tokio::fs;
 use uuid::Uuid;
 
 use crate::models::agent::{
@@ -64,28 +65,21 @@ impl AgentService {
     }
     
     
-    /// Loads the system prompt from embedded config or uses default
+    /// Loads the system prompt from config file or uses default
     async fn load_system_prompt() -> String {
-        // For desktop app, we can embed the system prompt or load from a config file
-        // For now, using a default LaTeX-focused prompt
-        r#"You are a helpful LaTeX document assistant. You have access to file operations to help users create, edit, and manage their LaTeX documents and projects.
-
-Key responsibilities:
-- Help create and edit LaTeX documents following best practices
-- Assist with document structure, formatting, and organization  
-- Provide clear explanations of LaTeX concepts and commands
-- Use the available file tools to read, write, and modify files in the workspace
-- Maintain clean, well-organized project structure
-
-Available file operations:
-- read_file: Examine existing files
-- write_file: Create new files or overwrite existing ones
-- update_file: Make targeted edits using find-and-replace
-- list_files: Explore directory structure
-- create_directory: Organize files into folders
-- delete_file: Remove unnecessary files (use with caution)
-
-Always explain your actions and provide educational context about LaTeX when appropriate."#.to_string()
+        // Try to load from config file first
+        let config_path = PathBuf::from("config/systemprompt.md");
+        
+        match fs::read_to_string(&config_path).await {
+            Ok(content) => {
+                tracing::info!("Loaded system prompt from config/systemprompt.md");
+                content
+            }
+            Err(_) => {
+                tracing::warn!("Could not load system prompt from {:?}, using default", config_path);
+                "You are a helpful LaTeX document assistant.".to_string()
+            }
+        }
     }
     
     /// Processes a chat request with background processing and real-time events
@@ -261,17 +255,32 @@ Always explain your actions and provide educational context about LaTeX when app
                 &config,
                 &event_broadcaster,
                 session_id,
+                false, // Don't force JSON on first calls
             ).await?;
             
             // Check for tool calls
             if let Some(tool_calls) = response.tool_calls.clone() {
                 if tool_calls.is_empty() {
-                    // No tool calls, return response
+                    // No tool calls - make final call with JSON format
+                    let final_response = Self::call_litellm(
+                        &messages,
+                        &model,
+                        &tool_registry,
+                        &http_client,
+                        &config,
+                        &event_broadcaster,
+                        session_id,
+                        true, // Force JSON format for final response
+                    ).await?;
+                    
                     event_broadcaster
                         .broadcast(session_id, AgentEvent::LLMCallComplete)
                         .await;
-                    return Ok(response);
+                    return Ok(final_response);
                 }
+                
+                // Add assistant message with tool calls to history FIRST
+                messages.push(response);
                 
                 // Execute tools (in parallel if multiple)
                 if tool_calls.len() > 1 {
@@ -344,9 +353,6 @@ Always explain your actions and provide educational context about LaTeX when app
                         }
                     }
                 }
-                
-                // Add assistant message with tool calls to history
-                messages.push(response);
                 
                 // Save updated messages to session
                 for msg in &messages[messages.len() - tool_calls.len() - 1..] {
@@ -453,6 +459,7 @@ Always explain your actions and provide educational context about LaTeX when app
         config: &AgentConfig,
         event_broadcaster: &Arc<EventBroadcaster>,
         session_id: &str,
+        use_json_format: bool,
     ) -> AgentResult<ChatMessage> {
         // Build request with ALL tools included
         let request = LiteLLMRequest {
@@ -460,9 +467,13 @@ Always explain your actions and provide educational context about LaTeX when app
             messages: messages.to_vec(),
             tools: tool_registry.get_definitions(),
             tool_choice: "auto".to_string(),
-            response_format: Some(ResponseFormat {
-                format_type: "json_object".to_string(),
-            }),
+            response_format: if use_json_format {
+                Some(ResponseFormat {
+                    format_type: "json_object".to_string(),
+                })
+            } else {
+                None
+            },
         };
         
         let response = http_client

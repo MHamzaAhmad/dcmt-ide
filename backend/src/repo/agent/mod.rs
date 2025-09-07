@@ -168,17 +168,31 @@ impl AgentRepo {
                 })
                 .await;
             
-            let response = self.call_litellm(&messages, &model).await?;
+            let response = self.call_litellm(&messages, &model, false).await?; // Don't force JSON on first calls
             
             // Check for tool calls
-            if let Some(tool_calls) = &response.tool_calls {
+            if let Some(tool_calls) = response.tool_calls.clone() {
                 if tool_calls.is_empty() {
-                    // No tool calls, return response
-                    self.event_broadcaster
-                        .broadcast(session_id, AgentEvent::LLMCallComplete)
-                        .await;
-                    return Ok(response);
+                    // No tool calls - make final call with JSON format if this isn't iteration 1
+                    if iteration_count > 1 {
+                        // We've executed tools, now get structured JSON response
+                        let final_response = self.call_litellm(&messages, &model, true).await?; // Force JSON format
+                        self.event_broadcaster
+                            .broadcast(session_id, AgentEvent::LLMCallComplete)
+                            .await;
+                        return Ok(final_response);
+                    } else {
+                        // First call with no tools needed - still get JSON format
+                        let final_response = self.call_litellm(&messages, &model, true).await?; // Force JSON format
+                        self.event_broadcaster
+                            .broadcast(session_id, AgentEvent::LLMCallComplete)
+                            .await;
+                        return Ok(final_response);
+                    }
                 }
+                
+                // Add assistant message with tool calls to history FIRST
+                messages.push(response);
                 
                 if tool_calls.len() > 1 {
                     // Multiple tools - execute in parallel
@@ -285,9 +299,6 @@ impl AgentRepo {
                     }
                 }
                 
-                // Add assistant message with tool calls to history
-                messages.push(response);
-                
                 // Continue loop for next LLM call with tool results
             } else {
                 // No tool calls, return final response
@@ -324,16 +335,20 @@ impl AgentRepo {
     }
     
     /// Calls LiteLLM API with all tools included
-    async fn call_litellm(&self, messages: &[ChatMessage], model: &str) -> AgentResult<ChatMessage> {
+    async fn call_litellm(&self, messages: &[ChatMessage], model: &str, use_json_format: bool) -> AgentResult<ChatMessage> {
         // Build request with ALL tools included
         let request = LiteLLMRequest {
             model: model.to_string(),
             messages: messages.to_vec(),
             tools: self.tool_registry.get_definitions(), // All tools always included
             tool_choice: "auto".to_string(),
-            response_format: Some(ResponseFormat {
-                format_type: "json_object".to_string(),
-            }),
+            response_format: if use_json_format {
+                Some(ResponseFormat {
+                    format_type: "json_object".to_string(),
+                })
+            } else {
+                None
+            },
         };
         
         let response = self.http_client

@@ -17,6 +17,16 @@ pub struct ChatResponse {
     pub job_id: String,
 }
 
+// Structured response from LLM (when parsed from JSON)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StructuredAgentResponse {
+    pub message: String,
+    pub reasoning: String,
+    pub actions: Vec<String>,
+    pub files_modified: Vec<String>,
+    pub suggestions: Vec<String>,
+}
+
 // LiteLLM API structures
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LiteLLMRequest {

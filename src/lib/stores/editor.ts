@@ -1,4 +1,5 @@
-import { writable } from 'svelte/store';
+import { writable, derived } from 'svelte/store';
+import { eventStore } from './events';
 
 export interface EditorState {
 	activeFileId: string | null;
@@ -18,6 +19,25 @@ function createEditorStore() {
 	};
 
 	const { subscribe, set, update } = writable<EditorState>(initialState);
+	
+	// Subscribe to UI events from EventStore
+	eventStore.uiEvents.subscribe(events => {
+		const latestFileEvent = events
+			.filter(e => e.subtype === 'file_opened' || e.subtype === 'file_closed')
+			.pop();
+		
+		if (latestFileEvent?.subtype === 'file_opened' && latestFileEvent.payload.filePath) {
+			update(state => ({
+				...state,
+				activeFileId: latestFileEvent.payload.filePath
+			}));
+		} else if (latestFileEvent?.subtype === 'file_closed') {
+			update(state => ({
+				...state,
+				activeFileId: null
+			}));
+		}
+	});
 
 	return {
 		subscribe,
@@ -25,6 +45,17 @@ function createEditorStore() {
 		update,
 		setActiveFile: (fileId: string | null) => {
 			update(state => ({ ...state, activeFileId: fileId }));
+			
+			// Emit UI event to EventStore
+			if (fileId) {
+				eventStore.events.fileOpened(fileId);
+			} else {
+				eventStore.emit({
+					type: 'ui',
+					subtype: 'file_closed',
+					payload: { timestamp: Date.now() }
+				});
+			}
 		},
 		toggleFileExplorer: () => {
 			update(state => ({ ...state, isFileExplorerOpen: !state.isFileExplorerOpen }));

@@ -1,6 +1,7 @@
 // Web File WebSocket Adapter for File Watching
 import { apiClient } from '../../client';
 import type { FileWatcherOperations } from '../../types';
+import { eventStore } from '$lib/stores/events';
 
 export interface FileEvent {
 	event_type: 'Created' | 'Modified' | 'Deleted' | 'Renamed';
@@ -40,6 +41,27 @@ export class WebFileWatcher {
 
 	private handleFileEvent(type: string, event: FileEvent) {
 		console.log(`File ${type}:`, event);
+		
+		// Emit to EventStore first
+		const source = 'watcher';
+		switch (type.toLowerCase()) {
+			case 'created':
+				eventStore.events.fileCreated(event.path, event.metadata.is_directory, source);
+				break;
+			case 'modified':
+				eventStore.events.fileModified(event.path, event.metadata.size, source);
+				break;
+			case 'deleted':
+				eventStore.events.fileDeleted(event.path, event.metadata.is_directory, source);
+				break;
+			case 'renamed':
+				if (event.metadata.old_path) {
+					eventStore.events.fileRenamed(event.path, event.metadata.old_path, event.metadata.is_directory, source);
+				} else {
+					eventStore.events.fileModified(event.path, event.metadata.size, source);
+				}
+				break;
+		}
 		
 		// Call registered callbacks
 		const callbacks = this.eventCallbacks.get(type) || [];

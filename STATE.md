@@ -104,6 +104,34 @@ Agent operations integrate seamlessly by updating stores, which trigger the enti
   - `handleAgentToolOperation(tool, path, result)` - Coordinate with other stores
   - `handleEnhancedFileOperation(operation)` - Process file operations
 
+#### **EventStore** (`src/lib/stores/events.ts`)
+- **Purpose**: Unified event system for the entire application
+- **Responsibilities**:
+  - Central event hub for all system events
+  - Reactive event streams and subscriptions
+  - Query invalidation coordination
+  - Cross-cutting event handling
+- **Key State**:
+  ```typescript
+  interface EventStoreState {
+    allEvents: SystemEvent[];
+    connections: { websocket: Status; tauri: Status };
+    queryInvalidationQueue: QueuedInvalidation[];
+    eventCounts: Record<string, number>;
+  }
+  ```
+- **Event Types**:
+  - `FileSystemEvent` - File operations (create/modify/delete/rename)
+  - `AgentEvent` - Agent tool execution and completion
+  - `CompilationEvent` - LaTeX compilation lifecycle
+  - `ConnectionEvent` - Network and system connections
+  - `UIEvent` - User interface state changes
+- **Key Methods**:
+  - `emit(event)` - Emit system events
+  - `events.*` - Convenience event emitters
+  - `createEventStream(predicate)` - Create filtered event streams
+  - `setQueryClient(client)` - Configure query invalidation
+
 #### **InitializationOrchestrator** (`src/lib/stores/orchestrator.ts`)
 - **Purpose**: Predictable system startup
 - **Responsibilities**:
@@ -114,41 +142,72 @@ Agent operations integrate seamlessly by updating stores, which trigger the enti
 
 ## 🔄 Data Flow Patterns
 
-### 1. **Agent File Operations**
+### 1. **Unified Event-Driven Architecture**
 ```mermaid
 graph TD
-    A[Agent Tool Execution] --> B[AgentStore.handleAgentToolOperation]
-    B --> C[WorkspaceStore.handleAgentFileOperation]
-    C --> D[File Content Updated]
-    D --> E[LaTeXStore detects .tex change]
-    E --> F[LaTeX Compilation Scheduled]
-    F --> G[Compilation Success]
-    G --> H[PDFStore.loadPdf]
-    H --> I[UI Updates Automatically]
+    A[Event Source] --> B[EventStore]
+    B --> C[Event Streams]
+    C --> D[Store Subscribers]
+    C --> E[Component Subscribers]
+    C --> F[Query Invalidation]
+    D --> G[Store State Updates]
+    E --> H[UI Updates]
+    F --> I[Fresh Data Fetch]
+    
+    subgraph "Event Sources"
+        J[File Watchers]
+        K[WebSocket Adapters]
+        L[Agent Operations]
+        M[User Actions]
+        N[Compilation System]
+    end
+    
+    J --> A
+    K --> A  
+    L --> A
+    M --> A
+    N --> A
 ```
 
-### 2. **Manual File Changes**
+### 2. **Agent File Operations (Updated)**
+```mermaid
+graph TD
+    A[Agent Tool Execution] --> B[WebSocket Adapter]
+    B --> C[EventStore.emit FileSystemEvent]
+    C --> D[All Stores Subscribe to EventStore]
+    D --> E[WorkspaceStore Updates Files]
+    D --> F[LaTeXStore Schedules Compilation]
+    D --> G[Query Invalidation]
+    E --> H[UI Updates Automatically]
+    F --> I[PDF Generation]
+    G --> J[Fresh Data Fetch]
+```
+
+### 3. **Manual File Changes (Updated)**
 ```mermaid
 graph TD
     A[User Edits File] --> B[WorkspaceStore.updateFileContent]
-    B --> C[File Marked Dirty]
-    C --> D[User Saves File]
-    D --> E[WorkspaceStore.saveFile]
-    E --> F[File Change Event Emitted]
-    F --> G[LaTeX Store Reacts]
-    G --> H[Auto-compilation if .tex file]
+    B --> C[WorkspaceStore.saveFile]
+    C --> D[EventStore.events.fileModified]
+    D --> E[FileSystem Event Emitted]
+    E --> F[LaTeX Store Reacts via EventStore]
+    E --> G[Query Invalidation via EventStore]
+    F --> H[Auto-compilation if .tex file]
+    G --> I[UI Data Refresh]
 ```
 
-### 3. **System Initialization**
+### 4. **System Initialization (Updated)**
 ```mermaid
 graph TD
     A[App Starts] --> B[InitializationOrchestrator.initialize]
-    B --> C[WorkspaceStore.initialize]
-    C --> D[LaTeXStore.initialize]
-    D --> E[PDFStore.initialize]
-    E --> F[AgentStore.initialize]
-    F --> G[System Ready]
-    G --> H[UI Renders]
+    B --> C[EventStore.initialize]
+    C --> D[WorkspaceStore.initialize]
+    D --> E[LaTeXStore.initialize]
+    E --> F[PDFStore.initialize]
+    F --> G[AgentStore.initialize]
+    G --> H[All Systems Subscribe to EventStore]
+    H --> I[System Ready]
+    I --> J[UI Renders]
 ```
 
 ## 🛠️ Integration Patterns
@@ -158,16 +217,55 @@ graph TD
 #### **Reactive State Access**
 ```svelte
 <script lang="ts">
-  import { workspaceStore, latexStore, pdfStore } from '$lib/stores';
+  import { workspaceStore, latexStore, pdfStore, eventStore } from '$lib/stores';
   
   // Reactive state
   const workspaceState = $derived($workspaceStore);
   const latexState = $derived($latexStore);  
   const pdfState = $derived($pdfStore);
   
+  // Event streams (modern approach)
+  const fileSystemEvents = $derived($eventStore.fileSystemEvents);
+  const agentEvents = $derived($eventStore.agentEvents);
+  const compilationEvents = $derived($eventStore.compilationEvents);
+  
   // Derived store access
   const hasValidPdf = $derived($pdfStore.hasValidPdf);
   const canCompile = $derived(latexStore.canCompile());
+</script>
+```
+
+#### **Event-Driven Components**
+```svelte
+<script lang="ts">
+  import { eventStore } from '$lib/stores';
+  
+  // Subscribe to specific file events
+  const texFileEvents = eventStore.createFileSystemPathStream(/\.tex$/);
+  
+  // React to events
+  $effect(() => {
+    const events = $texFileEvents;
+    const latestEvent = events[events.length - 1];
+    
+    if (latestEvent?.subtype === 'file_modified') {
+      // Handle LaTeX file changes
+      console.log('LaTeX file changed:', latestEvent.payload.path);
+    }
+  });
+  
+  // Subscribe to agent session events
+  const sessionEvents = eventStore.createAgentSessionStream('session-123');
+  
+  $effect(() => {
+    const events = $sessionEvents;
+    events.forEach(event => {
+      if (event.subtype === 'tool_completed') {
+        // Handle tool completion
+        console.log('Agent tool completed:', event.payload.tool);
+      }
+    });
+  });
 </script>
 ```
 
@@ -264,35 +362,41 @@ expect(latexState.compilationStatus).toBe('queued');
 ```
 src/lib/stores/
 ├── index.ts              # Unified exports
+├── events.ts             # 🆕 Unified event system
 ├── workspace.ts          # File & workspace management  
 ├── latex.ts              # LaTeX compilation
 ├── pdf.ts                # PDF preview & viewer
 ├── agent.ts              # Agent system integration
 ├── orchestrator.ts       # Initialization management
-└── legacy/               # Old stores (being migrated)
-    ├── files.ts
-    ├── editor.ts
-    └── chat.ts
+├── editor.ts             # 🔄 Modernized editor state
+├── chat.ts               # 🔄 Modernized chat state  
+└── legacy/               # Old stores (deprecated)
+    └── files.ts
 ```
 
 ## 🔄 Migration Status
 
 ### ✅ **Completed**
-- WorkspaceStore (centralized file management)
-- LaTeXStore (reactive compilation)  
-- PDFStore (reactive preview)
-- AgentStore (clean integration)
-- InitializationOrchestrator (predictable startup)
-- PDFPreview component (fully reactive)
+- **EventStore** - Unified event system with reactive streams
+- **WorkspaceStore** - Centralized file management with EventStore integration
+- **LaTeXStore** - Reactive compilation with event emission
+- **PDFStore** - Reactive preview with event subscription
+- **AgentStore** - Clean integration via EventStore
+- **InitializationOrchestrator** - Predictable startup with EventStore initialization
+- **WebSocket Adapters** - All emit to EventStore instead of manual dispatching
+- **File Watchers** - Desktop and web watchers emit to EventStore
+- **Editor/Chat Stores** - Modernized with EventStore subscriptions
+- **Query Invalidation** - Centralized in EventStore
+- **Manual Event Dispatching** - Removed from components
 
-### 🚧 **In Progress**
-- Editor components migration to new stores
-- Complete removal of old event system
+### 🚧 **In Progress**  
+- Component migration to use EventStore directly
+- Legacy hook replacement with modern event-driven patterns
 
 ### 📋 **Planned**
-- Migration of remaining components
-- Performance optimizations
-- Additional file type support
+- EventStore persistence for faster startup
+- Advanced event filtering and replay capabilities  
+- Performance monitoring for event throughput
 
 ## 🎯 Best Practices
 
@@ -302,6 +406,9 @@ src/lib/stores/
 - Let stores handle their own state - don't bypass them
 - Use store methods rather than direct state manipulation
 - Test reactive chains end-to-end
+- **Use EventStore for all cross-system communication**
+- **Subscribe to event streams for reactive behavior**
+- **Emit events through EventStore, not manual dispatching**
 
 ### **Don't**
 - Initialize stores manually - use the orchestrator
@@ -309,6 +416,9 @@ src/lib/stores/
 - Mix old event system with new reactive stores
 - Assume stores are ready without checking initialization
 - Create tight coupling between stores
+- **Use window.dispatchEvent() for system events**
+- **Create custom event buses when EventStore exists**
+- **Handle query invalidation manually in components**
 
 ## 🔮 Future Considerations
 
@@ -329,4 +439,36 @@ src/lib/stores/
 
 ---
 
-*This document reflects the current reactive store architecture. Update when making significant changes to the system design.*
+## 🎉 Unified Event-Driven Architecture Summary
+
+The DCMT Editor now uses a **unified event-driven reactive store architecture** that eliminates the previous "patchy" event system:
+
+### **Before (Fragmented)**
+- Multiple event systems: WebSocket adapters, CustomEvents, Tauri events
+- Manual `window.dispatchEvent()` calls throughout codebase  
+- Duplicated query invalidation logic in multiple hooks
+- Platform-specific event handling inconsistencies
+- Legacy stores disconnected from main reactive system
+
+### **After (Unified)**
+- **Single EventStore** as central hub for all system events
+- **Reactive event streams** that stores and components subscribe to
+- **Automatic coordination** - when an event occurs, all relevant parts react
+- **Centralized query invalidation** handled by EventStore
+- **Type-safe events** with discriminated union types
+- **Platform-agnostic** API for desktop and web
+
+### **Key Benefits Achieved**
+1. **Eliminated Patches** - No more manual event dispatching scattered around
+2. **Automatic Coordination** - File changes → LaTeX compilation → PDF refresh works seamlessly  
+3. **Single Source of Truth** - All events flow through EventStore
+4. **Type Safety** - Strongly typed event system with proper contracts
+5. **Platform Consistency** - Same event API for web and desktop
+6. **Simplified Testing** - Centralized event system easier to test and debug
+7. **Performance** - Debounced query invalidation prevents excessive API calls
+
+The system now works exactly like you wanted - when any event occurs (file change, agent operation, compilation, etc.), all related parties automatically react through the EventStore without any manual coordination required.
+
+---
+
+*This document reflects the unified event-driven reactive store architecture. Update when making significant changes to the system design.*

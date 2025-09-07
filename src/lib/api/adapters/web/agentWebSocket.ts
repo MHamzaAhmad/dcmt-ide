@@ -2,6 +2,7 @@
 import { apiClient } from '../../client';
 import type { AgentEvent, FileEventData } from '../../types';
 import type { FileEventCallback, FileEventType } from '../../hooks/useFileWatcher';
+import { eventStore } from '$lib/stores/events';
 
 export type AgentEventCallback = (event: AgentEvent) => void;
 
@@ -41,6 +42,9 @@ export class AgentWebSocketAdapter {
                 this.reconnectAttempts = 0;
                 this.reconnectDelay = 1000;
                 
+                // Update connection status in EventStore
+                eventStore.updateConnectionStatus('websocket', 'connected');
+                
                 // Resubscribe to all sessions and file events after reconnection
                 this.resubscribeToSessions();
             };
@@ -74,12 +78,18 @@ export class AgentWebSocketAdapter {
             this.ws.onerror = (error) => {
                 console.error('Agent WebSocket error:', error);
                 this.isConnecting = false;
+                
+                // Update connection status in EventStore
+                eventStore.updateConnectionStatus('websocket', 'error');
             };
 
             this.ws.onclose = (event) => {
                 console.log('Agent WebSocket disconnected:', event.code, event.reason);
                 this.ws = null;
                 this.isConnecting = false;
+
+                // Update connection status in EventStore
+                eventStore.updateConnectionStatus('websocket', 'disconnected');
 
                 // Attempt to reconnect if not manually closed and not destroyed
                 if (!this.isDestroyed && event.code !== 1000) {
@@ -121,6 +131,39 @@ export class AgentWebSocketAdapter {
         return eventTypes.includes(type);
     }
 
+    private emitToEventStore(event: AgentEvent, sessionId: string): void {
+        // Map agent event types to EventStore types
+        const typeMapping: Record<string, any> = {
+            'JobQueued': 'job_queued',
+            'LLMCallStart': 'llm_call_start', 
+            'LLMStreaming': 'llm_streaming',
+            'ToolCallRequested': 'tool_call_requested',
+            'ToolExecuting': 'tool_executing',
+            'ToolCompleted': 'tool_completed',
+            'ParallelToolsStart': 'parallel_tools_start',
+            'ParallelToolsComplete': 'parallel_tools_complete',
+            'LLMCallComplete': 'llm_call_complete',
+            'JobComplete': 'job_complete',
+            'Error': 'error'
+        };
+
+        const subtype = typeMapping[event.type];
+        if (!subtype) return;
+
+        // Extract relevant data from event
+        const payload: any = { sessionId };
+        
+        if ('tool' in event) payload.tool = event.tool;
+        if ('result' in event) payload.result = event.result;
+        if ('message' in event) payload.message = event.message;
+
+        eventStore.emit({
+            type: 'agent',
+            subtype,
+            payload
+        });
+    }
+
     private handleAgentEvent(event: AgentEvent): void {
         console.log('Processing agent event:', event.type, event);
         
@@ -128,6 +171,11 @@ export class AgentWebSocketAdapter {
         let sessionId: string | null = null;
         if ('session_id' in event) {
             sessionId = event.session_id;
+        }
+
+        // Emit to EventStore first
+        if (sessionId) {
+            this.emitToEventStore(event, sessionId);
         }
 
         // Handle file operations immediately
@@ -176,14 +224,49 @@ export class AgentWebSocketAdapter {
     private handleFileOperation(event: { tool: string; result: string }): void {
         console.log(`Detected file operation: ${event.tool}`, event.result);
         
-        // Create a synthetic file event to trigger file system updates
+        // Extract path from result
+        const path = this.extractPathFromResult(event.result);
+        if (!path) {
+            console.warn('Could not extract path from file operation result:', event.result);
+            return;
+        }
+
+        // Emit to EventStore based on operation type
+        const isDirectory = event.tool === 'create_directory';
+        
+        switch (event.tool) {
+            case 'create_file':
+            case 'create_directory':
+                eventStore.events.fileCreated(path, isDirectory, 'agent');
+                break;
+            case 'write_file':
+            case 'update_file':
+                eventStore.events.fileModified(path, undefined, 'agent');
+                break;
+            case 'delete_file':
+                eventStore.events.fileDeleted(path, false, 'agent');
+                break;
+            case 'rename_file':
+            case 'move_file':
+                // Try to extract old path - this might need improvement based on actual result format
+                const oldPath = this.extractOldPathFromResult(event.result);
+                if (oldPath) {
+                    eventStore.events.fileRenamed(path, oldPath, isDirectory, 'agent');
+                } else {
+                    // Fallback to modified if we can't get old path
+                    eventStore.events.fileModified(path, undefined, 'agent');
+                }
+                break;
+        }
+
+        // Legacy: Also create FileEventData for backward compatibility
         const eventType = this.getFileEventType(event.tool);
         const fileEventData: FileEventData = {
             event_type: eventType,
-            path: this.extractPathFromResult(event.result) || 'unknown',
+            path,
             timestamp: Date.now(),
             metadata: {
-                is_directory: event.tool === 'create_directory',
+                is_directory: isDirectory,
                 size: undefined,
                 old_path: undefined,
                 new_path: undefined
@@ -223,6 +306,27 @@ export class AgentWebSocketAdapter {
                 /Successfully (?:wrote|created|updated|deleted) ['""]?([^'""]+)['""]?/i,
                 /(?:file|path)[:=]\s*['""]?([^'""]+)['""]?/i,
                 /['""]([\/\w\-\.]+\.\w+)['""]/ // Files with extensions
+            ];
+            
+            for (const pattern of patterns) {
+                const match = result.match(pattern);
+                if (match && match[1]) {
+                    return match[1].trim();
+                }
+            }
+        }
+        return null;
+    }
+
+    private extractOldPathFromResult(result: string): string | null {
+        try {
+            const parsed = JSON.parse(result);
+            return parsed.old_path || parsed.from || parsed.source || null;
+        } catch {
+            // Extract from text patterns for rename operations
+            const patterns = [
+                /(?:renamed|moved) ['""]?([^'""]+)['""]? to ['""]?([^'""]+)['""]?/i,
+                /from ['""]?([^'""]+)['""]? to ['""]?([^'""]+)['""]?/i
             ];
             
             for (const pattern of patterns) {
@@ -387,6 +491,28 @@ export class AgentWebSocketAdapter {
      */
     private handleFileEvent(eventType: FileEventType, event: FileEventData): void {
         console.log(`File event received (${eventType}):`, event);
+        
+        // Emit to EventStore first
+        const source = 'watcher'; // These are external file events
+        switch (eventType) {
+            case 'created':
+                eventStore.events.fileCreated(event.path, event.metadata.is_directory, source);
+                break;
+            case 'modified':
+                eventStore.events.fileModified(event.path, event.metadata.size, source);
+                break;
+            case 'deleted':
+                eventStore.events.fileDeleted(event.path, event.metadata.is_directory, source);
+                break;
+            case 'renamed':
+                if (event.metadata.old_path) {
+                    eventStore.events.fileRenamed(event.path, event.metadata.old_path, event.metadata.is_directory, source);
+                } else {
+                    // Fallback to modified if no old path
+                    eventStore.events.fileModified(event.path, event.metadata.size, source);
+                }
+                break;
+        }
         
         // Call all file event callbacks
         this.fileEventCallbacks.forEach(callback => {

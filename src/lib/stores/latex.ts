@@ -8,6 +8,7 @@ import { browser } from '$app/environment';
 import { workspaceStore } from './workspace';
 import { platformApi } from '$lib/api/adapters';
 import { LaTeXProvider } from '$lib/api/types';
+import { eventStore } from './events';
 
 export interface LaTeXCompilationResult {
     success: boolean;
@@ -400,6 +401,16 @@ function createLatexStore() {
 
         // Event emission
         emitCompilationEvent(eventType: string, detail: any): void {
+            // Emit to EventStore based on event type
+            if (eventType === 'latex-compiling') {
+                eventStore.events.compilationQueued(detail.mainFile, detail.reason);
+            } else if (eventType === 'latex-compiled') {
+                eventStore.events.compilationCompleted(detail.mainFile, detail.pdfPath);
+            } else if (eventType === 'latex-compile-error') {
+                eventStore.events.compilationFailed(detail.mainFile || 'unknown', detail.errors || [detail.message]);
+            }
+
+            // Legacy: emit browser events for backward compatibility
             if (browser) {
                 const event = new CustomEvent(eventType, { detail });
                 window.dispatchEvent(event);

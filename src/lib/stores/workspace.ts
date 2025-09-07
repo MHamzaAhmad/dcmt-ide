@@ -8,6 +8,7 @@ import { browser } from '$app/environment';
 import { fileSystemApi } from '$lib/api/adapters';
 import type { QueryClient } from '@tanstack/svelte-query';
 import { useQueryClient } from '@tanstack/svelte-query';
+import { eventStore } from './events';
 
 export interface FileContent {
     path: string;
@@ -524,7 +525,20 @@ function createWorkspaceStore() {
 
         // Event emission for external systems
         emitFileChange(path: string, changeType: 'created' | 'modified' | 'deleted'): void {
-            // Emit custom event for other stores to react to
+            // Emit to EventStore
+            switch (changeType) {
+                case 'created':
+                    eventStore.events.fileCreated(path, false, 'user');
+                    break;
+                case 'modified':
+                    eventStore.events.fileModified(path, undefined, 'user');
+                    break;
+                case 'deleted':
+                    eventStore.events.fileDeleted(path, false, 'user');
+                    break;
+            }
+
+            // Legacy: Emit custom event for backward compatibility
             if (browser) {
                 const event = new CustomEvent('workspace:file-changed', {
                     detail: { path, changeType, timestamp: Date.now() }

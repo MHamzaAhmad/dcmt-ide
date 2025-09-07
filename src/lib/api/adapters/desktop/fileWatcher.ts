@@ -1,5 +1,6 @@
 // Desktop File Watcher (Tauri Events)
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
+import { eventStore } from '$lib/stores/events';
 
 export interface FileEvent {
 	event_type: 'Created' | 'Modified' | 'Deleted' | 'Renamed';
@@ -58,6 +59,27 @@ export class DesktopFileWatcher {
 	private handleFileEvent(type: string, event: FileEvent) {
 		console.log(`File ${type}:`, event);
 		
+		// Emit to EventStore first
+		const source = 'watcher';
+		switch (type.toLowerCase()) {
+			case 'created':
+				eventStore.events.fileCreated(event.path, event.metadata.is_directory, source);
+				break;
+			case 'modified':
+				eventStore.events.fileModified(event.path, event.metadata.size, source);
+				break;
+			case 'deleted':
+				eventStore.events.fileDeleted(event.path, event.metadata.is_directory, source);
+				break;
+			case 'renamed':
+				if (event.metadata.old_path) {
+					eventStore.events.fileRenamed(event.path, event.metadata.old_path, event.metadata.is_directory, source);
+				} else {
+					eventStore.events.fileModified(event.path, event.metadata.size, source);
+				}
+				break;
+		}
+		
 		// Call registered callbacks
 		const callbacks = this.eventCallbacks.get(type) || [];
 		callbacks.forEach(callback => {
@@ -68,7 +90,7 @@ export class DesktopFileWatcher {
 			}
 		});
 
-		// Emit global browser events for components to listen
+		// Emit global browser events for components to listen (legacy compatibility)
 		if (typeof window !== 'undefined') {
 			window.dispatchEvent(new CustomEvent(`file-${type}`, { 
 				detail: event 

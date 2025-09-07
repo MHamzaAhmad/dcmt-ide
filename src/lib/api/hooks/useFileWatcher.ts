@@ -5,7 +5,8 @@ import { DesktopFileWatcher } from '../adapters/desktop/fileWatcher';
 import { WebFileWatcher } from '../adapters/web/fileWebSocket';
 import type { FileEventData } from '../types';
 import { fileSystemKeys } from './useFileSystem';
-import { writable, get } from 'svelte/store';
+import { writable, get, derived } from 'svelte/store';
+import { eventStore } from '$lib/stores/events';
 
 export type FileEventType = 'created' | 'modified' | 'deleted' | 'renamed';
 export type FileEventCallback = (type: FileEventType, event: FileEventData) => void;
@@ -182,4 +183,61 @@ export function useFileWatcher(
  */
 export function useAutoRefresh(enabled: boolean = true, queryClient?: QueryClient) {
 	return useFileWatcher(undefined, enabled, queryClient);
+}
+
+/**
+ * Modern file watcher hook that uses EventStore directly
+ * This is the preferred way to watch for file changes
+ */
+export function useFileWatcherEvents(
+	callback?: (event: any) => void,
+	pathPattern?: string | RegExp,
+	enabled: boolean = true
+) {
+	// Subscribe to filesystem events from EventStore
+	const fileSystemEvents = pathPattern 
+		? eventStore.createFileSystemPathStream(pathPattern)
+		: eventStore.fileSystemEvents;
+	
+	const eventCount = writable(0);
+	const lastEvent = writable<any>(null);
+	
+	let unsubscribe: (() => void) | null = null;
+	
+	function start() {
+		if (!enabled || unsubscribe) return;
+		
+		// Subscribe to file system events
+		unsubscribe = fileSystemEvents.subscribe(events => {
+			const latestEvent = events[events.length - 1];
+			if (latestEvent) {
+				eventCount.update(count => count + 1);
+				lastEvent.set(latestEvent);
+				
+				// Call user callback if provided
+				callback?.(latestEvent);
+			}
+		});
+	}
+	
+	function stop() {
+		if (unsubscribe) {
+			unsubscribe();
+			unsubscribe = null;
+		}
+	}
+	
+	// Auto-start if enabled
+	if (enabled) {
+		start();
+	}
+	
+	return {
+		fileSystemEvents,
+		eventCount,
+		lastEvent,
+		start,
+		stop,
+		destroy: stop
+	};
 }

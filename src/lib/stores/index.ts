@@ -3,6 +3,9 @@
  * Reactive, scalable architecture for DCMT Editor
  */
 
+// Event System
+export { eventStore } from './events';
+
 // Core stores
 export { workspaceStore } from './workspace';
 export { latexStore } from './latex';
@@ -20,6 +23,10 @@ export { chatStore } from './chat';
 // export { apiStore } from './api';
 
 // Types
+export type { 
+    SystemEvent, FileSystemEvent, AgentEvent, CompilationEvent, 
+    ConnectionEvent, UIEvent 
+} from './events';
 export type { FileContent, FileTreeNode, WorkspaceState } from './workspace';
 export type { LaTeXState, LaTeXCompilationResult } from './latex';
 export type { PDFState, PDFDocument, PDFViewerState } from './pdf';

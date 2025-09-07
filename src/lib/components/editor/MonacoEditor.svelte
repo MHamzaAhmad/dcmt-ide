@@ -6,6 +6,7 @@
 	import { useWriteFileContent, useAutoCompileLatex } from '$lib/api/hooks';
 	import { LaTeXProvider } from '$lib/api/types';
 	import { debounce } from '$lib/utils/debounce';
+	import { eventStore } from '$lib/stores/events';
 	import type * as Monaco from 'monaco-editor';
 
 	let editorContainer: HTMLDivElement;
@@ -74,29 +75,19 @@
 		try {
 			console.log('Compiling LaTeX file:', filePath);
 			
-			// Dispatch compilation start event
-			window.dispatchEvent(new CustomEvent('latex-compiling'));
+			// Emit compilation started event to EventStore
+			eventStore.events.compilationQueued(filePath, 'manual');
 			
 			const result = await latexCompilation.compileWithDefaults(LaTeXProvider.Auto);
 			
 			if (result.success) {
 				console.log('LaTeX compilation successful:', result.output_file);
-				// Dispatch custom event for PDF preview to update
-				window.dispatchEvent(new CustomEvent('latex-compiled', { 
-					detail: { 
-						outputFile: result.output_file,
-						message: result.message 
-					} 
-				}));
+				// Emit compilation completed event to EventStore
+				eventStore.events.compilationCompleted(filePath, result.output_file);
 			} else {
 				console.error('LaTeX compilation failed:', result.errors);
-				// Show error notification (could be enhanced with a toast system)
-				window.dispatchEvent(new CustomEvent('latex-compile-error', { 
-					detail: { 
-						errors: result.errors || [],
-						message: result.message 
-					} 
-				}));
+				// Emit compilation failed event to EventStore
+				eventStore.events.compilationFailed(filePath, result.errors || [result.message]);
 			}
 		} catch (error) {
 			console.error('LaTeX compilation error:', error);

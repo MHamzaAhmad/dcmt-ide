@@ -9,6 +9,7 @@ import { workspaceStore } from './workspace';
 import { latexStore } from './latex';
 import { pdfStore } from './pdf';
 import { agentStore } from './agent';
+import { eventStore } from './events';
 import type { QueryClient } from '@tanstack/svelte-query';
 
 export interface InitializationStep {
@@ -41,6 +42,11 @@ export interface InitializationOptions {
 
 function createInitializationOrchestrator() {
     const initialSteps: InitializationStep[] = [
+        {
+            name: 'eventStore',
+            description: 'Initialize unified event system',
+            status: 'pending'
+        },
         {
             name: 'workspace',
             description: 'Initialize workspace and detect files',
@@ -115,6 +121,23 @@ function createInitializationOrchestrator() {
             }));
 
             try {
+                // Step 0: Initialize EventStore
+                await orchestrator.executeStep('eventStore', async () => {
+                    console.log('InitializationOrchestrator: Initializing EventStore...');
+                    
+                    // Set up EventStore with QueryClient for query invalidation
+                    if (queryClient) {
+                        eventStore.setQueryClient(queryClient);
+                    }
+                    
+                    // Enable debug logging in development
+                    if (process.env.NODE_ENV === 'development') {
+                        eventStore.setDebugLogging(true);
+                    }
+                    
+                    console.log('InitializationOrchestrator: EventStore initialized');
+                });
+
                 // Step 1: Initialize Workspace
                 await orchestrator.executeStep('workspace', async () => {
                     console.log('InitializationOrchestrator: Initializing workspace...');

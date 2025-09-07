@@ -5,9 +5,12 @@ mod models;
 use commands::filesystem::*;
 use commands::project::{ProjectInfo, *};
 use commands::latex::*;
+use commands::agent::*;
 use std::sync::Arc;
 use tauri::Manager;
 use tracing::info;
+use tokio::sync::RwLock;
+use services::agent_service::AgentService;
 
 // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
 #[tauri::command]
@@ -30,9 +33,13 @@ pub fn run() {
             let project_state = Arc::new(std::sync::RwLock::new(None::<ProjectInfo>));
             app.manage(project_state);
             
+            // Initialize agent service state - will be populated when project is selected
+            let agent_service_state = Arc::new(RwLock::new(None::<AgentService>));
+            app.manage(agent_service_state);
+            
             info!("Application initialized - waiting for project selection");
             
-            // Note: FileService and FileWatcher will be initialized after project selection
+            // Note: FileService, FileWatcher, and AgentService will be initialized after project selection
             // via the select_project_folder command
             
             Ok(())
@@ -54,7 +61,15 @@ pub fn run() {
             clear_project,
             get_project_info,
             compile_latex,
-            find_main_latex_file
+            find_main_latex_file,
+            chat_with_agent,
+            subscribe_to_agent_events,
+            unsubscribe_from_agent_events,
+            get_agent_session_info,
+            list_agent_sessions,
+            clear_agent_session,
+            get_available_agent_tools,
+            is_agent_available
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -1,10 +1,13 @@
 use crate::services::{FileService, FileWatcher};
+use crate::services::agent_service::AgentService;
+use crate::services::agent_events::EventBroadcaster;
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 use tauri::{AppHandle, Manager, State};
 use tauri_plugin_dialog::DialogExt;
 use tracing::{debug, error, info, warn};
+use tokio::sync::RwLock;
 
 pub type ProjectState = Arc<std::sync::RwLock<Option<ProjectInfo>>>;
 
@@ -185,6 +188,33 @@ async fn reinitialize_services(app_handle: &AppHandle, workspace_path: PathBuf) 
         Err(e) => {
             error!("Failed to reinitialize file watcher: {}", e);
             // Continue without watcher - file operations will still work
+        }
+    }
+
+    // Initialize agent service with default LiteLLM URL
+    let litellm_url = std::env::var("LITELLM_BASE_URL")
+        .unwrap_or_else(|_| "http://localhost:4000".to_string());
+    
+    info!("Initializing agent service with LiteLLM URL: {}", litellm_url);
+    
+    let event_broadcaster = Arc::new(EventBroadcaster::new(app_handle.clone()));
+    
+    match AgentService::new(event_broadcaster, litellm_url).await {
+        Ok(mut agent_service) => {
+            agent_service.set_workspace_path(workspace_path.clone());
+            
+            // Update the agent service state
+            if let Some(agent_state) = app_handle.try_state::<Arc<RwLock<Option<AgentService>>>>() {
+                let mut agent_guard = agent_state.write().await;
+                *agent_guard = Some(agent_service);
+                info!("Agent service initialized successfully");
+            } else {
+                error!("Agent service state not found in Tauri state management");
+            }
+        }
+        Err(e) => {
+            error!("Failed to initialize agent service: {}", e);
+            // Continue without agent service - other features will still work
         }
     }
 

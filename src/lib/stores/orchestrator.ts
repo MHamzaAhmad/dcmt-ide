@@ -202,11 +202,9 @@ function createInitializationOrchestrator() {
                 isInitialized = true;
                 console.log(`InitializationOrchestrator: All systems initialized successfully in ${totalDuration}ms`);
 
-                // Emit ready event
-                if (browser) {
-                    window.dispatchEvent(new CustomEvent('dcmt:ready', {
-                        detail: { duration: totalDuration }
-                    }));
+                // Emit ready event through EventStore
+                if (browser && eventStore) {
+                    eventStore.events.systemReady(totalDuration);
                 }
 
             } catch (error) {
@@ -235,11 +233,9 @@ function createInitializationOrchestrator() {
                         orchestrator.retry(options);
                     }, 2000 * (currentState.retryCount + 1));
                 } else {
-                    // Emit error event
-                    if (browser) {
-                        window.dispatchEvent(new CustomEvent('dcmt:init-error', {
-                            detail: { error: errorMessage }
-                        }));
+                    // Emit error event through EventStore
+                    if (browser && eventStore) {
+                        eventStore.events.systemError(errorMessage);
                     }
                     throw error;
                 }

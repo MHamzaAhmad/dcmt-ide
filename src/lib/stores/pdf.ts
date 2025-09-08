@@ -7,6 +7,7 @@ import { writable, derived, get } from 'svelte/store';
 import { browser } from '$app/environment';
 import { latexStore } from './latex';
 import { workspaceStore } from './workspace';
+import { eventStore } from './events';
 import { platformApi } from '$lib/api/adapters';
 
 export interface PDFDocument {
@@ -115,6 +116,7 @@ function createPdfStore() {
     // Internal state
     let isInitialized = false;
     let latexUnsubscribe: (() => void) | null = null;
+    let eventUnsubscribe: (() => void) | null = null;
     let pdfjsLib: any = null;
 
     const store = {
@@ -140,7 +142,10 @@ function createPdfStore() {
                     store.handleLatexStateChange($latex);
                 });
 
-                // Listen for LaTeX compilation events
+                // Subscribe to EventStore compilation events for better coordination
+                store.subscribeToCompilationEvents();
+
+                // Keep legacy event listeners as fallback
                 if (browser) {
                     window.addEventListener('latex-compiled', store.handleLatexCompiled);
                     window.addEventListener('latex-compile-error', store.handleLatexError);
@@ -245,10 +250,10 @@ function createPdfStore() {
 
             const currentState = get({ subscribe });
             
-            // Don't reload the same PDF unless forced
+            // Force reload for compilation events - PDF content may have changed
             if (currentState.currentPdf?.path === pdfPath && !currentState.error) {
-                console.log(`PDFStore: PDF ${pdfPath} already loaded`);
-                return;
+                console.log(`PDFStore: PDF ${pdfPath} already loaded, but forcing reload for updated content`);
+                // Continue with reload to get updated content
             }
 
             console.log(`PDFStore: Loading PDF: ${pdfPath}`);
@@ -262,11 +267,20 @@ function createPdfStore() {
             }));
 
             try {
-                // Get PDF URL from platform API
+                // Get PDF URL from platform API with cache busting
                 const pdfUrl = await platformApi.readFileRaw(pdfPath);
                 
+                // Add cache busting parameter to force fresh load
+                const cacheBustedUrl = typeof pdfUrl === 'string' && pdfUrl.includes('?') 
+                    ? `${pdfUrl}&_t=${Date.now()}` 
+                    : typeof pdfUrl === 'string' 
+                        ? `${pdfUrl}?_t=${Date.now()}` 
+                        : pdfUrl;
+                
+                console.log(`PDFStore: Loading PDF with cache busting: ${cacheBustedUrl}`);
+                
                 // Load PDF document
-                const loadingTask = pdfjsLib.getDocument(pdfUrl);
+                const loadingTask = pdfjsLib.getDocument(cacheBustedUrl);
                 
                 // Progress tracking
                 loadingTask.onProgress = (progressData: any) => {
@@ -543,6 +557,31 @@ function createPdfStore() {
             return state.currentPdf?.path || null;
         },
 
+        // Subscribe to EventStore compilation events
+        subscribeToCompilationEvents(): void {
+            // Create event stream for compilation events
+            const compilationEvents = eventStore.compilationEvents;
+            
+            // React to compilation completion
+            const unsubscribe = compilationEvents.subscribe(events => {
+                const latestEvent = events[events.length - 1];
+                if (latestEvent && latestEvent.subtype === 'completed') {
+                    const pdfPath = latestEvent.payload.pdfPath;
+                    
+                    if (pdfPath) {
+                        const currentState = get({ subscribe });
+                        if (currentState.autoRefresh) {
+                            console.log(`PDFStore: Compilation completed, force loading PDF: ${pdfPath}`);
+                            store.loadPdf(pdfPath); // Will now force reload due to cache busting
+                        }
+                    }
+                }
+            });
+            
+            eventUnsubscribe = unsubscribe;
+            console.log('PDFStore: Subscribed to compilation events');
+        },
+
         // Agent integration - handle external PDF updates
         handleAgentFileOperation(tool: string, path: string): void {
             if (path.endsWith('.pdf')) {
@@ -569,6 +608,12 @@ function createPdfStore() {
                 window.removeEventListener('latex-compile-error', store.handleLatexError);
             }
 
+            // Unsubscribe from EventStore events
+            if (eventUnsubscribe) {
+                eventUnsubscribe();
+                eventUnsubscribe = null;
+            }
+            
             // Unsubscribe from LaTeX store
             if (latexUnsubscribe) {
                 latexUnsubscribe();

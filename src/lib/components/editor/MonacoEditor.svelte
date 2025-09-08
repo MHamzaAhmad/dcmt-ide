@@ -1,12 +1,9 @@
 <script lang="ts">
 	import { onMount, onDestroy } from 'svelte';
-	import { workspaceStore } from '$lib/stores/workspace';
+	import { workspaceStore, latexStore, eventStore } from '$lib/stores';
 	import { editorState } from '$lib/stores/editor.js';
 	import { theme } from '$lib/stores/theme.js';
-	import { useWriteFileContent, useAutoCompileLatex } from '$lib/api/hooks';
-	import { LaTeXProvider } from '$lib/api/types';
 	import { debounce } from '$lib/utils/debounce';
-	import { eventStore } from '$lib/stores/events';
 	import type * as Monaco from 'monaco-editor';
 
 	let editorContainer: HTMLDivElement;
@@ -16,16 +13,15 @@
 	let activeFilePath = $state<string | null>(null);
 	let currentFiles = $state<any[]>([]);
 	let isInternalUpdate = false;
+	let agentIsModifyingFile = $state(false);
+	let lastAgentUpdateTime = $state(0);
+	let hasConflict = $state(false);
+	let eventUnsubscribe: (() => void) | null = null;
 	
 	// Get workspace state reactively
 	const workspaceState = $derived($workspaceStore);
 	const openFileContents = $derived(workspaceState.openFiles);
-	
-	// File save mutation
-	const writeFileMutation = useWriteFileContent();
-	
-	// LaTeX compilation
-	const latexCompilation = useAutoCompileLatex();
+	const latexState = $derived($latexStore);
 	
 	// Detect language from file extension
 	function getLanguageFromPath(path: string): string {
@@ -72,31 +68,6 @@
 		}
 	});
 
-	// Create debounced LaTeX compilation function
-	const debouncedCompileLatex = debounce(async (filePath: string) => {
-		if (!isLatexFile(filePath)) return;
-		
-		try {
-			console.log('Compiling LaTeX file:', filePath);
-			
-			// Emit compilation started event to EventStore
-			eventStore.events.compilationQueued(filePath, 'manual');
-			
-			const result = await latexCompilation.compileWithDefaults(LaTeXProvider.Auto);
-			
-			if (result.success) {
-				console.log('LaTeX compilation successful:', result.output_file);
-				// Emit compilation completed event to EventStore
-				eventStore.events.compilationCompleted(filePath, result.output_file || '');
-			} else {
-				console.error('LaTeX compilation failed:', result.errors);
-				// Emit compilation failed event to EventStore
-				eventStore.events.compilationFailed(filePath, result.errors || [result.message]);
-			}
-		} catch (error) {
-			console.error('LaTeX compilation error:', error);
-		}
-	}, 1500); // Slightly longer delay for compilation
 
 	// Create debounced save function
 	const debouncedSave = debounce(async (filePath: string, content: string) => {
@@ -106,18 +77,15 @@
 			// Update content in workspace store first
 			workspaceStore.updateFileContent(filePath, content);
 			
-			// Save the file through workspace store
+			// Save the file through workspace store - this will trigger the reactive chain
+			// WorkspaceStore → LaTeXStore (if .tex file) → PDFStore automatically
 			await workspaceStore.saveFile(filePath);
-			
-			// Trigger LaTeX compilation after successful save
-			if (isLatexFile(filePath)) {
-				debouncedCompileLatex(filePath);
-			}
 		} catch (error) {
 			console.error('Failed to save file:', error);
 		}
 	}, 800);
 	
+	// Handle active file changes and file content updates
 	$effect(() => {
 		const newActiveFilePath = workspaceState.activeFile;
 		const newOpenFiles = openFileContents;
@@ -130,8 +98,7 @@
 			if (editor && activeFilePath) {
 				const activeFile = workspaceState.files.get(activeFilePath);
 				if (activeFile) {
-					isInternalUpdate = true;
-					editor.setValue(activeFile.content || '');
+					updateEditorContent(activeFile.content || '', 'file_switch');
 					
 					// Update language based on file extension
 					const model = editor.getModel();
@@ -139,15 +106,62 @@
 						const language = getLanguageFromPath(activeFile.path);
 						monacoInstance.editor.setModelLanguage(model, language);
 					}
-					
-					setTimeout(() => { isInternalUpdate = false; }, 0);
 				}
 			}
 		} else {
+			// File path same, but check if content changed (for agent updates)
+			if (activeFilePath && editor) {
+				const activeFile = workspaceState.files.get(activeFilePath);
+				if (activeFile) {
+					const currentEditorContent = editor.getValue();
+					const fileContent = activeFile.content || '';
+					
+					// Check if file content differs from editor (indicates external change)
+					if (fileContent !== currentEditorContent && !isInternalUpdate) {
+						// Check if user has unsaved changes
+						const userHasChanges = currentEditorContent !== activeFile.originalContent;
+						const agentHasChanges = fileContent !== activeFile.originalContent;
+						
+						if (userHasChanges && agentHasChanges) {
+							// Conflict: both user and agent modified
+							hasConflict = true;
+							console.warn('Content conflict detected between user and agent changes');
+						} else if (agentHasChanges && !userHasChanges) {
+							// Agent change only, safe to update
+							updateEditorContent(fileContent, 'agent_update');
+							lastAgentUpdateTime = Date.now();
+						}
+					}
+				}
+			}
 			// Just update the files reference without changing editor content
 			currentFiles = newOpenFiles;
 		}
 	});
+
+	// Helper function to update editor content with proper internal update tracking
+	function updateEditorContent(content: string, source: 'file_switch' | 'agent_update' | 'reload') {
+		if (!editor) return;
+		
+		isInternalUpdate = true;
+		
+		if (source === 'agent_update') {
+			agentIsModifyingFile = true;
+			// Clear conflict state when agent updates
+			hasConflict = false;
+			
+			// Show brief indication that agent modified the file
+			setTimeout(() => {
+				agentIsModifyingFile = false;
+			}, 2000);
+		}
+		
+		editor.setValue(content);
+		
+		setTimeout(() => { 
+			isInternalUpdate = false; 
+		}, 0);
+	}
 
 	onMount(async () => {
 		if (typeof window !== 'undefined') {
@@ -261,19 +275,77 @@
 			if (activeFilePath) {
 				const activeFile = workspaceState.files.get(activeFilePath);
 				if (activeFile) {
-					editor.setValue(activeFile.content || '');
+					updateEditorContent(activeFile.content || '', 'file_switch');
 				}
 			}
+			
+			// Subscribe to EventStore file system events for real-time updates
+			subscribeToFileEvents();
 		}
 	});
+
+	// Subscribe to EventStore file system events
+	function subscribeToFileEvents() {
+		if (eventUnsubscribe) {
+			eventUnsubscribe();
+		}
+		
+		// Create event stream for file system events
+		const fileSystemEvents = eventStore.fileSystemEvents;
+		
+		eventUnsubscribe = fileSystemEvents.subscribe((events: any[]) => {
+			const latestEvent = events[events.length - 1];
+			if (!latestEvent || !activeFilePath) return;
+			
+			// Only react to events on the currently active file
+			if (latestEvent.payload.path === activeFilePath) {
+				console.log(`MonacoEditor: File event ${latestEvent.subtype} on active file ${activeFilePath} from ${latestEvent.payload.source}`);
+				
+				// Only reload for external changes (agent or file watcher), not user changes
+				if (latestEvent.payload.source === 'agent' || latestEvent.payload.source === 'watcher') {
+					if (latestEvent.subtype === 'file_modified') {
+						// Force reload the file content from WorkspaceStore
+						workspaceStore.loadFile(activeFilePath, true).then(fileContent => {
+							if (fileContent && editor) {
+								updateEditorContent(fileContent.content, 'agent_update');
+							}
+						}).catch(error => {
+							console.error('Failed to reload file after agent update:', error);
+						});
+					}
+				}
+			}
+		});
+		
+		console.log('MonacoEditor: Subscribed to file system events');
+	}
+	
+	// Function to manually refresh file content (for conflict resolution)
+	function refreshFileContent() {
+		if (!activeFilePath) return;
+		
+		workspaceStore.loadFile(activeFilePath, true).then(fileContent => {
+			if (fileContent && editor) {
+				updateEditorContent(fileContent.content, 'reload');
+				hasConflict = false;
+			}
+		}).catch(error => {
+			console.error('Failed to refresh file content:', error);
+		});
+	}
 
 	onDestroy(() => {
 		if (editor) {
 			editor.dispose();
 		}
-		// Cancel any pending saves and compilations
+		// Cancel any pending saves
 		debouncedSave.cancel();
-		debouncedCompileLatex.cancel();
+		
+		// Unsubscribe from events
+		if (eventUnsubscribe) {
+			eventUnsubscribe();
+			eventUnsubscribe = null;
+		}
 	});
 </script>
 
@@ -294,12 +366,26 @@
 				{/if}
 			{/if}
 			
+			{#if agentIsModifyingFile}
+				<span class="ml-2 text-xs text-blue-500 animate-pulse">🤖 Agent updating...</span>
+			{:else if hasConflict}
+				<span class="ml-2 text-xs text-orange-500">⚠️ Content conflict</span>
+				<button 
+					class="ml-1 text-xs text-blue-500 hover:text-blue-700 underline"
+					onclick={refreshFileContent}
+				>
+					Reload
+				</button>
+			{:else if lastAgentUpdateTime > 0 && (Date.now() - lastAgentUpdateTime < 5000)}
+				<span class="ml-2 text-xs text-green-500">✓ Updated by agent</span>
+			{/if}
+			
 			{#if activeFile && isLatexFile(activeFile.path)}
-				{#if latexCompilation.isCompiling}
+				{#if latexState.isCompiling}
 					<span class="ml-2 text-xs text-blue-500">Compiling LaTeX...</span>
-				{:else if $latexCompilation.data?.success}
+				{:else if latexState.compilationStatus === 'success'}
 					<span class="ml-2 text-xs text-green-500">✓ Compiled</span>
-				{:else if $latexCompilation.error || ($latexCompilation.data && !$latexCompilation.data.success)}
+				{:else if latexState.compilationStatus === 'error'}
 					<span class="ml-2 text-xs text-red-500">✗ Compile failed</span>
 				{/if}
 			{/if}

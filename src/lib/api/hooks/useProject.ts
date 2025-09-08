@@ -4,6 +4,7 @@ import { get } from 'svelte/store';
 import { fileSystemApi } from '../adapters';
 import { isTauri } from '$lib/utils/platform';
 import type { ProjectInfo } from '../types';
+import { eventStore } from '$lib/stores/events';
 
 // Query Keys
 export const projectKeys = {
@@ -69,14 +70,10 @@ export function useSelectProject() {
 			queryClient.invalidateQueries({ queryKey: ['fileSystem'] });
 			console.log('Invalidated file system queries');
 			
-			// Emit custom event for other components to react
-			if (typeof window !== 'undefined' && projectInfo) {
-				window.dispatchEvent(
-					new CustomEvent('project-selected', { 
-						detail: projectInfo 
-					})
-				);
-				console.log('Emitted project-selected event');
+			// Emit event through EventStore instead of custom events
+			if (projectInfo) {
+				eventStore.events.projectChanged(projectInfo.path);
+				console.log('Emitted project-changed event through EventStore');
 			}
 		},
 		onError: (error) => {
@@ -106,12 +103,8 @@ export function useClearProject() {
 			// Clear all file system queries
 			queryClient.removeQueries({ queryKey: ['fileSystem'] });
 			
-			// Emit custom event
-			if (typeof window !== 'undefined') {
-				window.dispatchEvent(
-					new CustomEvent('project-cleared')
-				);
-			}
+			// Emit event through EventStore instead of custom events
+			eventStore.events.projectChanged('');
 		},
 		onError: (error) => {
 			console.error('Failed to clear project:', error);

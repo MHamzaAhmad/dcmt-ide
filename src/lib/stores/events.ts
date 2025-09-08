@@ -420,33 +420,53 @@ function createEventStore() {
 
   const events = {
     // File system events
-    fileCreated: (path: string, isDirectory = false, source: 'agent' | 'user' | 'watcher' = 'user') =>
+    fileCreated: (path: string, isDirectory = false, source: 'agent' | 'user' | 'watcher' = 'user') => {
+      if (!path || path.trim() === '') {
+        console.warn('[EventStore] Attempted to emit fileCreated with empty path');
+        return;
+      }
       emit({
         type: 'filesystem',
         subtype: 'file_created',
-        payload: { path, isDirectory, source, timestamp: Date.now() }
-      }),
+        payload: { path: path.trim(), isDirectory, source, timestamp: Date.now() }
+      });
+    },
 
-    fileModified: (path: string, size?: number, source: 'agent' | 'user' | 'watcher' = 'user') =>
+    fileModified: (path: string, size?: number, source: 'agent' | 'user' | 'watcher' = 'user') => {
+      if (!path || path.trim() === '') {
+        console.warn('[EventStore] Attempted to emit fileModified with empty path');
+        return;
+      }
       emit({
         type: 'filesystem',
         subtype: 'file_modified',
-        payload: { path, size, isDirectory: false, source, timestamp: Date.now() }
-      }),
+        payload: { path: path.trim(), size, isDirectory: false, source, timestamp: Date.now() }
+      });
+    },
 
-    fileDeleted: (path: string, isDirectory = false, source: 'agent' | 'user' | 'watcher' = 'user') =>
+    fileDeleted: (path: string, isDirectory = false, source: 'agent' | 'user' | 'watcher' = 'user') => {
+      if (!path || path.trim() === '') {
+        console.warn('[EventStore] Attempted to emit fileDeleted with empty path');
+        return;
+      }
       emit({
         type: 'filesystem',
         subtype: 'file_deleted',
-        payload: { path, isDirectory, source, timestamp: Date.now() }
-      }),
+        payload: { path: path.trim(), isDirectory, source, timestamp: Date.now() }
+      });
+    },
 
-    fileRenamed: (path: string, oldPath: string, isDirectory = false, source: 'agent' | 'user' | 'watcher' = 'user') =>
+    fileRenamed: (path: string, oldPath: string, isDirectory = false, source: 'agent' | 'user' | 'watcher' = 'user') => {
+      if (!path || path.trim() === '' || !oldPath || oldPath.trim() === '') {
+        console.warn('[EventStore] Attempted to emit fileRenamed with empty path(s)');
+        return;
+      }
       emit({
         type: 'filesystem',
         subtype: 'file_renamed',
-        payload: { path, oldPath, isDirectory, source, timestamp: Date.now() }
-      }),
+        payload: { path: path.trim(), oldPath: oldPath.trim(), isDirectory, source, timestamp: Date.now() }
+      });
+    },
 
     // Agent events
     agentToolExecuting: (sessionId: string, tool: string) =>
@@ -505,6 +525,21 @@ function createEventStore() {
         type: 'ui',
         subtype: 'project_changed',
         payload: { projectPath, timestamp: Date.now() }
+      }),
+
+    // Connection/System events  
+    systemReady: (duration: number) =>
+      emit({
+        type: 'connection',
+        subtype: 'tauri_connected',
+        payload: { connectionId: 'system', timestamp: Date.now() }
+      }),
+
+    systemError: (error: string) =>
+      emit({
+        type: 'connection', 
+        subtype: 'api_error',
+        payload: { error, timestamp: Date.now() }
       })
   };
 

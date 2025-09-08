@@ -46,6 +46,14 @@ export interface AgentState {
     maxRecentEvents: number;
     fileSyncActive: boolean;
     fileOperationsCount: number;
+    
+    // Agent run coordination
+    modifiedFiles: Map<string, {
+        tool: string;
+        changeType: 'created' | 'modified' | 'deleted';
+        timestamp: number;
+    }>;
+    isAgentRunning: boolean;
 }
 
 function createAgentStore() {
@@ -74,7 +82,10 @@ function createAgentStore() {
         recentEvents: [],
         maxRecentEvents: 50,
         fileSyncActive: false,
-        fileOperationsCount: 0
+        fileOperationsCount: 0,
+        
+        modifiedFiles: new Map(),
+        isAgentRunning: false
     };
 
     const { subscribe, set, update } = writable<AgentState>(initialState);
@@ -251,7 +262,9 @@ function createAgentStore() {
                 streamingMessageId: null,
                 currentJobId: null,
                 fileSyncActive: false,
-                fileOperationsCount: 0
+                fileOperationsCount: 0,
+                modifiedFiles: new Map(),
+                isAgentRunning: false
             }));
             
             console.log('Cleared agent session and cleaned up event handlers');
@@ -368,8 +381,11 @@ function createAgentStore() {
                     update(state => ({
                         ...state,
                         isProcessing: true,
-                        currentJobId: event.job_id
+                        currentJobId: event.job_id,
+                        modifiedFiles: new Map(), // Clear previous run's files
+                        isAgentRunning: true
                     }));
+                    console.log('AgentStore: Agent run started, tracking file modifications');
                     break;
 
                 case 'LLMCallStart':
@@ -442,70 +458,11 @@ function createAgentStore() {
                     break;
 
                 case 'JobComplete':
-                    // Use streaming content if available, otherwise parse response
-                    const currentState = store.getCurrentState();
-                    const currentStreamingContent = currentState.streamingContent;
-                    let finalContent = currentStreamingContent || '';
-                    
-                    // If no streaming content, try to parse the response
-                    if (!finalContent && event.response) {
-                        try {
-                            // Check if response is JSON
-                            const parsed = JSON.parse(event.response);
-                            // Extract message content from common JSON structures
-                            finalContent = parsed.message || parsed.content || parsed.response || event.response;
-                        } catch {
-                            // Not JSON, use as-is
-                            finalContent = event.response;
-                        }
-                    }
-                    
-                    // Update the streaming message to completed status or add new message
-                    if (currentState.streamingMessageId) {
-                        // Update existing streaming message
-                        update(state => ({
-                            ...state,
-                            messages: state.messages.map(msg => 
-                                msg.id === state.streamingMessageId
-                                    ? { ...msg, content: finalContent, status: 'completed', streaming: false }
-                                    : msg
-                            ),
-                            isProcessing: false,
-                            streamingContent: '',
-                            streamingMessageId: null,
-                            currentJobId: null
-                        }));
-                    } else {
-                        // Add new assistant message if no streaming message exists
-                        const assistantMessage: AgentChatMessage = {
-                            id: `msg-${Date.now()}`,
-                            role: 'assistant',
-                            content: finalContent,
-                            timestamp: new Date(),
-                            status: 'completed',
-                            model: currentState.selectedModel?.id
-                        };
-
-                        store.addMessage(assistantMessage);
-
-                        update(state => ({
-                            ...state,
-                            isProcessing: false,
-                            streamingContent: '',
-                            streamingMessageId: null,
-                            currentJobId: null
-                        }));
-                    }
-
-                    // Clear completed tool results after a delay
-                    setTimeout(() => {
-                        const state = store.getCurrentState();
-                        state.activeToolResults.forEach((result, id) => {
-                            if (result.status === 'completed') {
-                                store.clearToolResult(id);
-                            }
-                        });
-                    }, 3000);
+                    // Handle agent run completion with file coordination
+                    // Handle completion asynchronously without blocking the event handler
+                    store.handleJobCompletion(event).catch(error => {
+                        console.error('Error handling job completion:', error);
+                    });
                     break;
 
                 case 'Error':
@@ -527,6 +484,170 @@ function createAgentStore() {
                 return state;
             });
             return currentState!;
+        },
+
+        // Handle job completion with coordinated file refresh and compilation
+        async handleJobCompletion(event: any): Promise<void> {
+            console.log('AgentStore: Handling agent run completion');
+            
+            const currentState = store.getCurrentState();
+            const currentStreamingContent = currentState.streamingContent;
+            let finalContent = currentStreamingContent || '';
+            
+            // If no streaming content, try to parse the response
+            if (!finalContent && event.response) {
+                try {
+                    const parsed = JSON.parse(event.response);
+                    finalContent = parsed.message || parsed.content || parsed.response || event.response;
+                } catch {
+                    finalContent = event.response;
+                }
+            }
+            
+            // Update UI state first
+            if (currentState.streamingMessageId) {
+                update(state => ({
+                    ...state,
+                    messages: state.messages.map(msg => 
+                        msg.id === state.streamingMessageId
+                            ? { ...msg, content: finalContent, status: 'completed', streaming: false }
+                            : msg
+                    ),
+                    isProcessing: false,
+                    streamingContent: '',
+                    streamingMessageId: null,
+                    currentJobId: null,
+                    isAgentRunning: false
+                }));
+            } else {
+                const assistantMessage: AgentChatMessage = {
+                    id: `msg-${Date.now()}`,
+                    role: 'assistant',
+                    content: finalContent,
+                    timestamp: new Date(),
+                    status: 'completed',
+                    model: currentState.selectedModel?.id
+                };
+
+                store.addMessage(assistantMessage);
+                update(state => ({
+                    ...state,
+                    isProcessing: false,
+                    streamingContent: '',
+                    streamingMessageId: null,
+                    currentJobId: null,
+                    isAgentRunning: false
+                }));
+            }
+            
+            // Now handle file coordination
+            await store.coordinateFileRefreshAndCompilation();
+            
+            // Clear completed tool results after coordination
+            setTimeout(() => {
+                const state = store.getCurrentState();
+                state.activeToolResults.forEach((result, id) => {
+                    if (result.status === 'completed') {
+                        store.clearToolResult(id);
+                    }
+                });
+            }, 3000);
+        },
+
+        // Coordinate file refresh and compilation after agent run
+        async coordinateFileRefreshAndCompilation(): Promise<void> {
+            const currentState = store.getCurrentState();
+            const modifiedFiles = currentState.modifiedFiles;
+            
+            if (modifiedFiles.size === 0) {
+                console.log('AgentStore: No files were modified during agent run');
+                return;
+            }
+            
+            console.log(`AgentStore: Coordinating refresh for ${modifiedFiles.size} modified files`);
+            
+            try {
+                // 1. Import required stores
+                const { workspaceStore } = await import('./workspace');
+                const { latexStore } = await import('./latex');
+                
+                // 2. Determine LaTeX ecosystem files
+                const LATEX_ECOSYSTEM_PATTERN = /\.(tex|bib|sty|cls|def|cfg|clo)$/i;
+                const latexFilesModified: string[] = [];
+                const allModifiedPaths: string[] = [];
+                
+                for (const [path, fileInfo] of modifiedFiles) {
+                    allModifiedPaths.push(path);
+                    if (LATEX_ECOSYSTEM_PATTERN.test(path)) {
+                        latexFilesModified.push(path);
+                    }
+                }
+                
+                console.log('Modified files:', allModifiedPaths);
+                console.log('LaTeX ecosystem files modified:', latexFilesModified);
+                
+                // 3. Batch reload all modified files in WorkspaceStore
+                console.log('AgentStore: Triggering WorkspaceStore batch file reload');
+                for (const path of allModifiedPaths) {
+                    const fileInfo = modifiedFiles.get(path)!;
+                    try {
+                        // Force reload the file to get latest content
+                        if (fileInfo.changeType !== 'deleted') {
+                            console.log(`AgentStore: Force reloading ${path} after agent modification`);
+                            await workspaceStore.loadFile(path, true);
+                            
+                            // If this file is currently open, we need to trigger a content refresh
+                            const workspaceState = workspaceStore.getCurrentState();
+                            if (workspaceState.openFiles.includes(path)) {
+                                console.log(`AgentStore: File ${path} is open, forcing editor refresh`);
+                                // Force the WorkspaceStore to emit a content change event
+                                workspaceStore.emitFileChange(path, 'modified');
+                            }
+                        }
+                        
+                        // Emit the file system event now that agent run is complete
+                        switch (fileInfo.changeType) {
+                            case 'created':
+                                eventStore.events.fileCreated(path, false, 'agent');
+                                break;
+                            case 'modified':
+                                eventStore.events.fileModified(path, undefined, 'agent');
+                                break;
+                            case 'deleted':
+                                eventStore.events.fileDeleted(path, false, 'agent');
+                                break;
+                        }
+                    } catch (error) {
+                        console.warn(`Failed to reload file ${path}:`, error);
+                    }
+                }
+                
+                // 4. Trigger LaTeX compilation if needed
+                if (latexFilesModified.length > 0) {
+                    console.log('AgentStore: Triggering LaTeX compilation after agent file modifications');
+                    // Use a small delay to allow file system to settle
+                    setTimeout(() => {
+                        latexStore.scheduleCompilation('agent_run_complete');
+                    }, 500);
+                }
+                
+                // 5. Clear the modified files tracking
+                update(state => ({
+                    ...state,
+                    modifiedFiles: new Map()
+                }));
+                
+                console.log('AgentStore: File coordination completed successfully');
+                
+            } catch (error) {
+                console.error('AgentStore: Error during file coordination:', error);
+                
+                // Clear tracking even on error to avoid stuck state
+                update(state => ({
+                    ...state,
+                    modifiedFiles: new Map()
+                }));
+            }
         },
 
         // Session switching
@@ -611,24 +732,40 @@ function createAgentStore() {
                         return;
                 }
 
-                // Emit the corresponding file system event
-                // This will trigger all stores to react appropriately
-                switch (changeType) {
-                    case 'created':
-                        eventStore.events.fileCreated(path, false, 'agent');
-                        break;
-                    case 'modified':
-                        eventStore.events.fileModified(path, undefined, 'agent');
-                        break;
-                    case 'deleted':
-                        eventStore.events.fileDeleted(path, false, 'agent');
-                        break;
+                // Track modified files during agent run instead of emitting events immediately
+                const currentState = store.getCurrentState();
+                if (currentState.isAgentRunning) {
+                    update(state => {
+                        const newModifiedFiles = new Map(state.modifiedFiles);
+                        newModifiedFiles.set(path, {
+                            tool,
+                            changeType,
+                            timestamp: Date.now()
+                        });
+                        return {
+                            ...state,
+                            modifiedFiles: newModifiedFiles
+                        };
+                    });
+                    console.log(`AgentStore: Tracked file modification during agent run: ${path} (${changeType})`);
+                } else {
+                    // Not during agent run, emit events immediately (legacy behavior)
+                    switch (changeType) {
+                        case 'created':
+                            eventStore.events.fileCreated(path, false, 'agent');
+                            break;
+                        case 'modified':
+                            eventStore.events.fileModified(path, undefined, 'agent');
+                            break;
+                        case 'deleted':
+                            eventStore.events.fileDeleted(path, false, 'agent');
+                            break;
+                    }
+                    console.log(`AgentStore: Emitted immediate ${changeType} event for ${path}`);
                 }
                 
-                console.log(`AgentStore: Emitted ${changeType} event for ${path}`);
-                
             } catch (error) {
-                console.error('AgentStore: Error emitting tool operation to EventStore:', error);
+                console.error('AgentStore: Error handling tool operation:', error);
             }
         },
 

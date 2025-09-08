@@ -18,28 +18,13 @@
 	// Reactive store subscriptions
 	const pdfState = $derived($pdfStore);
 	const latexState = $derived($latexStore);
-	// Subscribe to derived stores properly  
-	let hasValidPdf = $state(false);
-	let canRender = $state(false);
-	let currentPageInfo = $state({ current: 0, total: 0, text: '- / -' });
-	
-	// Subscribe to derived stores
-	$effect(() => {
-		const unsubscribeHasValidPdf = pdfStore.hasValidPdf.subscribe(value => {
-			hasValidPdf = value;
-		});
-		const unsubscribeCanRender = pdfStore.canRender.subscribe(value => {
-			canRender = value;
-		});
-		const unsubscribeCurrentPageInfo = pdfStore.currentPageInfo.subscribe(value => {
-			currentPageInfo = value;
-		});
-		
-		return () => {
-			unsubscribeHasValidPdf();
-			unsubscribeCanRender();
-			unsubscribeCurrentPageInfo();
-		};
+	// Use store derivatives directly - no manual subscriptions needed
+	const hasValidPdf = $derived(pdfState.currentPdf && pdfState.currentPdf.pdfDoc && !pdfState.isLoading && !pdfState.error);
+	const canRender = $derived(pdfState.currentPdf?.pdfDoc && pdfState.canvas && pdfState.context && !pdfState.isRendering);
+	const currentPageInfo = $derived({
+		current: pdfState.viewer.currentPage,
+		total: pdfState.currentPdf?.numPages || 0,
+		text: pdfState.currentPdf ? `${pdfState.viewer.currentPage} / ${pdfState.currentPdf.numPages}` : '- / -'
 	});
 
 	// Canvas reactive effect - connect canvas to PDF store
@@ -102,20 +87,20 @@
 				variant="ghost"
 				size="sm"
 				onclick={prevPage}
-				disabled={!hasValidPdf || (currentPageInfo?.current || 0) <= 1}
+				disabled={!hasValidPdf || currentPageInfo.current <= 1}
 			>
 				←
 			</Button>
 			
 			<span class="text-sm px-2">
-				{currentPageInfo?.text || '- / -'}
+				{currentPageInfo.text}
 			</span>
 			
 			<Button
 				variant="ghost"
 				size="sm"
 				onclick={nextPage}
-				disabled={!hasValidPdf || (currentPageInfo?.current || 0) >= (currentPageInfo?.total || 0)}
+				disabled={!hasValidPdf || currentPageInfo.current >= currentPageInfo.total}
 			>
 				→
 			</Button>
@@ -205,7 +190,7 @@
 	{#if showToolbar}
 	<div class="h-6 border-t bg-muted/50 flex items-center px-3 text-xs text-muted-foreground">
 		{#if hasValidPdf}
-			PDF loaded • {currentPageInfo?.total || 0} pages
+			PDF loaded • {currentPageInfo.total} pages
 		{:else}
 			Ready for PDF preview
 		{/if}

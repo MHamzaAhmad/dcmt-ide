@@ -188,8 +188,12 @@ function createWorkspaceStore() {
                         lastModified: node.modified || node.lastModified
                     };
                     
-                    if (nodeType === 'file' && node.name.endsWith('.tex')) {
-                        latexFiles.push(node.path);
+                    // Detect LaTeX ecosystem files (not just .tex)
+                    if (nodeType === 'file') {
+                        const LATEX_ECOSYSTEM_PATTERN = /\.(tex|bib|sty|cls|def|cfg|clo)$/i;
+                        if (LATEX_ECOSYSTEM_PATTERN.test(node.name)) {
+                            latexFiles.push(node.path);
+                        }
                     }
                     
                     if (node.children) {
@@ -359,7 +363,7 @@ function createWorkspaceStore() {
                 });
 
                 // Emit workspace change event for external systems
-                store.emitFileChange(path, 'modified');
+                store.emitFileChange(path, 'modified', 'user');
 
             } catch (error) {
                 update(state => {
@@ -518,9 +522,10 @@ function createWorkspaceStore() {
                 path.toLowerCase().includes('main.tex')
             );
             
-            // If not found, look for any .tex file with \documentclass
+            // If not found, look for any .tex file with \documentclass (only check .tex files)
             if (!mainFile && currentState.latexFiles.length > 0) {
-                for (const latexPath of currentState.latexFiles) {
+                const texFiles = currentState.latexFiles.filter(path => path.endsWith('.tex'));
+                for (const latexPath of texFiles) {
                     try {
                         const file = await store.loadFile(latexPath);
                         if (file.content.includes('\\documentclass')) {
@@ -533,9 +538,12 @@ function createWorkspaceStore() {
                 }
             }
             
-            // Fall back to first .tex file
-            if (!mainFile && currentState.latexFiles.length > 0) {
-                mainFile = currentState.latexFiles[0];
+            // Fall back to first .tex file (only .tex files can be main files)
+            if (!mainFile) {
+                const texFiles = currentState.latexFiles.filter(path => path.endsWith('.tex'));
+                if (texFiles.length > 0) {
+                    mainFile = texFiles[0];
+                }
             }
 
             if (mainFile) {
@@ -549,17 +557,25 @@ function createWorkspaceStore() {
         },
 
         // Event emission for external systems
-        emitFileChange(path: string, changeType: 'created' | 'modified' | 'deleted'): void {
+        emitFileChange(path: string, changeType: 'created' | 'modified' | 'deleted', source?: 'agent' | 'user' | 'watcher'): void {
+            const eventSource = source || 'user';
+            console.log(`WorkspaceStore: Emitting ${changeType} event for ${path} from ${eventSource}`);
+            
+            // Get file size if available
+            const currentState = get({ subscribe });
+            const file = currentState.files.get(path);
+            const size = file?.size;
+            
             // Emit to EventStore - unified event system
             switch (changeType) {
                 case 'created':
-                    eventStore.events.fileCreated(path, false, 'user');
+                    eventStore.events.fileCreated(path, false, eventSource);
                     break;
                 case 'modified':
-                    eventStore.events.fileModified(path, undefined, 'user');
+                    eventStore.events.fileModified(path, size, eventSource);
                     break;
                 case 'deleted':
-                    eventStore.events.fileDeleted(path, false, 'user');
+                    eventStore.events.fileDeleted(path, false, eventSource);
                     break;
             }
         },
@@ -629,7 +645,8 @@ function createWorkspaceStore() {
                         // Refresh file tree to pick up any new files
                         store.refreshFileTree().then(() => {
                             // Emit event for PDF refresh
-                            store.emitFileChange(pdfPath, 'modified');
+                            console.log(`WorkspaceStore: Emitting PDF update event for ${pdfPath}`);
+                            store.emitFileChange(pdfPath, 'modified', 'agent');
                         });
                     }
                 }

@@ -156,15 +156,31 @@ impl FileService {
     }
 
     pub async fn update_file_content(&self, path: &str, request: UpdateFileRequest) -> Result<()> {
+        // Check if content has actually changed to avoid unnecessary events
+        let file_path = self.workspace_path.join(path);
+        let content_changed = if file_path.exists() {
+            match std::fs::read_to_string(&file_path) {
+                Ok(existing_content) => existing_content != request.content,
+                Err(_) => true, // If we can't read, assume it changed
+            }
+        } else {
+            true // File doesn't exist, so it's definitely changing
+        };
+        
         self.repository.update_file(path, &request.content).await?;
 
-        // Send event
-        let mut metadata = FileEventMetadata::new(false);
-        if let Ok(file_metadata) = std::fs::metadata(self.workspace_path.join(path)) {
-            metadata = metadata.with_size(file_metadata.len());
+        // Only send event if content actually changed
+        if content_changed {
+            let mut metadata = FileEventMetadata::new(false);
+            if let Ok(file_metadata) = std::fs::metadata(&file_path) {
+                metadata = metadata.with_size(file_metadata.len());
+            }
+            let event = FileEvent::new(FileEventType::Modified, path.to_string()).with_metadata(metadata);
+            let _ = self.event_sender.send(event);
+            info!("File content changed, sent event for: {}", path);
+        } else {
+            debug!("File content unchanged, skipping event for: {}", path);
         }
-        let event = FileEvent::new(FileEventType::Modified, path.to_string()).with_metadata(metadata);
-        let _ = self.event_sender.send(event);
 
         Ok(())
     }

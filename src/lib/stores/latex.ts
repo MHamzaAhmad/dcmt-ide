@@ -189,49 +189,95 @@ function createLatexStore() {
             }
         },
 
-        // Subscribe to EventStore file system events
+        // Subscribe to EventStore file system events - Enhanced coordination with WorkspaceStore
         subscribeToFileEvents(): void {
-            // Create event stream for LaTeX files
-            const fileSystemEvents = eventStore.createFileSystemPathStream(/\.tex$/);
+            // Create event stream for LaTeX ecosystem files
+            const fileSystemEvents = eventStore.createFileSystemPathStream(/\.(tex|bib|sty|cls|def|cfg|clo)$/i);
             
             // React to file changes
             const unsubscribe = fileSystemEvents.subscribe(events => {
                 const latestEvent = events[events.length - 1];
                 if (latestEvent) {
-                    console.log(`LaTeXStore: LaTeX file ${latestEvent.subtype}: ${latestEvent.payload.path} (source: ${latestEvent.payload.source})`);
+                    console.log(`LaTeXStore: LaTeX ecosystem file ${latestEvent.subtype}: ${latestEvent.payload.path} (source: ${latestEvent.payload.source})`);
                     
                     // Only compile on actual file modifications, not reads or other operations
                     const shouldCompile = latestEvent.subtype === 'file_modified' || 
                                         latestEvent.subtype === 'file_created';
                     
-                    // Skip compilation if source is 'agent' - agent operations are handled separately
-                    if (latestEvent.payload.source === 'agent') {
-                        console.log('LaTeXStore: Skipping auto-compile for agent operation');
+                    if (!shouldCompile) {
+                        console.log(`LaTeXStore: Skipping compilation for ${latestEvent.subtype} event`);
                         return;
                     }
                     
                     const currentState = get({ subscribe });
-                    if (currentState.autoCompile && shouldCompile) {
-                        store.scheduleCompilation(`file_${latestEvent.subtype}`);
-                    } else {
-                        console.log(`LaTeXStore: Skipping compilation for ${latestEvent.subtype} event`);
+                    if (!currentState.autoCompile) {
+                        console.log('LaTeXStore: Auto-compile disabled, skipping compilation');
+                        return;
+                    }
+                    
+                    // Handle different sources appropriately
+                    if (latestEvent.payload.source === 'user') {
+                        // User made direct changes, compile with normal delay
+                        console.log('LaTeXStore: User file change detected, scheduling compilation');
+                        store.scheduleCompilation(`user_${latestEvent.subtype}`);
+                    } else if (latestEvent.payload.source === 'watcher') {
+                        // External file system change, compile with normal delay
+                        console.log('LaTeXStore: File watcher change detected, scheduling compilation');
+                        store.scheduleCompilation(`watcher_${latestEvent.subtype}`);
+                    } else if (latestEvent.payload.source === 'agent') {
+                        // Agent change - use longer delay and coordinate with job completion
+                        console.log('LaTeXStore: Agent file change detected, scheduling delayed compilation');
+                        
+                        // Clear any existing timer to prevent multiple compilations
+                        const timeSinceLastCompile = Date.now() - currentState.lastCompilationTime;
+                        const minDelayBetweenCompiles = 3000; // 3 seconds minimum
+                        
+                        if (timeSinceLastCompile < minDelayBetweenCompiles) {
+                            console.log(`LaTeXStore: Too soon since last compile (${timeSinceLastCompile}ms), deferring`);
+                            return;
+                        }
+                        
+                        // Use longer delay for agent operations to allow batch processing
+                        const originalDelay = currentState.compilationDelay;
+                        update(state => ({ ...state, compilationDelay: 2500 })); // 2.5 second delay
+                        
+                        store.scheduleCompilation(`agent_${latestEvent.subtype}`);
+                        
+                        // Restore original delay
+                        setTimeout(() => {
+                            update(state => ({ ...state, compilationDelay: originalDelay }));
+                        }, 100);
                     }
                 }
             });
             
-            // Subscribe to compilation events from agents
-            const compilationEvents = eventStore.createCompilationEventStream();
+            // Subscribe to compilation events from external sources
+            const compilationEvents = eventStore.compilationEvents;
             const compUnsubscribe = compilationEvents.subscribe(events => {
                 const latestEvent = events[events.length - 1];
-                if (latestEvent && latestEvent.subtype === 'completed' && 
-                    latestEvent.payload.mainFile === 'agent') {
-                    console.log('LaTeXStore: Agent performed compilation, updating PDF path');
-                    // Update PDF path without triggering recompilation
+                if (latestEvent && latestEvent.subtype === 'completed') {
+                    console.log(`LaTeXStore: Compilation completed - mainFile: ${latestEvent.payload.mainFile}, pdfPath: ${latestEvent.payload.pdfPath}`);
+                    
+                    // Update our state to reflect the successful compilation
                     update(state => ({
                         ...state,
                         currentPdfPath: latestEvent.payload.pdfPath || state.currentPdfPath,
-                        lastCompilationTime: Date.now()
+                        lastCompilationTime: Date.now(),
+                        compilationStatus: 'success' as const
                     }));
+                }
+            });
+            
+            // Subscribe to agent events to handle job completion
+            const agentEvents = eventStore.agentEvents;
+            const agentUnsubscribe = agentEvents.subscribe(events => {
+                const latestEvent = events[events.length - 1];
+                if (latestEvent && latestEvent.subtype === 'job_complete') {
+                    console.log('LaTeXStore: Agent job completed, coordinating with workspace for LaTeX compilation');
+                    // Use timeout to allow workspace store to settle first
+                    setTimeout(() => {
+                        store.handleAgentJobComplete(latestEvent);
+                    }, 500);
                 }
             });
             
@@ -239,6 +285,7 @@ function createLatexStore() {
             eventUnsubscribe = () => {
                 unsubscribe();
                 compUnsubscribe();
+                agentUnsubscribe();
             };
         },
 
@@ -295,7 +342,10 @@ function createLatexStore() {
             }));
 
             // Emit compilation start event
-            store.emitCompilationEvent('latex-compiling', { mainFile: currentState.mainFile });
+            store.emitCompilationEvent('latex-compiling', { 
+                mainFile: currentState.mainFile,
+                reason: 'scheduled_compilation'
+            });
 
             try {
                 // Use platform-specific LaTeX compilation
@@ -335,12 +385,15 @@ function createLatexStore() {
                 if (result.success) {
                     console.log(`LaTeXStore: Compilation successful - ${result.output_file}`);
                     store.emitCompilationEvent('latex-compiled', {
+                        mainFile: currentState.mainFile,
                         outputFile: result.output_file,
+                        pdfPath: result.output_file,
                         message: `Compilation successful with pdflatex`
                     });
                 } else {
                     console.error('LaTeXStore: Compilation failed:', compilationResult.errors);
                     store.emitCompilationEvent('latex-compile-error', {
+                        mainFile: currentState.mainFile,
                         errors: compilationResult.errors,
                         message: 'LaTeX compilation failed'
                     });
@@ -383,7 +436,9 @@ function createLatexStore() {
                 });
 
                 // Emit error event
+                const currentErrorState = get({ subscribe });
                 store.emitCompilationEvent('latex-compile-error', {
+                    mainFile: currentErrorState.mainFile,
                     errors: [errorMessage],
                     message: errorMessage
                 });
@@ -439,11 +494,13 @@ function createLatexStore() {
 
         // Event emission
         emitCompilationEvent(eventType: string, detail: any): void {
-            // Emit to EventStore - unified event system
+            // Emit to EventStore - unified event system with enhanced detail
+            console.log(`LaTeXStore: Emitting ${eventType}:`, detail);
+            
             if (eventType === 'latex-compiling') {
-                eventStore.events.compilationQueued(detail.mainFile, detail.reason);
+                eventStore.events.compilationQueued(detail.mainFile || 'unknown', detail.reason);
             } else if (eventType === 'latex-compiled') {
-                eventStore.events.compilationCompleted(detail.mainFile, detail.pdfPath);
+                eventStore.events.compilationCompleted(detail.mainFile || 'unknown', detail.outputFile || detail.pdfPath);
             } else if (eventType === 'latex-compile-error') {
                 eventStore.events.compilationFailed(detail.mainFile || 'unknown', detail.errors || [detail.message]);
             }
@@ -537,6 +594,98 @@ function createLatexStore() {
                 setTimeout(() => {
                     update(state => ({ ...state, compilationDelay: originalDelay }));
                 }, 100);
+            }
+        },
+
+        // Handle agent job completion - Enhanced coordination with WorkspaceStore
+        async handleAgentJobComplete(event: any): Promise<void> {
+            console.log('LaTeXStore: Handling agent job completion for LaTeX compilation coordination');
+            
+            try {
+                const currentState = get({ subscribe });
+                
+                // Check if auto-compile is enabled and we have a main file
+                if (!currentState.autoCompile) {
+                    console.log('LaTeXStore: Auto-compile disabled, skipping compilation');
+                    return;
+                }
+                
+                if (!currentState.mainFile) {
+                    console.log('LaTeXStore: No main LaTeX file detected, skipping compilation');
+                    return;
+                }
+                
+                // Get WorkspaceStore state to check for LaTeX files
+                const { workspaceStore } = await import('./workspace');
+                const workspaceState = workspaceStore.getCurrentState();
+                
+                if (workspaceState.latexFiles.length === 0) {
+                    console.log('LaTeXStore: No LaTeX files in workspace, skipping compilation');
+                    return;
+                }
+                
+                // Check if any LaTeX ecosystem files are dirty or recently modified
+                const LATEX_ECOSYSTEM_PATTERN = /\.(tex|bib|sty|cls|def|cfg|clo)$/i;
+                let hasLatexChanges = false;
+                let latexFilesNeedingCompilation: string[] = [];
+                
+                // Check workspace files for recent modifications
+                for (const [filePath, file] of workspaceState.files.entries()) {
+                    if (LATEX_ECOSYSTEM_PATTERN.test(filePath)) {
+                        // Check if file was modified recently (within last 10 seconds) or is dirty
+                        const isRecentlyModified = file.lastModified > (Date.now() - 10000);
+                        const isDirty = file.isDirty;
+                        
+                        if (isRecentlyModified || isDirty) {
+                            hasLatexChanges = true;
+                            latexFilesNeedingCompilation.push(filePath);
+                        }
+                    }
+                }
+                
+                if (!hasLatexChanges) {
+                    console.log('LaTeXStore: No recent LaTeX ecosystem file changes detected');
+                    return;
+                }
+                
+                console.log('LaTeXStore: LaTeX files needing compilation:', latexFilesNeedingCompilation);
+                
+                // Prevent excessive compilation attempts
+                const timeSinceLastCompile = Date.now() - currentState.lastCompilationTime;
+                const minDelayBetweenCompiles = 3000; // 3 seconds minimum
+                
+                if (timeSinceLastCompile < minDelayBetweenCompiles) {
+                    console.log(`LaTeXStore: Too soon since last compile (${timeSinceLastCompile}ms), deferring compilation`);
+                    
+                    // Schedule for later if there are changes
+                    setTimeout(() => {
+                        store.handleAgentJobComplete(event);
+                    }, minDelayBetweenCompiles - timeSinceLastCompile + 500);
+                    return;
+                }
+                
+                // Force reload modified LaTeX files to ensure we have latest content
+                console.log('LaTeXStore: Force reloading modified LaTeX files before compilation');
+                const reloadPromises = latexFilesNeedingCompilation.map(async (filePath) => {
+                    try {
+                        await workspaceStore.loadFile(filePath, true);
+                        console.log(`LaTeXStore: Reloaded ${filePath}`);
+                    } catch (error) {
+                        console.warn(`LaTeXStore: Failed to reload ${filePath}:`, error);
+                    }
+                });
+                
+                // Wait for all files to reload
+                await Promise.all(reloadPromises);
+                
+                // Schedule compilation with delay to allow workspace to settle
+                console.log('LaTeXStore: Scheduling LaTeX compilation after agent job completion and file reloading');
+                setTimeout(() => {
+                    store.scheduleCompilation('agent_job_completed');
+                }, 1000); // 1 second delay to ensure everything is settled
+                
+            } catch (error) {
+                console.error('LaTeXStore: Error handling agent job completion:', error);
             }
         },
 

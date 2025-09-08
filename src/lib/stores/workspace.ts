@@ -100,6 +100,7 @@ function createWorkspaceStore() {
     let queryClient: QueryClient | undefined;
     let isInitialized = false;
     let fileWatchers: Map<string, any> = new Map();
+    let eventUnsubscribe: (() => void) | null = null;
 
     const store = {
         subscribe,
@@ -139,6 +140,9 @@ function createWorkspaceStore() {
                 
                 // Set up file watching if supported
                 store.setupFileWatching();
+                
+                // Subscribe to EventStore for agent file operations
+                store.subscribeToAgentEvents();
 
                 update(state => ({
                     ...state,
@@ -226,9 +230,30 @@ function createWorkspaceStore() {
                 return existingFile;
             }
 
-            // Check if already loading
+            // Check if already loading - wait for existing operation instead of throwing
             if (currentState.pendingOperations.has(path)) {
-                throw new Error(`File ${path} is already being loaded`);
+                console.log(`File ${path} is already being loaded, waiting for completion...`);
+                // Wait for the existing operation to complete by polling
+                return new Promise((resolve, reject) => {
+                    const checkInterval = setInterval(() => {
+                        const state = get({ subscribe });
+                        if (!state.pendingOperations.has(path)) {
+                            clearInterval(checkInterval);
+                            const file = state.files.get(path);
+                            if (file?.isLoaded) {
+                                resolve(file);
+                            } else {
+                                reject(new Error(`File ${path} failed to load`));
+                            }
+                        }
+                    }, 50); // Check every 50ms
+                    
+                    // Timeout after 5 seconds
+                    setTimeout(() => {
+                        clearInterval(checkInterval);
+                        reject(new Error(`Timeout waiting for file ${path} to load`));
+                    }, 5000);
+                });
             }
 
             // Mark as loading
@@ -525,7 +550,7 @@ function createWorkspaceStore() {
 
         // Event emission for external systems
         emitFileChange(path: string, changeType: 'created' | 'modified' | 'deleted'): void {
-            // Emit to EventStore
+            // Emit to EventStore - unified event system
             switch (changeType) {
                 case 'created':
                     eventStore.events.fileCreated(path, false, 'user');
@@ -537,14 +562,6 @@ function createWorkspaceStore() {
                     eventStore.events.fileDeleted(path, false, 'user');
                     break;
             }
-
-            // Legacy: Emit custom event for backward compatibility
-            if (browser) {
-                const event = new CustomEvent('workspace:file-changed', {
-                    detail: { path, changeType, timestamp: Date.now() }
-                });
-                window.dispatchEvent(event);
-            }
         },
 
         // File watching setup
@@ -552,6 +569,79 @@ function createWorkspaceStore() {
             // This would integrate with the existing file watcher system
             // For now, we'll rely on agent events and manual refreshes
             console.log('WorkspaceStore: File watching setup completed');
+        },
+
+        // Subscribe to EventStore for agent file operations
+        subscribeToAgentEvents(): void {
+            // Create event stream for file system events from agents
+            const agentFileEvents = eventStore.createFileSystemEventStream();
+            
+            // React to agent file changes
+            const fileUnsubscribe = agentFileEvents.subscribe((events: any) => {
+                const latestEvent = events[events.length - 1];
+                if (latestEvent && latestEvent.payload.path) {
+                    const source = latestEvent.payload.source;
+                    const subtype = latestEvent.subtype;
+                    
+                    // Only react to meaningful file changes from external sources
+                    if (source === 'agent' || source === 'watcher') {
+                        // Don't reload for read operations - they don't change the file
+                        if (source === 'agent' && (subtype === 'file_read' || subtype === 'file_accessed')) {
+                            console.log(`WorkspaceStore: Skipping reload for agent read operation on ${latestEvent.payload.path}`);
+                            return;
+                        }
+                        
+                        console.log(`WorkspaceStore: Reacting to ${source} ${subtype} on ${latestEvent.payload.path}`);
+                        
+                        // Force reload the file if it exists in our store and was actually modified
+                        const filePath = latestEvent.payload.path;
+                        const currentState = get({ subscribe });
+                        
+                        if ((currentState.files.has(filePath) || filePath.endsWith('.pdf')) && 
+                            (subtype === 'file_modified' || subtype === 'file_created')) {
+                            console.log(`WorkspaceStore: Reloading ${filePath} after ${source} ${subtype}`);
+                            // Force reload the file to get updated content
+                            store.loadFile(filePath, true).catch(error => {
+                                // PDF files might not be readable as text, that's ok
+                                if (!filePath.endsWith('.pdf')) {
+                                    console.warn(`Failed to reload ${filePath} after ${source} operation:`, error);
+                                }
+                            });
+                        }
+                    }
+                }
+            });
+            
+            // Subscribe to compilation events to reload workspace after agent compilation
+            const compilationEvents = eventStore.createCompilationEventStream();
+            const compUnsubscribe = compilationEvents.subscribe((events: any) => {
+                const latestEvent = events[events.length - 1];
+                if (latestEvent && latestEvent.subtype === 'completed') {
+                    const mainFile = latestEvent.payload.mainFile;
+                    const pdfPath = latestEvent.payload.pdfPath;
+                    
+                    console.log(`WorkspaceStore: Compilation completed for ${mainFile}, PDF: ${pdfPath}`);
+                    
+                    // If agent performed compilation, reload related files
+                    if (mainFile === 'agent' && pdfPath) {
+                        console.log('WorkspaceStore: Agent compilation detected, triggering refresh');
+                        
+                        // Refresh file tree to pick up any new files
+                        store.refreshFileTree().then(() => {
+                            // Emit event for PDF refresh
+                            store.emitFileChange(pdfPath, 'modified');
+                        });
+                    }
+                }
+            });
+            
+            // Combine unsubscribe functions
+            eventUnsubscribe = () => {
+                fileUnsubscribe();
+                compUnsubscribe();
+            };
+            
+            console.log('WorkspaceStore: Subscribed to agent file and compilation events');
         },
 
         // Utilities
@@ -583,6 +673,12 @@ function createWorkspaceStore() {
 
         // Cleanup
         async destroy(): Promise<void> {
+            // Unsubscribe from EventStore events
+            if (eventUnsubscribe) {
+                eventUnsubscribe();
+                eventUnsubscribe = null;
+            }
+            
             // Clean up file watchers
             fileWatchers.forEach(watcher => {
                 if (watcher && typeof watcher.close === 'function') {

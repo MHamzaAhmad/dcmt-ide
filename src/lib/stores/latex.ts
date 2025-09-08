@@ -86,6 +86,7 @@ function createLatexStore() {
     let isInitialized = false;
     let compilationTimer: ReturnType<typeof setTimeout> | null = null;
     let workspaceUnsubscribe: (() => void) | null = null;
+    let eventUnsubscribe: (() => void) | null = null;
 
     const store = {
         subscribe,
@@ -107,10 +108,8 @@ function createLatexStore() {
                     store.handleWorkspaceChange($workspace);
                 });
 
-                // Listen for workspace file change events
-                if (browser) {
-                    window.addEventListener('workspace:file-changed', store.handleFileChangeEvent);
-                }
+                // Subscribe to EventStore file change events
+                store.subscribeToFileEvents();
 
                 // Get initial state from workspace
                 const workspaceState = workspaceStore.getCurrentState();
@@ -190,18 +189,57 @@ function createLatexStore() {
             }
         },
 
-        handleFileChangeEvent(event: Event): void {
-            const customEvent = event as CustomEvent;
-            const { path, changeType } = customEvent.detail;
-
-            if (path.endsWith('.tex')) {
-                console.log(`LaTeXStore: LaTeX file ${changeType}: ${path}`);
-                
-                const currentState = get({ subscribe });
-                if (currentState.autoCompile) {
-                    store.scheduleCompilation(`file_${changeType}`);
+        // Subscribe to EventStore file system events
+        subscribeToFileEvents(): void {
+            // Create event stream for LaTeX files
+            const fileSystemEvents = eventStore.createFileSystemPathStream(/\.tex$/);
+            
+            // React to file changes
+            const unsubscribe = fileSystemEvents.subscribe(events => {
+                const latestEvent = events[events.length - 1];
+                if (latestEvent) {
+                    console.log(`LaTeXStore: LaTeX file ${latestEvent.subtype}: ${latestEvent.payload.path} (source: ${latestEvent.payload.source})`);
+                    
+                    // Only compile on actual file modifications, not reads or other operations
+                    const shouldCompile = latestEvent.subtype === 'file_modified' || 
+                                        latestEvent.subtype === 'file_created';
+                    
+                    // Skip compilation if source is 'agent' - agent operations are handled separately
+                    if (latestEvent.payload.source === 'agent') {
+                        console.log('LaTeXStore: Skipping auto-compile for agent operation');
+                        return;
+                    }
+                    
+                    const currentState = get({ subscribe });
+                    if (currentState.autoCompile && shouldCompile) {
+                        store.scheduleCompilation(`file_${latestEvent.subtype}`);
+                    } else {
+                        console.log(`LaTeXStore: Skipping compilation for ${latestEvent.subtype} event`);
+                    }
                 }
-            }
+            });
+            
+            // Subscribe to compilation events from agents
+            const compilationEvents = eventStore.createCompilationEventStream();
+            const compUnsubscribe = compilationEvents.subscribe(events => {
+                const latestEvent = events[events.length - 1];
+                if (latestEvent && latestEvent.subtype === 'completed' && 
+                    latestEvent.payload.mainFile === 'agent') {
+                    console.log('LaTeXStore: Agent performed compilation, updating PDF path');
+                    // Update PDF path without triggering recompilation
+                    update(state => ({
+                        ...state,
+                        currentPdfPath: latestEvent.payload.pdfPath || state.currentPdfPath,
+                        lastCompilationTime: Date.now()
+                    }));
+                }
+            });
+            
+            // Store the unsubscribe functions for cleanup
+            eventUnsubscribe = () => {
+                unsubscribe();
+                compUnsubscribe();
+            };
         },
 
         // Compilation management
@@ -401,19 +439,13 @@ function createLatexStore() {
 
         // Event emission
         emitCompilationEvent(eventType: string, detail: any): void {
-            // Emit to EventStore based on event type
+            // Emit to EventStore - unified event system
             if (eventType === 'latex-compiling') {
                 eventStore.events.compilationQueued(detail.mainFile, detail.reason);
             } else if (eventType === 'latex-compiled') {
                 eventStore.events.compilationCompleted(detail.mainFile, detail.pdfPath);
             } else if (eventType === 'latex-compile-error') {
                 eventStore.events.compilationFailed(detail.mainFile || 'unknown', detail.errors || [detail.message]);
-            }
-
-            // Legacy: emit browser events for backward compatibility
-            if (browser) {
-                const event = new CustomEvent(eventType, { detail });
-                window.dispatchEvent(event);
             }
         },
 
@@ -449,39 +481,62 @@ function createLatexStore() {
 
         // Agent integration - handle external compilation triggers
         handleAgentFileOperation(tool: string, path: string): void {
-            if (path.endsWith('.tex')) {
-                console.log(`LaTeXStore: Agent ${tool} on LaTeX file ${path}`);
-                
-                const currentState = get({ subscribe });
-                
-                // Update source modification time
+            // Skip if not a LaTeX file
+            if (!path.endsWith('.tex')) {
+                return;
+            }
+            
+            console.log(`LaTeXStore: Agent ${tool} on LaTeX file ${path}`);
+            
+            // Special handling for compile_latex tool
+            if (tool === 'compile_latex') {
+                console.log('LaTeXStore: Agent performed compilation, skipping auto-compile');
+                // Update last compilation time to prevent immediate recompilation
                 update(state => ({
                     ...state,
-                    lastSourceModified: Date.now()
+                    lastCompilationTime: Date.now(),
+                    compilationStatus: 'success'
                 }));
+                return;
+            }
+            
+            // Only react to write operations, not reads
+            const writeOperations = ['create_file', 'write_file', 'update_file'];
+            if (!writeOperations.includes(tool)) {
+                console.log(`LaTeXStore: Ignoring agent ${tool} (not a write operation)`);
+                return;
+            }
+            
+            const currentState = get({ subscribe });
+            
+            // Update source modification time
+            update(state => ({
+                ...state,
+                lastSourceModified: Date.now()
+            }));
+            
+            // Only compile if auto-compile is enabled and enough time has passed
+            if (currentState.autoCompile) {
+                const timeSinceLastCompile = Date.now() - currentState.lastCompilationTime;
+                const minDelayBetweenCompiles = 3000; // 3 seconds minimum between compilations
                 
-                // Only compile on final operations, not intermediate ones
-                // This prevents excessive compilation during agent work
-                if (currentState.autoCompile) {
-                    // Only compile for create_file or for write_file operations
-                    // Avoid compiling for read_file or other operations
-                    if (tool === 'create_file' || tool === 'write_file') {
-                        console.log(`LaTeXStore: Scheduling compilation for agent ${tool}`);
-                        
-                        // Use longer delay for agent operations to allow batch processing
-                        const originalDelay = currentState.compilationDelay;
-                        update(state => ({ ...state, compilationDelay: 2000 })); // 2 second delay
-                        
-                        store.scheduleCompilation(`agent_${tool}`);
-                        
-                        // Restore original delay after scheduling
-                        setTimeout(() => {
-                            update(state => ({ ...state, compilationDelay: originalDelay }));
-                        }, 100);
-                    } else {
-                        console.log(`LaTeXStore: Skipping compilation for agent ${tool} (not a write operation)`);
-                    }
+                if (timeSinceLastCompile < minDelayBetweenCompiles) {
+                    console.log(`LaTeXStore: Skipping compilation (only ${timeSinceLastCompile}ms since last compile)`);
+                    return;
                 }
+                
+                console.log(`LaTeXStore: Scheduling compilation for agent ${tool}`);
+                
+                // Use longer delay for agent operations to allow batch processing
+                const originalDelay = currentState.compilationDelay;
+                update(state => ({ ...state, compilationDelay: 2000 })); // 2 second delay
+                
+                store.scheduleCompilation(`agent_${tool}`);
+                
+                // Restore original delay after scheduling
+                setTimeout(() => {
+                    update(state => ({ ...state, compilationDelay: originalDelay }));
+                }, 100);
             }
         },
 
@@ -493,9 +548,10 @@ function createLatexStore() {
                 compilationTimer = null;
             }
 
-            // Remove event listeners
-            if (browser) {
-                window.removeEventListener('workspace:file-changed', store.handleFileChangeEvent);
+            // Unsubscribe from EventStore events
+            if (eventUnsubscribe) {
+                eventUnsubscribe();
+                eventUnsubscribe = null;
             }
 
             // Unsubscribe from workspace

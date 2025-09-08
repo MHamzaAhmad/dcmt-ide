@@ -9,7 +9,6 @@
 	import WelcomeScreen from '../welcome/WelcomeScreen.svelte';
 	import { ResizablePaneGroup, ResizablePane, ResizableHandle } from '$lib/components/ui/resizable';
 	import { editorState } from '$lib/stores/editor.js';
-	import { openFiles } from '$lib/stores/files.js';
 	import { fileSystemApi } from '$lib/api/adapters';
 	import { workspaceStore, orchestrator } from '$lib/stores';
 
@@ -35,8 +34,8 @@
 		if (orchestratorState.isReady && workspaceState.isReady && workspaceState.mainLatexFile) {
 			console.log('MainLayout: New reactive stores ready - main LaTeX file:', workspaceState.mainLatexFile);
 			
-			// Auto-open the main LaTeX file if no files are currently open in the old system
-			if ($openFiles.length === 0) {
+			// Auto-open the main LaTeX file if no files are currently open
+			if (workspaceState.openFiles.length === 0) {
 				console.log('MainLayout: Auto-loading main LaTeX file from reactive store:', workspaceState.mainLatexFile);
 				autoLoadMainFiles(workspaceState.mainLatexFile);
 			}
@@ -49,34 +48,13 @@
 		console.log('Platform:', isTauri() ? 'desktop' : 'web');
 		
 		try {
-			// Open the main .tex file in the editor
-			console.log('Auto-loading main LaTeX file:', mainTexPath);
+			// Open the main .tex file using workspaceStore
+			console.log('Auto-loading main LaTeX file via workspaceStore:', mainTexPath);
 			
-			// Read the file content
-			console.log('🔍 About to call fileSystemApi.readFileContent...');
-			const fileContent = await fileSystemApi.readFileContent(mainTexPath);
-			console.log('✅ File content loaded successfully:', {
-				path: fileContent.path,
-				size: fileContent.content.length,
-				modified: fileContent.modified
-			});
+			// Use workspaceStore to open the file
+			await workspaceStore.openFile(mainTexPath);
 			
-			// Add to open files
-			console.log('📁 Adding file to open files...');
-			openFiles.openFile({
-				id: mainTexPath,
-				path: mainTexPath,
-				name: mainTexPath.split('/').pop() || mainTexPath,
-				content: fileContent.content
-			});
-			
-			// Set as active file
-			console.log('🎯 Setting as active file...');
-			editorState.setActiveFile(mainTexPath);
-			
-			// PDF loading is now handled by PDFPreview component automatically
-			
-			console.log('✨ Main LaTeX file and associated files loaded successfully');
+			console.log('✨ Main LaTeX file loaded successfully via workspaceStore');
 		} catch (error) {
 			console.error('❌ Failed to auto-load main files:', error);
 			console.error('Error details:', {

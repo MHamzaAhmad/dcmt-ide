@@ -33,7 +33,7 @@ function createChatStore() {
 					id: crypto.randomUUID(),
 					role: 'system',
 					content: `Error: ${event.payload.message}`,
-					timestamp: Date.now(),
+					timestamp: new Date(),
 					metadata: { type: 'error' }
 				};
 				

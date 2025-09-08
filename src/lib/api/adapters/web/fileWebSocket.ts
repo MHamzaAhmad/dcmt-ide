@@ -168,10 +168,8 @@ export class WebSocketAdapter implements FileWatcherOperations {
 				try {
 					const data = JSON.parse(event.data);
 					console.log('WebSocket file event:', data);
-					// Emit custom events that components can listen to
-					if (typeof window !== 'undefined') {
-						window.dispatchEvent(new CustomEvent('file-event', { detail: data }));
-					}
+					// Note: File events should be handled by agentWebSocket which emits to EventStore
+					// This WebSocket is primarily for legacy compatibility
 				} catch (error) {
 					console.error('Failed to parse WebSocket message:', error);
 				}

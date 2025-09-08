@@ -204,25 +204,33 @@ export class AgentWebSocketAdapter {
                 }
             });
         }
-
-        // Emit as browser event for compatibility
-        if (typeof window !== 'undefined') {
-            window.dispatchEvent(new CustomEvent('agent-event', { 
-                detail: { event, sessionId } 
-            }));
-        }
     }
 
     private isFileOperation(tool: string): boolean {
         const fileOperations = [
             'read_file', 'write_file', 'update_file', 'create_file', 
-            'delete_file', 'create_directory', 'rename_file', 'copy_file', 'move_file'
+            'delete_file', 'create_directory', 'rename_file', 'copy_file', 'move_file',
+            'compile_latex' // Add compile_latex as a file operation
         ];
         return fileOperations.includes(tool);
     }
 
     private handleFileOperation(event: { tool: string; result: string }): void {
         console.log(`Detected file operation: ${event.tool}`, event.result);
+        
+        // Special handling for compile_latex tool
+        if (event.tool === 'compile_latex') {
+            console.log('Agent performed LaTeX compilation');
+            // Extract PDF path from result if available
+            const pdfPath = this.extractPathFromResult(event.result);
+            if (pdfPath) {
+                // Emit a special compilation event
+                eventStore.events.compilationCompleted('agent', pdfPath);
+                // Trigger workspace reload for the PDF
+                eventStore.events.fileModified(pdfPath, undefined, 'agent');
+            }
+            return;
+        }
         
         // Extract path from result
         const path = this.extractPathFromResult(event.result);
@@ -257,25 +265,36 @@ export class AgentWebSocketAdapter {
                     eventStore.events.fileModified(path, undefined, 'agent');
                 }
                 break;
+            case 'read_file':
+                // Don't emit events for read operations - they don't change files
+                console.log(`Agent read file: ${path} (no event emitted)`);
+                break;
+            default:
+                // For unknown tools, don't emit events
+                console.log(`Unknown agent tool: ${event.tool} on ${path}`);
+                break;
         }
 
-        // Legacy: Also create FileEventData for backward compatibility
-        const eventType = this.getFileEventType(event.tool);
-        const fileEventData: FileEventData = {
-            event_type: eventType,
-            path,
-            timestamp: Date.now(),
-            metadata: {
-                is_directory: isDirectory,
-                size: undefined,
-                old_path: undefined,
-                new_path: undefined
+        // Only call file event callbacks for compatibility, don't double-emit to EventStore
+        this.fileEventCallbacks.forEach(callback => {
+            try {
+                const eventType = this.getFileEventType(event.tool);
+                const fileEventData: FileEventData = {
+                    event_type: eventType,
+                    path,
+                    timestamp: Date.now(),
+                    metadata: {
+                        is_directory: isDirectory,
+                        size: undefined,
+                        old_path: undefined,
+                        new_path: undefined
+                    }
+                };
+                callback(eventType.toLowerCase() as FileEventType, fileEventData);
+            } catch (error) {
+                console.error('Error in file event callback:', error);
             }
-        };
-
-        // Trigger file event handling - convert to FileEventType
-        const fileEventType = eventType.toLowerCase() as FileEventType;
-        this.handleFileEvent(fileEventType, fileEventData);
+        });
     }
 
     private getFileEventType(tool: string): 'Created' | 'Modified' | 'Deleted' | 'Renamed' {
@@ -301,17 +320,26 @@ export class AgentWebSocketAdapter {
             const parsed = JSON.parse(result);
             return parsed.path || parsed.file_path || parsed.filename || null;
         } catch {
-            // Extract from text patterns
+            // Extract from text patterns with better matching for different operations
             const patterns = [
-                /Successfully (?:wrote|created|updated|deleted) ['""]?([^'""]+)['""]?/i,
-                /(?:file|path)[:=]\s*['""]?([^'""]+)['""]?/i,
-                /['""]([\/\w\-\.]+\.\w+)['""]/ // Files with extensions
+                // Pattern for "Successfully updated file 'main.tex'. Replaced..."
+                /Successfully (?:wrote|created|updated|deleted|read) (?:file )?['""]([^'""]+)['""]?/i,
+                // Pattern for direct file paths with quotes  
+                /['""]([^'""]*\.[a-zA-Z0-9]+)['""](?!.*['""]([^'""]*\.[a-zA-Z0-9]+)['""])/i,
+                // Pattern for "file: path" or "path: value"
+                /(?:file|path)[:=]\s*['""]?([^'""]+\.[a-zA-Z0-9]+)['""]?/i,
+                // Fallback for any file with extension
+                /([\/\w\-\.]+\.\w+)(?:\s|$)/
             ];
             
             for (const pattern of patterns) {
                 const match = result.match(pattern);
                 if (match && match[1]) {
-                    return match[1].trim();
+                    const path = match[1].trim();
+                    // Validate it looks like a file path
+                    if (path.includes('.') && !path.includes(' ')) {
+                        return path;
+                    }
                 }
             }
         }
@@ -492,7 +520,8 @@ export class AgentWebSocketAdapter {
     private handleFileEvent(eventType: FileEventType, event: FileEventData): void {
         console.log(`File event received (${eventType}):`, event);
         
-        // Emit to EventStore first
+        // Only emit to EventStore for actual file watcher events, not agent operations
+        // Agent operations are already emitted in handleFileOperation()
         const source = 'watcher'; // These are external file events
         switch (eventType) {
             case 'created':
@@ -522,13 +551,6 @@ export class AgentWebSocketAdapter {
                 console.error('Error in file event callback:', error);
             }
         });
-        
-        // Emit as browser event for compatibility
-        if (typeof window !== 'undefined') {
-            window.dispatchEvent(new CustomEvent('file-event', { 
-                detail: { eventType, event } 
-            }));
-        }
     }
 
     /**

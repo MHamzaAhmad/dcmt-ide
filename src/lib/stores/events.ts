@@ -133,13 +133,13 @@ function createEventStore() {
 
   function emit(event: SystemEvent) {
     const timestamp = Date.now();
-    const eventWithTimestamp = {
+    const eventWithTimestamp: SystemEvent = {
       ...event,
       payload: {
         ...event.payload,
         timestamp
       }
-    };
+    } as SystemEvent;
 
     update(state => {
       const newEvents = [...state.allEvents, eventWithTimestamp].slice(-state.maxEventHistory);
@@ -215,6 +215,15 @@ function createEventStore() {
         return pathPattern.test(event.payload.path);
       })
     );
+  }
+
+  // Generic event stream aliases for backwards compatibility
+  function createFileSystemEventStream() {
+    return fileSystemEvents;
+  }
+
+  function createCompilationEventStream() {
+    return compilationEvents;
   }
 
   // ============================================================================
@@ -519,6 +528,8 @@ function createEventStore() {
     uiEvents,
     createAgentSessionStream,
     createFileSystemPathStream,
+    createFileSystemEventStream,
+    createCompilationEventStream,
     
     // Configuration
     setQueryClient,
@@ -536,6 +547,3 @@ function createEventStore() {
 // ============================================================================
 
 export const eventStore = createEventStore();
-
-// Type exports for external use
-export type { SystemEvent, FileSystemEvent, AgentEvent, CompilationEvent, ConnectionEvent, UIEvent };

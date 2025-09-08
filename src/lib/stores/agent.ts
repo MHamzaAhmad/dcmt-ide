@@ -2,9 +2,7 @@ import { writable } from 'svelte/store';
 import { browser } from '$app/environment';
 import { agentAPI } from '$lib/api/agent';
 import { useAgentEvents, useAgentFileSync } from '$lib/api/hooks';
-import { workspaceStore } from './workspace';
-import { latexStore } from './latex';
-import { pdfStore } from './pdf';
+import { eventStore } from './events';
 import type { QueryClient } from '@tanstack/svelte-query';
 import type { 
     AgentEvent, 
@@ -570,55 +568,71 @@ function createAgentStore() {
             };
         },
 
-        // Store integration methods
+        // EventStore integration methods
         handleAgentFileChange(path: string, changeType: 'created' | 'modified' | 'deleted' | 'renamed'): void {
-            console.log(`AgentStore: Integrating file change ${changeType} on ${path}`);
+            console.log(`AgentStore: Duplicate file change ${changeType} on ${path} - skipping (handled by tool operation)`);
             
-            // For file operations that affect content, we need to parse the result
-            // This method is called after the file system has been updated
-            if (changeType === 'modified' || changeType === 'created') {
-                // The workspace store will handle reloading the file
-                // LaTeX and PDF stores will react automatically
-            }
+            // This method is redundant - file changes are already handled by handleAgentToolOperation
+            // when the tool operations complete. No need to emit duplicate events.
         },
 
         handleAgentToolOperation(tool: string, path: string, result: any): void {
-            console.log(`AgentStore: Integrating tool operation ${tool} on ${path}`);
+            console.log(`AgentStore: Processing tool operation ${tool} on ${path}`);
             
             try {
-                // Extract content from result for content-modifying operations
-                let content: string | undefined;
-                
-                if (tool === 'update_file' || tool === 'write_file' || tool === 'create_file') {
-                    // Try to extract content from various result formats
-                    if (typeof result === 'string') {
-                        // Result might contain content or success message
-                        const contentMatch = result.match(/(?:content|file).*?:\s*["']([^"']+)["']/i);
-                        if (contentMatch) {
-                            content = contentMatch[1];
-                        }
-                    }
+                // Always emit the agent tool event for tracking
+                eventStore.events.agentToolCompleted(
+                    store.getCurrentState().currentSessionId || 'unknown',
+                    tool,
+                    result
+                );
+
+                // Skip file system events for read operations - they don't modify files
+                if (tool === 'read_file') {
+                    console.log(`AgentStore: Skipping file system event for read operation on ${path}`);
+                    return;
                 }
                 
-                // Integrate with workspace store
-                workspaceStore.handleAgentFileOperation(tool, path, content);
-                
-                // Notify LaTeX store for .tex files
-                if (path.endsWith('.tex')) {
-                    latexStore.handleAgentFileOperation(tool, path);
+                // Determine the change type from the tool
+                let changeType: 'created' | 'modified' | 'deleted';
+                switch (tool) {
+                    case 'create_file':
+                        changeType = 'created';
+                        break;
+                    case 'delete_file':
+                        changeType = 'deleted';
+                        break;
+                    case 'write_file':
+                    case 'update_file':
+                        changeType = 'modified';
+                        break;
+                    default:
+                        console.log(`AgentStore: Unknown tool ${tool}, skipping file system event`);
+                        return;
+                }
+
+                // Emit the corresponding file system event
+                // This will trigger all stores to react appropriately
+                switch (changeType) {
+                    case 'created':
+                        eventStore.events.fileCreated(path, false, 'agent');
+                        break;
+                    case 'modified':
+                        eventStore.events.fileModified(path, undefined, 'agent');
+                        break;
+                    case 'deleted':
+                        eventStore.events.fileDeleted(path, false, 'agent');
+                        break;
                 }
                 
-                // Notify PDF store for .pdf files
-                if (path.endsWith('.pdf')) {
-                    pdfStore.handleAgentFileOperation(tool, path);
-                }
+                console.log(`AgentStore: Emitted ${changeType} event for ${path}`);
                 
             } catch (error) {
-                console.error('AgentStore: Error integrating tool operation:', error);
+                console.error('AgentStore: Error emitting tool operation to EventStore:', error);
             }
         },
 
-        // Enhanced file operation tracking with store integration
+        // Enhanced file operation tracking with EventStore integration
         async handleEnhancedFileOperation(operation: {
             tool: string;
             path: string;
@@ -630,35 +644,8 @@ function createAgentStore() {
             console.log(`AgentStore: Enhanced file operation - ${tool} on ${path}`);
             
             try {
-                switch (tool) {
-                    case 'read_file':
-                        // Ensure file is loaded in workspace
-                        await workspaceStore.loadFile(path, true);
-                        break;
-                        
-                    case 'write_file':
-                    case 'create_file':
-                        // Extract content and update workspace
-                        if (args?.content) {
-                            await workspaceStore.handleAgentFileOperation(tool, path, args.content);
-                        }
-                        break;
-                        
-                    case 'update_file':
-                        // For updates, we need to reload the file to get the latest content
-                        setTimeout(async () => {
-                            try {
-                                await workspaceStore.loadFile(path, true);
-                            } catch (error) {
-                                console.warn('Failed to reload updated file:', error);
-                            }
-                        }, 100);
-                        break;
-                        
-                    case 'delete_file':
-                        await workspaceStore.handleAgentFileOperation(tool, path);
-                        break;
-                }
+                // Use the standard tool operation handler which emits to EventStore
+                store.handleAgentToolOperation(tool, path, result || args);
                 
                 // Update operation count
                 update(state => ({

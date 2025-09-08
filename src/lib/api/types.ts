@@ -16,6 +16,7 @@ export interface ChatMessage {
 	content: string;
 	timestamp: Date;
 	model?: string;
+	metadata?: { type?: string; [key: string]: any };
 }
 
 export interface ChatRequest {

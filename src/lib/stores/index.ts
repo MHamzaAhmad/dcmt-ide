@@ -16,7 +16,6 @@ export { agentStore } from './agent';
 export { orchestrator, initializationOrchestrator } from './orchestrator';
 
 // Legacy stores (for gradual migration)
-export { fileTree, openFiles } from './files';
 // export { editorStore } from './editor';
 export { chatStore } from './chat';
 // export { themeStore } from './theme';

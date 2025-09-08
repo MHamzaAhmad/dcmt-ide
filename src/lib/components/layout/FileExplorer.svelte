@@ -4,8 +4,8 @@
 	import { File, Folder, FolderOpen, FileText, Loader2, AlertCircle, FilePlus, FolderPlus, Edit, Trash2 } from '@lucide/svelte';
 	import { Button } from '$lib/components/ui/button';
 	import * as ContextMenu from "$lib/components/ui/context-menu/index.js";
-	import { openFiles } from '$lib/stores/files.js';
 	import { editorState } from '$lib/stores/editor.js';
+	import { workspaceStore } from '$lib/stores/workspace';
 	import { useDirectoryTree, useCreateFile, useDeleteFile, useRenameFile } from '$lib/api/hooks';
 	import { useFileWatcher } from '$lib/api/hooks/useFileWatcher';
 	import { fileSystemApi } from '$lib/api/adapters';
@@ -199,34 +199,14 @@
 			// Prevent multiple clicks while loading
 			if (isLoadingFile) return;
 			
-			// Check if file is already open
-			const existingFile = $openFiles.find(f => f.id === file.path);
-			if (existingFile) {
-				// Just switch to the already opened file
-				editorState.setActiveFile(file.path);
-				return;
-			}
-			
 			// Set loading state
 			isLoadingFile = true;
 			
 			try {
-				// Load file content directly using the API
-				const fileContent = await fileSystemApi.readFileContent(file.path);
+				// Use workspaceStore to open the file
+				await workspaceStore.openFile(file.path);
 				
-				// Open file with the loaded content
-				openFiles.openFile({
-					id: file.path, // Use path as ID for consistency
-					name: file.name,
-					path: file.path,
-					content: fileContent.content
-				});
-				
-				// Mark as saved since we just loaded from disk
-				openFiles.markFileSaved(file.path);
-				
-				// Set as active file
-				editorState.setActiveFile(file.path);
+				console.log('File opened via workspaceStore:', file.path);
 			} catch (error) {
 				console.error('Failed to load file:', error);
 				// Could show a toast notification here

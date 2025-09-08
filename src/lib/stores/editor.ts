@@ -29,7 +29,7 @@ function createEditorStore() {
 		if (latestFileEvent?.subtype === 'file_opened' && latestFileEvent.payload.filePath) {
 			update(state => ({
 				...state,
-				activeFileId: latestFileEvent.payload.filePath
+				activeFileId: latestFileEvent.payload.filePath || null
 			}));
 		} else if (latestFileEvent?.subtype === 'file_closed') {
 			update(state => ({

@@ -90,17 +90,7 @@ export class DesktopFileWatcher {
 			}
 		});
 
-		// Emit global browser events for components to listen (legacy compatibility)
-		if (typeof window !== 'undefined') {
-			window.dispatchEvent(new CustomEvent(`file-${type}`, { 
-				detail: event 
-			}));
-			
-			// Also emit generic file-event
-			window.dispatchEvent(new CustomEvent('file-event', { 
-				detail: { type, ...event } 
-			}));
-		}
+		// Note: Browser events removed - all events now go through EventStore for consistency
 	}
 
 	/**

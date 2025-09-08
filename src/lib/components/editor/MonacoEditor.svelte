@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { onMount, onDestroy } from 'svelte';
-	import { openFiles } from '$lib/stores/files.js';
+	import { workspaceStore } from '$lib/stores/workspace';
 	import { editorState } from '$lib/stores/editor.js';
 	import { theme } from '$lib/stores/theme.js';
 	import { useWriteFileContent, useAutoCompileLatex } from '$lib/api/hooks';
@@ -13,9 +13,13 @@
 	let editor: Monaco.editor.IStandaloneCodeEditor;
 	let monacoInstance: typeof Monaco;
 	let currentTheme = $state('light');
-	let activeFileId = $state<string | null>(null);
+	let activeFilePath = $state<string | null>(null);
 	let currentFiles = $state<any[]>([]);
 	let isInternalUpdate = false;
+	
+	// Get workspace state reactively
+	const workspaceState = $derived($workspaceStore);
+	const openFileContents = $derived(workspaceState.openFiles);
 	
 	// File save mutation
 	const writeFileMutation = useWriteFileContent();
@@ -83,7 +87,7 @@
 			if (result.success) {
 				console.log('LaTeX compilation successful:', result.output_file);
 				// Emit compilation completed event to EventStore
-				eventStore.events.compilationCompleted(filePath, result.output_file);
+				eventStore.events.compilationCompleted(filePath, result.output_file || '');
 			} else {
 				console.error('LaTeX compilation failed:', result.errors);
 				// Emit compilation failed event to EventStore
@@ -95,43 +99,36 @@
 	}, 1500); // Slightly longer delay for compilation
 
 	// Create debounced save function
-	const debouncedSave = debounce(async (fileId: string, content: string) => {
-		const file = currentFiles.find(f => f.id === fileId);
-		if (!file || !file.path || !file.isDirty) return;
-		
-		// Set saving status
-		openFiles.setSaveStatus(fileId, 'saving');
+	const debouncedSave = debounce(async (filePath: string, content: string) => {
+		if (!filePath) return;
 		
 		try {
-			await $writeFileMutation.mutateAsync({
-				path: file.path,
-				content: content
-			});
+			// Update content in workspace store first
+			workspaceStore.updateFileContent(filePath, content);
 			
-			// Mark as saved
-			openFiles.markFileSaved(fileId);
+			// Save the file through workspace store
+			await workspaceStore.saveFile(filePath);
 			
 			// Trigger LaTeX compilation after successful save
-			if (isLatexFile(file.path)) {
-				debouncedCompileLatex(file.path);
+			if (isLatexFile(filePath)) {
+				debouncedCompileLatex(filePath);
 			}
 		} catch (error) {
 			console.error('Failed to save file:', error);
-			openFiles.setSaveStatus(fileId, 'error');
 		}
 	}, 800);
 	
 	$effect(() => {
-		const newActiveFileId = $editorState.activeFileId;
-		const newCurrentFiles = $openFiles;
+		const newActiveFilePath = workspaceState.activeFile;
+		const newOpenFiles = openFileContents;
 		
-		// Only update if activeFileId actually changed to prevent loops
-		if (newActiveFileId !== activeFileId) {
-			activeFileId = newActiveFileId;
-			currentFiles = newCurrentFiles;
+		// Only update if activeFilePath actually changed to prevent loops
+		if (newActiveFilePath !== activeFilePath) {
+			activeFilePath = newActiveFilePath;
+			currentFiles = newOpenFiles;
 			
-			if (editor && activeFileId) {
-				const activeFile = currentFiles.find(f => f.id === activeFileId);
+			if (editor && activeFilePath) {
+				const activeFile = workspaceState.files.get(activeFilePath);
 				if (activeFile) {
 					isInternalUpdate = true;
 					editor.setValue(activeFile.content || '');
@@ -148,7 +145,7 @@
 			}
 		} else {
 			// Just update the files reference without changing editor content
-			currentFiles = newCurrentFiles;
+			currentFiles = newOpenFiles;
 		}
 	});
 
@@ -244,27 +241,27 @@
 
 			// Handle content changes
 			editor.onDidChangeModelContent(() => {
-				if (activeFileId && !isInternalUpdate) {
+				if (activeFilePath && !isInternalUpdate) {
 					const content = editor.getValue();
-					openFiles.updateFileContent(activeFileId, content);
+					workspaceStore.updateFileContent(activeFilePath, content);
 					
 					// Trigger debounced save
-					debouncedSave(activeFileId, content);
+					debouncedSave(activeFilePath, content);
 				}
 			});
 			
 			// Handle manual save (Cmd/Ctrl+S)
 			editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, () => {
-				if (activeFileId) {
+				if (activeFilePath) {
 					debouncedSave.flush();
 				}
 			});
 
 			// Set initial content if there's an active file
-			if (activeFileId) {
-				const activeFile = currentFiles.find(f => f.id === activeFileId);
+			if (activeFilePath) {
+				const activeFile = workspaceState.files.get(activeFilePath);
 				if (activeFile) {
-					editor.setValue(activeFile.content);
+					editor.setValue(activeFile.content || '');
 				}
 			}
 		}
@@ -281,17 +278,20 @@
 </script>
 
 <div class="h-full flex flex-col">
-	{#if activeFileId && currentFiles.length > 0}
-		{@const activeFile = currentFiles.find(f => f.id === activeFileId)}
+	{#if activeFilePath}
+		{@const activeFile = workspaceState.files.get(activeFilePath)}
 		<div class="h-8 border-b bg-muted/50 flex items-center px-3 text-sm">
 			<span class="text-muted-foreground">{activeFile?.path || 'Untitled'}</span>
 			{#if activeFile?.isDirty}
 				<span class="ml-1 text-orange-500">•</span>
 			{/if}
-			{#if activeFile?.saveStatus === 'saving'}
-				<span class="ml-2 text-xs text-muted-foreground">Saving...</span>
-			{:else if activeFile?.saveStatus === 'error'}
-				<span class="ml-2 text-xs text-destructive">Save failed</span>
+			{#if workspaceState.pendingOperations.has(activeFilePath)}
+				{@const operation = workspaceState.pendingOperations.get(activeFilePath)}
+				{#if operation === 'writing'}
+					<span class="ml-2 text-xs text-muted-foreground">Saving...</span>
+				{:else if operation === 'reading'}
+					<span class="ml-2 text-xs text-muted-foreground">Loading...</span>
+				{/if}
 			{/if}
 			
 			{#if activeFile && isLatexFile(activeFile.path)}

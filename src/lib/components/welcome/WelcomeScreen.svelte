@@ -1,19 +1,18 @@
 <script lang="ts">
 	import { Button } from '$lib/components/ui/button';
 	import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '$lib/components/ui/card';
-	import { useSelectProject, useCurrentProject } from '$lib/api/hooks';
+	import { projectStore } from '$lib/stores';
 	import { FolderOpen, Settings, Code2 } from '@lucide/svelte';
 
-	// Reactive queries
-	const selectProjectMutation = useSelectProject();
-	const currentProjectQuery = useCurrentProject();
+	// Get reactive project state
+	const projectState = $derived($projectStore);
 
 	// Handle project selection
 	async function handleSelectProject() {
 		console.log('handleSelectProject called');
 		try {
-			console.log('Calling selectProjectMutation.mutateAsync()');
-			const result = await $selectProjectMutation.mutateAsync();
+			console.log('Calling projectStore.selectProject()');
+			const result = await projectStore.selectProject();
 			console.log('Project selection result:', result);
 		} catch (error) {
 			console.error('Failed to select project:', error);
@@ -21,9 +20,9 @@
 	}
 
 	// Show loading state
-	$: isSelecting = $selectProjectMutation.isPending;
-	$: hasError = $selectProjectMutation.isError;
-	$: errorMessage = $selectProjectMutation.error?.message;
+	let isSelecting = $derived(projectState.isLoading);
+	let hasError = $derived(!!projectState.error);
+	let errorMessage = $derived(projectState.error);
 </script>
 
 <div class="min-h-screen flex items-center justify-center bg-gradient-to-br from-background to-muted/50 p-4">

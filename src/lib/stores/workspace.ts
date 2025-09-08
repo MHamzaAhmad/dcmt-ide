@@ -226,6 +226,13 @@ function createWorkspaceStore() {
 
         // File content management
         async loadFile(path: string, force: boolean = false): Promise<FileContent> {
+            // Skip binary files - workspace store only handles text files
+            const BINARY_FILE_PATTERN = /\.(pdf|png|jpg|jpeg|gif|bmp|ico|exe|bin|zip|tar|gz|7z)$/i;
+            if (BINARY_FILE_PATTERN.test(path)) {
+                console.log(`WorkspaceStore: Skipping binary file ${path} - not a text file`);
+                throw new Error(`Cannot load binary file as text: ${path}`);
+            }
+            
             const currentState = get({ subscribe });
             const existingFile = currentState.files.get(path);
 

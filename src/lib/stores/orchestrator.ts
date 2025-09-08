@@ -10,6 +10,8 @@ import { latexStore } from './latex';
 import { pdfStore } from './pdf';
 import { agentStore } from './agent';
 import { eventStore } from './events';
+import { projectStore } from './project';
+import { isTauri } from '$lib/utils/platform';
 import type { QueryClient } from '@tanstack/svelte-query';
 
 export interface InitializationStep {
@@ -42,6 +44,11 @@ export interface InitializationOptions {
 
 function createInitializationOrchestrator() {
     const initialSteps: InitializationStep[] = [
+        {
+            name: 'project',
+            description: 'Check project selection',
+            status: 'pending'
+        },
         {
             name: 'eventStore',
             description: 'Initialize unified event system',
@@ -121,7 +128,39 @@ function createInitializationOrchestrator() {
             }));
 
             try {
-                // Step 0: Initialize EventStore
+                // Step 0: Check project selection (desktop only)
+                if (isTauri()) {
+                    await orchestrator.executeStep('project', async () => {
+                        console.log('InitializationOrchestrator: Checking project selection...');
+                        await projectStore.initialize();
+                        
+                        // Check if project is selected
+                        const projectState = projectStore.getCurrentState();
+                        if (!projectState.currentProject) {
+                            console.log('InitializationOrchestrator: No project selected, stopping initialization');
+                            // Don't throw error, just stop here
+                            // The UI will show the welcome screen
+                            return;
+                        }
+                        
+                        console.log('InitializationOrchestrator: Project found:', projectState.currentProject.path);
+                    });
+                    
+                    // If no project, stop initialization here
+                    const projectState = projectStore.getCurrentState();
+                    if (isTauri() && !projectState.currentProject) {
+                        update(state => ({
+                            ...state,
+                            isInitializing: false,
+                            isReady: false, // Not ready without a project
+                            totalDuration: Date.now() - startTime
+                        }));
+                        console.log('InitializationOrchestrator: Stopped - awaiting project selection');
+                        return;
+                    }
+                }
+
+                // Step 1: Initialize EventStore
                 await orchestrator.executeStep('eventStore', async () => {
                     console.log('InitializationOrchestrator: Initializing EventStore...');
                     

@@ -9,6 +9,7 @@ import { latexStore } from './latex';
 import { workspaceStore } from './workspace';
 import { eventStore } from './events';
 import { platformApi } from '$lib/api/adapters';
+import { isTauri } from '$lib/utils/platform';
 
 export interface PDFDocument {
     path: string;
@@ -118,6 +119,7 @@ function createPdfStore() {
     let latexUnsubscribe: (() => void) | null = null;
     let eventUnsubscribe: (() => void) | null = null;
     let pdfjsLib: any = null;
+    let currentLoadingPath: string | null = null;
 
     const store = {
         subscribe,
@@ -137,12 +139,7 @@ function createPdfStore() {
                 // Load PDF.js library
                 await store.loadPDFJS();
                 
-                // Subscribe to LaTeX compilation results
-                latexUnsubscribe = latexStore.subscribe($latex => {
-                    store.handleLatexStateChange($latex);
-                });
-
-                // Subscribe to EventStore compilation events for better coordination
+                // Subscribe to EventStore compilation events (unified approach)
                 store.subscribeToCompilationEvents();
 
                 // Keep legacy event listeners as fallback
@@ -209,19 +206,7 @@ function createPdfStore() {
             }
         },
 
-        // LaTeX integration
-        handleLatexStateChange(latexState: any): void {
-            const currentState = get({ subscribe });
-            
-            // Auto-refresh when compilation succeeds
-            if (latexState.compilationStatus === 'success' && 
-                latexState.currentPdfPath && 
-                currentState.autoRefresh) {
-                
-                console.log(`PDFStore: LaTeX compilation succeeded, loading PDF: ${latexState.currentPdfPath}`);
-                store.loadPdf(latexState.currentPdfPath);
-            }
-        },
+        // Legacy event handlers (kept for compatibility)
 
         handleLatexCompiled(event: Event): void {
             const customEvent = event as CustomEvent;
@@ -233,8 +218,7 @@ function createPdfStore() {
             }
         },
 
-        handleLatexError(event: Event): void {
-            const customEvent = event as CustomEvent;
+        handleLatexError(): void {
             console.log('PDFStore: LaTeX compilation failed, keeping current PDF');
             
             // Don't clear the current PDF on compilation errors
@@ -248,6 +232,12 @@ function createPdfStore() {
                 return;
             }
 
+            // Prevent concurrent loading of the same PDF
+            if (currentLoadingPath === pdfPath) {
+                console.log(`PDFStore: Already loading ${pdfPath}, skipping duplicate request`);
+                return;
+            }
+
             const currentState = get({ subscribe });
             
             // Force reload for compilation events - PDF content may have changed
@@ -257,6 +247,9 @@ function createPdfStore() {
             }
 
             console.log(`PDFStore: Loading PDF: ${pdfPath}`);
+            
+            // Mark as currently loading
+            currentLoadingPath = pdfPath;
 
             update(state => ({
                 ...state,
@@ -270,14 +263,25 @@ function createPdfStore() {
                 // Get PDF URL from platform API with cache busting
                 const pdfUrl = await platformApi.readFileRaw(pdfPath);
                 
-                // Add cache busting parameter to force fresh load
-                const cacheBustedUrl = typeof pdfUrl === 'string' && pdfUrl.includes('?') 
-                    ? `${pdfUrl}&_t=${Date.now()}` 
-                    : typeof pdfUrl === 'string' 
-                        ? `${pdfUrl}?_t=${Date.now()}` 
-                        : pdfUrl;
+                // Add cache busting parameter to force fresh load (except for data URLs)
+                const cacheBustedUrl = typeof pdfUrl === 'string' && !pdfUrl.startsWith('data:')
+                    ? (pdfUrl.includes('?') 
+                        ? `${pdfUrl}&_t=${Date.now()}` 
+                        : `${pdfUrl}?_t=${Date.now()}`)
+                    : pdfUrl; // Don't modify data URLs
                 
-                console.log(`PDFStore: Loading PDF with cache busting: ${cacheBustedUrl}`);
+                console.log(`PDFStore: Loading PDF with URL: ${cacheBustedUrl.substring(0, 50)}${cacheBustedUrl.length > 50 ? '...' : ''}`);
+                
+                // For desktop URLs, handle different types appropriately
+                if (isTauri()) {
+                    if (cacheBustedUrl.startsWith('data:')) {
+                        console.log('PDFStore: Desktop data URL detected, proceeding directly');
+                        // Data URLs are immediately available, no delay needed
+                    } else if (cacheBustedUrl.startsWith('blob:')) {
+                        console.log('PDFStore: Desktop blob URL detected, adding readiness delay...');
+                        await new Promise(resolve => setTimeout(resolve, 100));
+                    }
+                }
                 
                 // Load PDF document
                 const loadingTask = pdfjsLib.getDocument(cacheBustedUrl);
@@ -324,6 +328,9 @@ function createPdfStore() {
 
                 console.log(`PDFStore: PDF loaded successfully - ${pdfDoc.numPages} pages`);
                 
+                // Clear loading state
+                currentLoadingPath = null;
+                
                 // Render first page if canvas is ready
                 const updatedState = get({ subscribe });
                 console.log(`PDFStore: Checking canvas availability - canvas: ${!!updatedState.canvas}, context: ${!!updatedState.context}`);
@@ -336,6 +343,9 @@ function createPdfStore() {
 
             } catch (error) {
                 console.error(`PDFStore: Failed to load PDF ${pdfPath}:`, error);
+                
+                // Clear loading state on error
+                currentLoadingPath = null;
                 
                 const errorMessage = store.getErrorMessage(error);
                 
@@ -527,6 +537,11 @@ function createPdfStore() {
                     return 'Network error loading PDF. Please check your connection.';
                 } else if (error.message.includes('InvalidPDFException')) {
                     return 'Invalid PDF file. The compilation may have produced a corrupted file.';
+                } else if (error.message.includes('WebKitBlobResource error') || 
+                          (isTauri() && error.message.includes('Unexpected server response (0)'))) {
+                    return 'Desktop file access error. The PDF file may be temporarily unavailable.';
+                } else if (error.message.includes('ResponseException') && isTauri()) {
+                    return 'Desktop PDF loading failed. Retrying automatically...';
                 } else {
                     return `Failed to load PDF: ${error.message}`;
                 }
@@ -571,8 +586,16 @@ function createPdfStore() {
                     if (pdfPath) {
                         const currentState = get({ subscribe });
                         if (currentState.autoRefresh) {
+                            // Check if we need to reload - prevent unnecessary reloads that cause compilation loops
+                            if (currentState.currentPdf?.path === pdfPath && 
+                                currentState.currentPdf.loadedAt && 
+                                (Date.now() - currentState.currentPdf.loadedAt < 2000)) {
+                                console.log(`PDFStore: PDF ${pdfPath} was recently loaded, skipping force reload to prevent loop`);
+                                return;
+                            }
+                            
                             console.log(`PDFStore: Compilation completed, force loading PDF: ${pdfPath}`);
-                            store.loadPdf(pdfPath); // Will now force reload due to cache busting
+                            store.loadPdf(pdfPath);
                         }
                     }
                 }

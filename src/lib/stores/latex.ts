@@ -671,7 +671,13 @@ function createLatexStore() {
                         await workspaceStore.loadFile(filePath, true);
                         console.log(`LaTeXStore: Reloaded ${filePath}`);
                     } catch (error) {
-                        console.warn(`LaTeXStore: Failed to reload ${filePath}:`, error);
+                        // Handle binary files gracefully - they shouldn't be loaded as text
+                        const errorMessage = error instanceof Error ? error.message : String(error);
+                        if (errorMessage.includes('Cannot load binary file')) {
+                            console.log(`LaTeXStore: Skipping binary file ${filePath} - not a text file`);
+                        } else {
+                            console.warn(`LaTeXStore: Failed to reload ${filePath}:`, error);
+                        }
                     }
                 });
                 

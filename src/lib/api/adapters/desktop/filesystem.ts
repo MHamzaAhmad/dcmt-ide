@@ -83,23 +83,48 @@ export class DesktopFileSystemAdapter implements FileSystemOperations {
 				modified: number;
 			}
 
+			console.log(`DesktopFileSystem: Reading raw file: ${path}`);
 			const result = await invoke<FileContentRaw>('read_file_raw', { path });
+			console.log(`DesktopFileSystem: Got file data - size: ${result.size}, content length: ${result.content.length}`);
 			
-			// Convert base64 to blob URL
-			const binary = atob(result.content);
+			// Validate result
+			if (!result.content || result.content.length === 0) {
+				throw new Error(`Empty file content received for ${path}`);
+			}
+
+			// Convert base64 to blob URL with better error handling
+			let binary: string;
+			try {
+				binary = atob(result.content);
+			} catch (decodeError) {
+				console.error(`DesktopFileSystem: Base64 decode failed for ${path}:`, decodeError);
+				throw new Error(`Invalid base64 content for ${path}: ${decodeError}`);
+			}
+
 			const bytes = new Uint8Array(binary.length);
 			for (let i = 0; i < binary.length; i++) {
 				bytes[i] = binary.charCodeAt(i);
 			}
 			
-			// Create blob with appropriate MIME type
+			// For PDF files in Tauri, use data URL instead of blob URL 
+			// because WebKit has restrictions on blob URL access
 			const mimeType = this.getMimeType(path);
-			const blob = new Blob([bytes], { type: mimeType });
-			const url = URL.createObjectURL(blob);
+			console.log(`DesktopFileSystem: Creating data URL - size: ${bytes.length}, mime: ${mimeType}`);
 			
-			return url;
+			if (path.endsWith('.pdf')) {
+				// Use data URL for PDFs - more reliable in Tauri WebKit
+				const dataUrl = `data:${mimeType};base64,${result.content}`;
+				console.log(`DesktopFileSystem: Created data URL for PDF (${dataUrl.length} chars)`);
+				return dataUrl;
+			} else {
+				// Use blob URL for other files
+				const blob = new Blob([bytes], { type: mimeType });
+				const url = URL.createObjectURL(blob);
+				console.log(`DesktopFileSystem: Created blob URL: ${url}`);
+				return url;
+			}
 		} catch (error) {
-			console.error('Failed to read raw file content:', error);
+			console.error(`DesktopFileSystem: Failed to read raw file content for ${path}:`, error);
 			throw new Error(`Failed to read raw file content: ${error}`);
 		}
 	}

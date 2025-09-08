@@ -10,7 +10,7 @@
 	import { ResizablePaneGroup, ResizablePane, ResizableHandle } from '$lib/components/ui/resizable';
 	import { editorState } from '$lib/stores/editor.js';
 	import { fileSystemApi } from '$lib/api/adapters';
-	import { workspaceStore, orchestrator } from '$lib/stores';
+	import { workspaceStore, orchestrator, projectStore } from '$lib/stores';
 
 	let isFileExplorerOpen = $state(true);
 	let isVersionControlOpen = $state(false);
@@ -27,6 +27,7 @@
 	// Get reactive store states
 	const workspaceState = $derived($workspaceStore);
 	const orchestratorState = $derived($orchestrator);
+	const projectState = $derived($projectStore);
 
 	// Auto-load main LaTeX file when new reactive stores are ready
 	$effect(() => {
@@ -69,8 +70,8 @@
 	let isLoading = $derived(orchestratorState.isInitializing);
 	let supportsProjects = $derived(isTauri());
 	
-	// For desktop, we still need project selection, but simplified
-	let needsSetup = $derived(false); // TODO: Add proper project selection for desktop later
+	// Check if project selection is needed (desktop only)
+	let needsSetup = $derived(supportsProjects && projectState.isReady && !projectState.currentProject);
 
 </script>
 

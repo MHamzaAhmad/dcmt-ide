@@ -7,6 +7,7 @@
 export { eventStore } from './events';
 
 // Core stores
+export { projectStore } from './project';
 export { workspaceStore } from './workspace';
 export { latexStore } from './latex';
 export { pdfStore } from './pdf';
@@ -26,6 +27,7 @@ export type {
     SystemEvent, FileSystemEvent, AgentEvent, CompilationEvent, 
     ConnectionEvent, UIEvent 
 } from './events';
+export type { ProjectState } from './project';
 export type { FileContent, FileTreeNode, WorkspaceState } from './workspace';
 export type { LaTeXState, LaTeXCompilationResult } from './latex';
 export type { PDFState, PDFDocument, PDFViewerState } from './pdf';

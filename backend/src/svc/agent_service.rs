@@ -67,6 +67,7 @@ impl AgentService {
                     agent_repo.get_event_broadcaster()
                         .broadcast(&session_id_clone, crate::model::agent::AgentEvent::Error {
                             message: format!("Job failed: {}", e),
+                            metadata: crate::model::agent::EventMetadata::new(job_id_clone.clone()),
                         })
                         .await;
                 }

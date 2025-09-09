@@ -20,6 +20,7 @@ export type FileEventCallback = (event: FileEvent) => void;
 export class WebFileWatcher {
 	private eventCallbacks: Map<string, FileEventCallback[]> = new Map();
 	private websocket: WebSocketAdapter;
+	private isPaused: boolean = false;
 
 	constructor() {
 		this.websocket = new WebSocketAdapter();
@@ -40,6 +41,12 @@ export class WebFileWatcher {
 	}
 
 	private handleFileEvent(type: string, event: FileEvent) {
+		// If paused, ignore the event
+		if (this.isPaused) {
+			console.log(`[WebFileWatcher] Ignoring ${type} event while paused:`, event.path);
+			return;
+		}
+
 		console.log(`File ${type}:`, event);
 		
 		// Emit to EventStore first
@@ -120,6 +127,29 @@ export class WebFileWatcher {
 	 */
 	isActive(): boolean {
 		return this.websocket.isConnected();
+	}
+
+	/**
+	 * Pause file event processing (events will be ignored)
+	 */
+	pause(): void {
+		this.isPaused = true;
+		console.log('[WebFileWatcher] File event processing paused');
+	}
+
+	/**
+	 * Resume file event processing
+	 */
+	resume(): void {
+		this.isPaused = false;
+		console.log('[WebFileWatcher] File event processing resumed');
+	}
+
+	/**
+	 * Check if file watcher is paused
+	 */
+	isPausedState(): boolean {
+		return this.isPaused;
 	}
 
 	/**

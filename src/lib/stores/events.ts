@@ -99,6 +99,10 @@ export interface EventStoreState {
   // Configuration
   enableDebugLogging: boolean;
   maxEventHistory: number;
+  
+  // Pause/Resume functionality for agent runs
+  isPaused: boolean;
+  queuedEvents: SystemEvent[];
 }
 
 // ============================================================================
@@ -115,7 +119,9 @@ function createEventStore() {
     queryInvalidationQueue: [],
     eventCounts: {},
     enableDebugLogging: false,
-    maxEventHistory: 1000
+    maxEventHistory: 1000,
+    isPaused: false,
+    queuedEvents: []
   };
 
   const { subscribe, set, update } = writable<EventStoreState>(initialState);
@@ -142,6 +148,19 @@ function createEventStore() {
     } as SystemEvent;
 
     update(state => {
+      // If paused, queue the event instead of processing it
+      if (state.isPaused) {
+        if (state.enableDebugLogging) {
+          console.log(`[EventStore] Queuing event while paused: ${event.type}:${event.subtype}`, event.payload);
+        }
+        
+        return {
+          ...state,
+          queuedEvents: [...state.queuedEvents, eventWithTimestamp].slice(-state.maxEventHistory)
+        };
+      }
+
+      // Normal processing when not paused
       const newEvents = [...state.allEvents, eventWithTimestamp].slice(-state.maxEventHistory);
       const eventKey = `${event.type}:${event.subtype}`;
       const newEventCounts = {
@@ -160,9 +179,12 @@ function createEventStore() {
       };
     });
 
-    // Handle cross-cutting concerns
-    handleQueryInvalidation(eventWithTimestamp);
-    handleNotifications(eventWithTimestamp);
+    // Only handle cross-cutting concerns if not paused
+    const currentState = get({ subscribe });
+    if (!currentState.isPaused) {
+      handleQueryInvalidation(eventWithTimestamp);
+      handleNotifications(eventWithTimestamp);
+    }
   }
 
   // ============================================================================
@@ -373,6 +395,60 @@ function createEventStore() {
     }));
   }
 
+  function pauseProcessing() {
+    update(state => ({
+      ...state,
+      isPaused: true
+    }));
+    console.log('[EventStore] Event processing paused - events will be queued');
+  }
+
+  function resumeProcessing() {
+    update(state => {
+      const queuedEvents = state.queuedEvents;
+      
+      if (queuedEvents.length > 0) {
+        console.log(`[EventStore] Resuming processing - processing ${queuedEvents.length} queued events`);
+        
+        // Process all queued events
+        const newEvents = [...state.allEvents, ...queuedEvents].slice(-state.maxEventHistory);
+        
+        // Update event counts
+        const newEventCounts = { ...state.eventCounts };
+        queuedEvents.forEach(event => {
+          const eventKey = `${event.type}:${event.subtype}`;
+          newEventCounts[eventKey] = (newEventCounts[eventKey] || 0) + 1;
+        });
+        
+        // Process queued events for cross-cutting concerns
+        setTimeout(() => {
+          queuedEvents.forEach(event => {
+            handleQueryInvalidation(event);
+            handleNotifications(event);
+          });
+          
+          // Emit a processing complete event to trigger subscriptions
+          console.log('[EventStore] Queued events processing complete, triggering subscriptions');
+        }, 0);
+        
+        return {
+          ...state,
+          isPaused: false,
+          queuedEvents: [],
+          allEvents: newEvents,
+          eventCounts: newEventCounts
+        };
+      } else {
+        console.log('[EventStore] Resuming processing - no queued events');
+        return {
+          ...state,
+          isPaused: false,
+          queuedEvents: []
+        };
+      }
+    });
+  }
+
   function updateConnectionStatus(
     type: 'websocket' | 'tauri',
     status: 'connected' | 'disconnected' | 'connecting' | 'error'
@@ -570,6 +646,10 @@ function createEventStore() {
     setQueryClient,
     setDebugLogging,
     updateConnectionStatus,
+    
+    // Pause/Resume functionality
+    pauseProcessing,
+    resumeProcessing,
     
     // Utilities
     clearEventHistory,

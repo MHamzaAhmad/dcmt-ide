@@ -9,7 +9,7 @@ use uuid::Uuid;
 use crate::models::agent::{
     AgentConfig, AgentEvent, AgentResult, AgentError,
     ChatMessage, ChatRequest, ChatResponse, LiteLLMRequest, LiteLLMResponse,
-    ResponseFormat, ToolCall, ToolFunction,
+    ResponseFormat, ToolCall, ToolFunction, EventMetadata,
 };
 
 use super::agent_session::SessionManager;
@@ -27,6 +27,61 @@ pub struct AgentService {
 }
 
 impl AgentService {
+    /// Creates metadata for a new operation
+    fn create_metadata(operation_id: &str) -> EventMetadata {
+        EventMetadata::new(operation_id.to_string())
+    }
+
+    /// Creates metadata for file operations with path extraction
+    fn create_file_metadata(operation_id: &str, tool: &str, result: &str) -> EventMetadata {
+        let is_file_op = Self::is_file_modifying_tool(tool);
+        let paths = if is_file_op {
+            Self::extract_paths_from_result(result)
+        } else {
+            Vec::new()
+        };
+        
+        EventMetadata::new(operation_id.to_string())
+            .with_file_operation(is_file_op)
+            .with_file_paths(paths)
+    }
+
+    /// Determines if a tool modifies files (excludes read_file)
+    fn is_file_modifying_tool(tool: &str) -> bool {
+        matches!(
+            tool,
+            "write_file" | "update_file" | "create_file" | "delete_file" | "create_directory"
+        )
+    }
+
+    /// Extracts file paths from tool result
+    fn extract_paths_from_result(result: &str) -> Vec<String> {
+        // Try JSON parsing first
+        if let Ok(json_result) = serde_json::from_str::<serde_json::Value>(result) {
+            if let Some(path) = json_result.get("path").and_then(|p| p.as_str()) {
+                return vec![path.to_string()];
+            }
+        }
+
+        // Fallback to regex pattern matching
+        use regex::Regex;
+        let patterns = [
+            r#"Successfully (?:wrote|created|updated|deleted) (?:file |directory )?["']([^"']+)["']"#,
+            r#"["']([^"']*\.[a-zA-Z0-9]+)["']"#, // File with extension in quotes
+        ];
+
+        for pattern in &patterns {
+            if let Ok(re) = Regex::new(pattern) {
+                if let Some(captures) = re.captures(result) {
+                    if let Some(path) = captures.get(1) {
+                        return vec![path.as_str().to_string()];
+                    }
+                }
+            }
+        }
+
+        Vec::new()
+    }
     /// Creates a new agent service
     pub async fn new(
         event_broadcaster: Arc<EventBroadcaster>,
@@ -94,7 +149,8 @@ impl AgentService {
         self.event_broadcaster
             .broadcast(&request.session_id, AgentEvent::JobQueued { 
                 job_id: job_id.clone(), 
-                session_id: request.session_id.clone() 
+                session_id: request.session_id.clone(),
+                metadata: Self::create_metadata(&job_id),
             })
             .await;
         
@@ -129,7 +185,8 @@ impl AgentService {
                     // Emit completion event
                     event_broadcaster
                         .broadcast(&session_id, AgentEvent::JobComplete { 
-                            response 
+                            response,
+                            metadata: EventMetadata::new(job_id_clone.clone()),
                         })
                         .await;
                 }
@@ -141,6 +198,7 @@ impl AgentService {
                     event_broadcaster
                         .broadcast(&session_id, AgentEvent::Error {
                             message: format!("Job failed: {}", e),
+                            metadata: EventMetadata::new(job_id_clone.clone()),
                         })
                         .await;
                 }
@@ -243,7 +301,8 @@ impl AgentService {
             // Call LiteLLM
             event_broadcaster
                 .broadcast(session_id, AgentEvent::LLMCallStart { 
-                    model: model.clone() 
+                    model: model.clone(),
+                    metadata: EventMetadata::new(format!("llm-{}", iteration_count)),
                 })
                 .await;
             
@@ -274,7 +333,9 @@ impl AgentService {
                     ).await?;
                     
                     event_broadcaster
-                        .broadcast(session_id, AgentEvent::LLMCallComplete)
+                        .broadcast(session_id, AgentEvent::LLMCallComplete {
+                            metadata: EventMetadata::new(format!("llm-complete-{}", iteration_count)),
+                        })
                         .await;
                     return Ok(final_response);
                 }
@@ -363,7 +424,9 @@ impl AgentService {
             } else {
                 // No tool calls, return final response
                 event_broadcaster
-                    .broadcast(session_id, AgentEvent::LLMCallComplete)
+                    .broadcast(session_id, AgentEvent::LLMCallComplete {
+                        metadata: EventMetadata::new(format!("llm-complete-final")),
+                    })
                     .await;
                 return Ok(response);
             }
@@ -381,6 +444,7 @@ impl AgentService {
         event_broadcaster
             .broadcast(session_id, AgentEvent::ToolExecuting {
                 tool: tool_call.function.name.clone(),
+                metadata: EventMetadata::new(format!("tool-exec-{}", tool_call.id)),
             })
             .await;
         
@@ -398,6 +462,11 @@ impl AgentService {
                     .broadcast(session_id, AgentEvent::ToolCompleted {
                         tool: tool_call.function.name.clone(),
                         result: tool_result.clone(),
+                        metadata: Self::create_file_metadata(
+                            &format!("tool-{}", tool_call.id),
+                            &tool_call.function.name,
+                            &tool_result
+                        ),
                     })
                     .await;
             }
@@ -420,6 +489,7 @@ impl AgentService {
         event_broadcaster
             .broadcast(session_id, AgentEvent::ToolExecuting {
                 tool: tool_function.name.clone(),
+                metadata: EventMetadata::new(format!("sync-tool-exec")),
             })
             .await;
         
@@ -439,6 +509,11 @@ impl AgentService {
                     .broadcast(session_id, AgentEvent::ToolCompleted {
                         tool: tool_function.name.clone(),
                         result: tool_result.clone(),
+                        metadata: Self::create_file_metadata(
+                            &format!("tool-exec"),
+                            &tool_function.name,
+                            &tool_result
+                        ),
                     })
                     .await;
             }
@@ -508,6 +583,7 @@ impl AgentService {
             event_broadcaster
                 .broadcast(session_id, AgentEvent::LLMStreaming {
                     content: content.clone(),
+                    metadata: EventMetadata::new(format!("llm-stream")),
                 })
                 .await;
         }

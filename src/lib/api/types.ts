@@ -208,19 +208,28 @@ export interface AgentToolDefinition {
 	};
 }
 
-// Agent Event Types for real-time updates
+// Base metadata fields that are flattened into all agent events
+export interface AgentEventMetadata {
+	event_id: string;
+	operation_id: string;
+	timestamp: number;
+	is_file_operation: boolean;
+	file_paths: string[];
+}
+
+// Agent Event Types for real-time updates (with flattened metadata)
 export type AgentEvent = 
-	| { type: 'JobQueued'; job_id: string; session_id: string }
-	| { type: 'LLMCallStart'; model: string }
-	| { type: 'LLMStreaming'; content: string }
-	| { type: 'ToolCallRequested'; tool: string; args: any }
-	| { type: 'ToolExecuting'; tool: string }
-	| { type: 'ToolCompleted'; tool: string; result: string }
-	| { type: 'ParallelToolsStart'; count: number }
-	| { type: 'ParallelToolsComplete'; count: number }
-	| { type: 'LLMCallComplete' }
-	| { type: 'JobComplete'; response: string }
-	| { type: 'Error'; message: string };
+	| ({ type: 'JobQueued'; job_id: string; session_id: string } & AgentEventMetadata)
+	| ({ type: 'LLMCallStart'; model: string } & AgentEventMetadata)
+	| ({ type: 'LLMStreaming'; content: string } & AgentEventMetadata)
+	| ({ type: 'ToolCallRequested'; tool: string; args: any } & AgentEventMetadata)
+	| ({ type: 'ToolExecuting'; tool: string } & AgentEventMetadata)
+	| ({ type: 'ToolCompleted'; tool: string; result: string } & AgentEventMetadata)
+	| ({ type: 'ParallelToolsStart'; count: number } & AgentEventMetadata)
+	| ({ type: 'ParallelToolsComplete'; count: number } & AgentEventMetadata)
+	| ({ type: 'LLMCallComplete' } & AgentEventMetadata)
+	| ({ type: 'JobComplete'; response: string } & AgentEventMetadata)
+	| ({ type: 'Error'; message: string } & AgentEventMetadata);
 
 // Enhanced ChatMessage for agent support
 export interface AgentChatMessage extends ChatMessage {

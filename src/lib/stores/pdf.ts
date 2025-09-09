@@ -48,6 +48,20 @@ export interface PDFState {
     autoRefresh: boolean;
     lastRefreshTime: number;
     
+    // Operation-based cache invalidation
+    lastOperationId: string | null;
+    operationHistory: Array<{
+        id: string;
+        type: 'compilation' | 'agent' | 'manual' | 'file_watcher';
+        source: string;
+        timestamp: number;
+        pdfPath?: string;
+    }>;
+    maxOperationHistory: number;
+    
+    // Agent run awareness
+    isAgentRunning: boolean;
+    
     // Error handling
     error: string | null;
     retryCount: number;
@@ -75,6 +89,10 @@ function createPdfStore() {
         isRendering: false,
         autoRefresh: true,
         lastRefreshTime: 0,
+        lastOperationId: null,
+        operationHistory: [],
+        maxOperationHistory: 50,
+        isAgentRunning: false,
         error: null,
         retryCount: 0,
         maxRetries: 3,
@@ -151,7 +169,8 @@ function createPdfStore() {
                 // Check for existing PDFs
                 const latexState = latexStore.getCurrentState();
                 if (latexState.currentPdfPath) {
-                    await store.loadPdf(latexState.currentPdfPath);
+                    const initOperationId = store.createOperationId('manual', 'initialization');
+                    await store.loadPdf(latexState.currentPdfPath, initOperationId, 'manual', 'initialization');
                 } else {
                     // Check if workspace has a main LaTeX file with corresponding PDF
                     const workspaceState = workspaceStore.getCurrentState();
@@ -161,7 +180,8 @@ function createPdfStore() {
                         
                         try {
                             // Try to load the PDF if it exists
-                            await store.loadPdf(potentialPdfPath);
+                            const initOperationId = store.createOperationId('manual', 'initialization');
+                            await store.loadPdf(potentialPdfPath, initOperationId, 'manual', 'initialization');
                         } catch (error) {
                             console.log(`PDFStore: No existing PDF found at ${potentialPdfPath}`);
                         }
@@ -225,16 +245,75 @@ function createPdfStore() {
             // Users can still view the last successful version
         },
 
+        // Operation tracking helpers
+        createOperationId(type: 'compilation' | 'agent' | 'manual' | 'file_watcher', source: string, metadata?: any): string {
+            return `${type}-${source}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+        },
+
+        addOperation(type: 'compilation' | 'agent' | 'manual' | 'file_watcher', source: string, operationId: string, pdfPath?: string): void {
+            update(state => {
+                const newOperation = {
+                    id: operationId,
+                    type,
+                    source,
+                    timestamp: Date.now(),
+                    pdfPath
+                };
+                
+                const newHistory = [newOperation, ...state.operationHistory]
+                    .slice(0, state.maxOperationHistory);
+                
+                return {
+                    ...state,
+                    operationHistory: newHistory,
+                    lastOperationId: operationId
+                };
+            });
+            console.log(`PDFStore: Added operation ${operationId} (${type}/${source}) for PDF: ${pdfPath || 'unknown'}`);
+        },
+
+        shouldSkipOperation(operationId: string, pdfPath: string): boolean {
+            const currentState = get({ subscribe });
+            
+            // Check if this exact operation was already processed
+            const existingOperation = currentState.operationHistory.find(op => op.id === operationId);
+            if (existingOperation) {
+                console.log(`PDFStore: Skipping duplicate operation ${operationId} for PDF: ${pdfPath}`);
+                return true;
+            }
+            
+            // Check for recent operations on the same PDF within a short time window (500ms)
+            const recentOperations = currentState.operationHistory.filter(op => 
+                op.pdfPath === pdfPath && 
+                (Date.now() - op.timestamp) < 500
+            );
+            
+            if (recentOperations.length > 0) {
+                console.log(`PDFStore: Skipping operation ${operationId} - recent operation found for PDF: ${pdfPath}`);
+                return true;
+            }
+            
+            return false;
+        },
+
         // PDF loading
-        async loadPdf(pdfPath: string): Promise<void> {
+        async loadPdf(pdfPath: string, operationId?: string, operationType: 'compilation' | 'agent' | 'manual' | 'file_watcher' = 'manual', operationSource: string = 'unknown'): Promise<void> {
             if (!pdfjsLib) {
                 console.error('PDFStore: PDF.js not loaded');
                 return;
             }
 
+            // Generate operation ID if not provided
+            const finalOperationId = operationId || store.createOperationId(operationType, operationSource);
+            
+            // Check if we should skip this operation (duplicate prevention)
+            if (operationId && store.shouldSkipOperation(operationId, pdfPath)) {
+                return;
+            }
+
             // Prevent concurrent loading of the same PDF
             if (currentLoadingPath === pdfPath) {
-                console.log(`PDFStore: Already loading ${pdfPath}, skipping duplicate request`);
+                console.log(`PDFStore: Already loading ${pdfPath}, skipping duplicate request (${finalOperationId})`);
                 return;
             }
 
@@ -242,11 +321,14 @@ function createPdfStore() {
             
             // Force reload for compilation events - PDF content may have changed
             if (currentState.currentPdf?.path === pdfPath && !currentState.error) {
-                console.log(`PDFStore: PDF ${pdfPath} already loaded, but forcing reload for updated content`);
+                console.log(`PDFStore: PDF ${pdfPath} already loaded, but forcing reload for updated content (${finalOperationId})`);
                 // Continue with reload to get updated content
             }
 
-            console.log(`PDFStore: Loading PDF: ${pdfPath}`);
+            console.log(`PDFStore: Loading PDF: ${pdfPath} (operation: ${finalOperationId})`);
+            
+            // Add operation to history
+            store.addOperation(operationType, operationSource, finalOperationId, pdfPath);
             
             // Mark as currently loading
             currentLoadingPath = pdfPath;
@@ -524,7 +606,8 @@ function createPdfStore() {
         async refresh(): Promise<void> {
             const currentState = get({ subscribe });
             if (currentState.currentPdf) {
-                await store.loadPdf(currentState.currentPdf.path);
+                const refreshOperationId = store.createOperationId('manual', 'user_refresh');
+                await store.loadPdf(currentState.currentPdf.path, refreshOperationId, 'manual', 'user_refresh');
             }
         },
 
@@ -572,37 +655,85 @@ function createPdfStore() {
             return state.currentPdf?.path || null;
         },
 
+        getOperationHistory(): Array<{ id: string; type: string; source: string; timestamp: number; pdfPath?: string; }> {
+            const state = get({ subscribe });
+            return [...state.operationHistory];
+        },
+
         // Subscribe to EventStore compilation events
         subscribeToCompilationEvents(): void {
-            // Create event stream for compilation events
+            // Create event streams
             const compilationEvents = eventStore.compilationEvents;
+            const agentEvents = eventStore.agentEvents;
+            
+            // Subscribe to agent events to track agent run state
+            const agentUnsubscribe = agentEvents.subscribe(events => {
+                const latestEvent = events[events.length - 1];
+                if (latestEvent) {
+                    if (latestEvent.subtype === 'job_queued') {
+                        update(state => ({
+                            ...state,
+                            isAgentRunning: true
+                        }));
+                        console.log('PDFStore: Agent run started - compilation events will be ignored');
+                    } else if (latestEvent.subtype === 'job_complete') {
+                        const agentOperationId = store.createOperationId(
+                            'agent', 
+                            'job_complete',
+                            { sessionId: latestEvent.payload.sessionId }
+                        );
+                        
+                        update(state => ({
+                            ...state,
+                            isAgentRunning: false
+                        }));
+                        
+                        // Add the agent completion operation to history (no specific PDF path)
+                        store.addOperation('agent', 'job_complete', agentOperationId, 'agent_completion');
+                        
+                        console.log(`PDFStore: Agent run completed - compilation events will be processed (operation: ${agentOperationId})`);
+                    }
+                }
+            });
             
             // React to compilation completion
-            const unsubscribe = compilationEvents.subscribe(events => {
+            const compilationUnsubscribe = compilationEvents.subscribe(events => {
                 const latestEvent = events[events.length - 1];
                 if (latestEvent && latestEvent.subtype === 'completed') {
                     const pdfPath = latestEvent.payload.pdfPath;
                     
                     if (pdfPath) {
                         const currentState = get({ subscribe });
+                        
+                        // Don't reload PDF during agent runs
+                        if (currentState.isAgentRunning) {
+                            console.log(`PDFStore: Ignoring compilation during agent run for PDF: ${pdfPath}`);
+                            return;
+                        }
+                        
                         if (currentState.autoRefresh) {
-                            // Check if we need to reload - prevent unnecessary reloads that cause compilation loops
-                            if (currentState.currentPdf?.path === pdfPath && 
-                                currentState.currentPdf.loadedAt && 
-                                (Date.now() - currentState.currentPdf.loadedAt < 2000)) {
-                                console.log(`PDFStore: PDF ${pdfPath} was recently loaded, skipping force reload to prevent loop`);
-                                return;
-                            }
+                            // Create operation-specific ID for compilation events
+                            const compilationOperationId = store.createOperationId(
+                                'compilation', 
+                                latestEvent.payload.source || 'latex',
+                                { 
+                                    eventTimestamp: latestEvent.payload.timestamp,
+                                    mainFile: latestEvent.payload.mainFile 
+                                }
+                            );
                             
-                            console.log(`PDFStore: Compilation completed, force loading PDF: ${pdfPath}`);
-                            store.loadPdf(pdfPath);
+                            console.log(`PDFStore: Compilation completed, loading PDF: ${pdfPath} (operation: ${compilationOperationId})`);
+                            store.loadPdf(pdfPath, compilationOperationId, 'compilation', latestEvent.payload.source || 'latex');
                         }
                     }
                 }
             });
             
-            eventUnsubscribe = unsubscribe;
-            console.log('PDFStore: Subscribed to compilation events');
+            eventUnsubscribe = () => {
+                agentUnsubscribe();
+                compilationUnsubscribe();
+            };
+            console.log('PDFStore: Subscribed to compilation and agent events');
         },
 
         // Agent integration - handle external PDF updates
@@ -612,7 +743,8 @@ function createPdfStore() {
                 
                 const currentState = get({ subscribe });
                 if (currentState.autoRefresh && (tool === 'write_file' || tool === 'create_file')) {
-                    store.loadPdf(path);
+                    const agentFileOperationId = store.createOperationId('agent', tool, { path });
+                    store.loadPdf(path, agentFileOperationId, 'agent', tool);
                 }
             }
         },

@@ -173,14 +173,22 @@ export class AgentWebSocketAdapter {
             sessionId = event.session_id;
         }
 
-        // Emit to EventStore first
-        if (sessionId) {
-            this.emitToEventStore(event, sessionId);
+        // Fallback: For events without session_id, use the first subscribed session
+        // This handles cases where JobComplete events don't include session context
+        if (!sessionId && this.subscribedSessions.size > 0) {
+            sessionId = Array.from(this.subscribedSessions)[0];
+            console.log(`AgentWebSocket: Using fallback session ${sessionId} for ${event.type}`);
         }
 
-        // Handle file operations immediately
-        if (event.type === 'ToolCompleted' && this.isFileOperation(event.tool)) {
-            this.handleFileOperation(event);
+        console.log(`AgentWebSocket: SessionId for ${event.type}: ${sessionId}`);
+
+        // Emit to EventStore - ONLY emit raw agent events
+        // Do NOT convert to file system events here - that's agent.ts responsibility
+        if (sessionId) {
+            console.log(`AgentWebSocket: Emitting ${event.type} to EventStore with session ${sessionId}`);
+            this.emitToEventStore(event, sessionId);
+        } else {
+            console.warn(`AgentWebSocket: No session_id found for ${event.type} event, cannot emit to EventStore`);
         }
 
         // Call global event callbacks
@@ -206,166 +214,7 @@ export class AgentWebSocketAdapter {
         }
     }
 
-    private isFileOperation(tool: string): boolean {
-        const fileOperations = [
-            'read_file', 'write_file', 'update_file', 'create_file', 
-            'delete_file', 'create_directory', 'rename_file', 'copy_file', 'move_file',
-            'compile_latex' // Add compile_latex as a file operation
-        ];
-        return fileOperations.includes(tool);
-    }
-
-    private handleFileOperation(event: { tool: string; result: string }): void {
-        console.log(`Detected file operation: ${event.tool}`, event.result);
-        
-        // Special handling for compile_latex tool
-        if (event.tool === 'compile_latex') {
-            console.log('Agent performed LaTeX compilation');
-            // Extract PDF path from result if available
-            const pdfPath = this.extractPathFromResult(event.result);
-            if (pdfPath) {
-                // Emit a special compilation event
-                eventStore.events.compilationCompleted('agent', pdfPath);
-                // Trigger workspace reload for the PDF
-                eventStore.events.fileModified(pdfPath, undefined, 'agent');
-            }
-            return;
-        }
-        
-        // Extract path from result
-        const path = this.extractPathFromResult(event.result);
-        if (!path) {
-            console.warn('Could not extract path from file operation result:', event.result);
-            return;
-        }
-
-        // Emit to EventStore based on operation type
-        const isDirectory = event.tool === 'create_directory';
-        
-        switch (event.tool) {
-            case 'create_file':
-            case 'create_directory':
-                eventStore.events.fileCreated(path, isDirectory, 'agent');
-                break;
-            case 'write_file':
-            case 'update_file':
-                eventStore.events.fileModified(path, undefined, 'agent');
-                break;
-            case 'delete_file':
-                eventStore.events.fileDeleted(path, false, 'agent');
-                break;
-            case 'rename_file':
-            case 'move_file':
-                // Try to extract old path - this might need improvement based on actual result format
-                const oldPath = this.extractOldPathFromResult(event.result);
-                if (oldPath) {
-                    eventStore.events.fileRenamed(path, oldPath, isDirectory, 'agent');
-                } else {
-                    // Fallback to modified if we can't get old path
-                    eventStore.events.fileModified(path, undefined, 'agent');
-                }
-                break;
-            case 'read_file':
-                // Don't emit events for read operations - they don't change files
-                console.log(`Agent read file: ${path} (no event emitted)`);
-                break;
-            default:
-                // For unknown tools, don't emit events
-                console.log(`Unknown agent tool: ${event.tool} on ${path}`);
-                break;
-        }
-
-        // Only call file event callbacks for compatibility, don't double-emit to EventStore
-        this.fileEventCallbacks.forEach(callback => {
-            try {
-                const eventType = this.getFileEventType(event.tool);
-                const fileEventData: FileEventData = {
-                    event_type: eventType,
-                    path,
-                    timestamp: Date.now(),
-                    metadata: {
-                        is_directory: isDirectory,
-                        size: undefined,
-                        old_path: undefined,
-                        new_path: undefined
-                    }
-                };
-                callback(eventType.toLowerCase() as FileEventType, fileEventData);
-            } catch (error) {
-                console.error('Error in file event callback:', error);
-            }
-        });
-    }
-
-    private getFileEventType(tool: string): 'Created' | 'Modified' | 'Deleted' | 'Renamed' {
-        switch (tool) {
-            case 'create_file':
-            case 'create_directory':
-                return 'Created';
-            case 'write_file':
-            case 'update_file':
-                return 'Modified';
-            case 'delete_file':
-                return 'Deleted';
-            case 'rename_file':
-            case 'move_file':
-                return 'Renamed';
-            default:
-                return 'Modified';
-        }
-    }
-
-    private extractPathFromResult(result: string): string | null {
-        try {
-            const parsed = JSON.parse(result);
-            return parsed.path || parsed.file_path || parsed.filename || null;
-        } catch {
-            // Extract from text patterns with better matching for different operations
-            const patterns = [
-                // Pattern for "Successfully updated file 'main.tex'. Replaced..."
-                /Successfully (?:wrote|created|updated|deleted|read) (?:file )?['""]([^'""]+)['""]?/i,
-                // Pattern for direct file paths with quotes  
-                /['""]([^'""]*\.[a-zA-Z0-9]+)['""](?!.*['""]([^'""]*\.[a-zA-Z0-9]+)['""])/i,
-                // Pattern for "file: path" or "path: value"
-                /(?:file|path)[:=]\s*['""]?([^'""]+\.[a-zA-Z0-9]+)['""]?/i,
-                // Fallback for any file with extension
-                /([\/\w\-\.]+\.\w+)(?:\s|$)/
-            ];
-            
-            for (const pattern of patterns) {
-                const match = result.match(pattern);
-                if (match && match[1]) {
-                    const path = match[1].trim();
-                    // Validate it looks like a file path
-                    if (path.includes('.') && !path.includes(' ')) {
-                        return path;
-                    }
-                }
-            }
-        }
-        return null;
-    }
-
-    private extractOldPathFromResult(result: string): string | null {
-        try {
-            const parsed = JSON.parse(result);
-            return parsed.old_path || parsed.from || parsed.source || null;
-        } catch {
-            // Extract from text patterns for rename operations
-            const patterns = [
-                /(?:renamed|moved) ['""]?([^'""]+)['""]? to ['""]?([^'""]+)['""]?/i,
-                /from ['""]?([^'""]+)['""]? to ['""]?([^'""]+)['""]?/i
-            ];
-            
-            for (const pattern of patterns) {
-                const match = result.match(pattern);
-                if (match && match[1]) {
-                    return match[1].trim();
-                }
-            }
-        }
-        return null;
-    }
+    // All file operation handling removed - this is now handled by agent.ts only
 
     /**
      * Subscribe to specific agent event types

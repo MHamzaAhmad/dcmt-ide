@@ -108,15 +108,101 @@ pub struct FunctionDefinition {
 
 // Agent events for real-time progress updates
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "type")]
 pub enum AgentEvent {
-    JobQueued { job_id: String, session_id: String },
-    LLMCallStart { model: String },
-    LLMStreaming { content: String },
-    ToolExecuting { tool: String },
-    ToolCompleted { tool: String, result: String },
-    LLMCallComplete,
-    JobComplete { response: String },
-    Error { message: String },
+    JobQueued {
+        job_id: String,
+        session_id: String,
+        #[serde(flatten)]
+        metadata: EventMetadata,
+    },
+    LLMCallStart {
+        model: String,
+        #[serde(flatten)]
+        metadata: EventMetadata,
+    },
+    LLMStreaming {
+        content: String,
+        #[serde(flatten)]
+        metadata: EventMetadata,
+    },
+    ToolCallRequested {
+        tool: String,
+        args: Value,
+        #[serde(flatten)]
+        metadata: EventMetadata,
+    },
+    ToolExecuting {
+        tool: String,
+        #[serde(flatten)]
+        metadata: EventMetadata,
+    },
+    ToolCompleted {
+        tool: String,
+        result: String,
+        #[serde(flatten)]
+        metadata: EventMetadata,
+    },
+    ParallelToolsStart {
+        count: usize,
+        #[serde(flatten)]
+        metadata: EventMetadata,
+    },
+    ParallelToolsComplete {
+        count: usize,
+        #[serde(flatten)]
+        metadata: EventMetadata,
+    },
+    LLMCallComplete {
+        #[serde(flatten)]
+        metadata: EventMetadata,
+    },
+    JobComplete {
+        response: String,
+        #[serde(flatten)]
+        metadata: EventMetadata,
+    },
+    Error {
+        message: String,
+        #[serde(flatten)]
+        metadata: EventMetadata,
+    },
+}
+
+// Event metadata for deduplication and tracing
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct EventMetadata {
+    pub event_id: String,
+    pub operation_id: String,
+    pub timestamp: u64,
+    pub is_file_operation: bool,
+    pub file_paths: Vec<String>, // Extracted file paths if applicable
+}
+
+impl EventMetadata {
+    pub fn new(operation_id: String) -> Self {
+        Self {
+            event_id: uuid::Uuid::new_v4().to_string(),
+            operation_id,
+            timestamp: std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_millis() as u64,
+            is_file_operation: false,
+            file_paths: Vec::new(),
+        }
+    }
+
+    pub fn with_file_operation(mut self, is_file_op: bool) -> Self {
+        self.is_file_operation = is_file_op;
+        self
+    }
+
+    pub fn with_file_paths(mut self, paths: Vec<String>) -> Self {
+        self.is_file_operation = !paths.is_empty();
+        self.file_paths = paths;
+        self
+    }
 }
 
 // Session management

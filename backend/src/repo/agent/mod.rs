@@ -9,7 +9,7 @@ use uuid::Uuid;
 use crate::model::agent::{
     AgentConfig, AgentEvent, AgentResult, AgentError,
     ChatMessage, ChatRequest, LiteLLMRequest, LiteLLMResponse,
-    ResponseFormat, ToolCall, ToolFunction,
+    ResponseFormat, ToolCall, ToolFunction, EventMetadata,
 };
 
 pub mod events;
@@ -31,6 +31,61 @@ pub struct AgentRepo {
 }
 
 impl AgentRepo {
+    /// Creates metadata for a new operation
+    fn create_metadata(operation_id: &str) -> EventMetadata {
+        EventMetadata::new(operation_id.to_string())
+    }
+
+    /// Creates metadata for file operations with path extraction
+    fn create_file_metadata(operation_id: &str, tool: &str, result: &str) -> EventMetadata {
+        let is_file_op = Self::is_file_modifying_tool(tool);
+        let paths = if is_file_op {
+            Self::extract_paths_from_result(result)
+        } else {
+            Vec::new()
+        };
+        
+        EventMetadata::new(operation_id.to_string())
+            .with_file_operation(is_file_op)
+            .with_file_paths(paths)
+    }
+
+    /// Determines if a tool modifies files (excludes read_file)
+    fn is_file_modifying_tool(tool: &str) -> bool {
+        matches!(
+            tool,
+            "write_file" | "update_file" | "create_file" | "delete_file" | "create_directory"
+        )
+    }
+
+    /// Extracts file paths from tool result
+    fn extract_paths_from_result(result: &str) -> Vec<String> {
+        // Try JSON parsing first
+        if let Ok(json_result) = serde_json::from_str::<serde_json::Value>(result) {
+            if let Some(path) = json_result.get("path").and_then(|p| p.as_str()) {
+                return vec![path.to_string()];
+            }
+        }
+
+        // Fallback to regex pattern matching
+        use regex::Regex;
+        let patterns = [
+            r#"Successfully (?:wrote|created|updated|deleted) (?:file |directory )?["']([^"']+)["']"#,
+            r#"["']([^"']*\.[a-zA-Z0-9]+)["']"#, // File with extension in quotes
+        ];
+
+        for pattern in &patterns {
+            if let Ok(re) = Regex::new(pattern) {
+                if let Some(captures) = re.captures(result) {
+                    if let Some(path) = captures.get(1) {
+                        return vec![path.as_str().to_string()];
+                    }
+                }
+            }
+        }
+
+        Vec::new()
+    }
     /// Creates a new agent repository
     pub async fn new(
         workspace_path: PathBuf,
@@ -88,7 +143,8 @@ impl AgentRepo {
         self.event_broadcaster
             .broadcast(&request.session_id, AgentEvent::JobQueued { 
                 job_id: job_id.clone(), 
-                session_id: request.session_id.clone() 
+                session_id: request.session_id.clone(),
+                metadata: Self::create_metadata(&job_id),
             })
             .await;
         
@@ -136,7 +192,8 @@ impl AgentRepo {
         // Notify completion
         self.event_broadcaster
             .broadcast(&request.session_id, AgentEvent::JobComplete { 
-                response: response_content.clone() 
+                response: response_content.clone(),
+                metadata: Self::create_metadata(&job_id),
             })
             .await;
         
@@ -164,7 +221,8 @@ impl AgentRepo {
             // Call LiteLLM
             self.event_broadcaster
                 .broadcast(session_id, AgentEvent::LLMCallStart { 
-                    model: model.clone() 
+                    model: model.clone(),
+                    metadata: Self::create_metadata(&format!("llm-{}", iteration_count)),
                 })
                 .await;
             
@@ -178,14 +236,18 @@ impl AgentRepo {
                         // We've executed tools, now get structured JSON response
                         let final_response = self.call_litellm(&messages, &model, true).await?; // Force JSON format
                         self.event_broadcaster
-                            .broadcast(session_id, AgentEvent::LLMCallComplete)
+                            .broadcast(session_id, AgentEvent::LLMCallComplete {
+                                metadata: Self::create_metadata(&format!("llm-complete-{}", iteration_count)),
+                            })
                             .await;
                         return Ok(final_response);
                     } else {
                         // First call with no tools needed - still get JSON format
                         let final_response = self.call_litellm(&messages, &model, true).await?; // Force JSON format
                         self.event_broadcaster
-                            .broadcast(session_id, AgentEvent::LLMCallComplete)
+                            .broadcast(session_id, AgentEvent::LLMCallComplete {
+                                metadata: Self::create_metadata(&format!("llm-complete-{}", iteration_count)),
+                            })
                             .await;
                         return Ok(final_response);
                     }
@@ -198,7 +260,8 @@ impl AgentRepo {
                     // Multiple tools - execute in parallel
                     self.event_broadcaster
                         .broadcast(session_id, AgentEvent::ParallelToolsStart { 
-                            count: tool_calls.len() 
+                            count: tool_calls.len(),
+                            metadata: Self::create_metadata(&format!("parallel-tools-{}", iteration_count)),
                         })
                         .await;
                     
@@ -226,6 +289,7 @@ impl AgentRepo {
                                     .broadcast(session_id, AgentEvent::ToolCompleted {
                                         tool: tool_call.function.name.clone(),
                                         result: tool_result.clone(),
+                                        metadata: Self::create_file_metadata(&format!("tool-{}", tool_call.id), &tool_call.function.name, tool_result),
                                     })
                                     .await;
                             }
@@ -241,6 +305,7 @@ impl AgentRepo {
                                 self.event_broadcaster
                                     .broadcast(session_id, AgentEvent::Error {
                                         message: error_msg,
+                                        metadata: Self::create_metadata(&format!("error-{}", iteration_count)),
                                     })
                                     .await;
                             }
@@ -249,7 +314,8 @@ impl AgentRepo {
                     
                     self.event_broadcaster
                         .broadcast(session_id, AgentEvent::ParallelToolsComplete { 
-                            count: tool_calls.len() 
+                            count: tool_calls.len(),
+                            metadata: Self::create_metadata(&format!("parallel-complete-{}", iteration_count)),
                         })
                         .await;
                     
@@ -261,6 +327,7 @@ impl AgentRepo {
                                 tool: tool_call.function.name.clone(),
                                 args: serde_json::from_str(&tool_call.function.arguments)
                                     .unwrap_or(serde_json::Value::Null),
+                                metadata: Self::create_metadata(&format!("tool-req-{}", tool_call.id)),
                             })
                             .await;
                         
@@ -276,7 +343,8 @@ impl AgentRepo {
                                 self.event_broadcaster
                                     .broadcast(session_id, AgentEvent::ToolCompleted {
                                         tool: tool_call.function.name.clone(),
-                                        result,
+                                        result: result.clone(),
+                                        metadata: Self::create_file_metadata(&format!("tool-{}", tool_call.id), &tool_call.function.name, &result),
                                     })
                                     .await;
                             }
@@ -292,6 +360,7 @@ impl AgentRepo {
                                 self.event_broadcaster
                                     .broadcast(session_id, AgentEvent::Error {
                                         message: error_msg,
+                                        metadata: Self::create_metadata(&format!("error-{}", iteration_count)),
                                     })
                                     .await;
                             }
@@ -303,7 +372,9 @@ impl AgentRepo {
             } else {
                 // No tool calls, return final response
                 self.event_broadcaster
-                    .broadcast(session_id, AgentEvent::LLMCallComplete)
+                    .broadcast(session_id, AgentEvent::LLMCallComplete {
+                        metadata: Self::create_metadata(&format!("llm-complete-{}", iteration_count)),
+                    })
                     .await;
                 return Ok(response);
             }
@@ -315,6 +386,7 @@ impl AgentRepo {
         self.event_broadcaster
             .broadcast(session_id, AgentEvent::ToolExecuting {
                 tool: tool_call.function.name.clone(),
+                metadata: Self::create_metadata(&format!("tool-exec-{}", tool_call.id)),
             })
             .await;
         

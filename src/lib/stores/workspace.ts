@@ -53,6 +53,9 @@ export interface WorkspaceState {
     
     // File operations tracking
     pendingOperations: Map<string, 'reading' | 'writing' | 'creating' | 'deleting'>;
+    
+    // File watching control
+    isFileWatchingPaused: boolean;
 }
 
 function createWorkspaceStore() {
@@ -68,7 +71,8 @@ function createWorkspaceStore() {
         isLoading: false,
         error: null,
         lastActivity: Date.now(),
-        pendingOperations: new Map()
+        pendingOperations: new Map(),
+        isFileWatchingPaused: false
     };
 
     const { subscribe, set, update } = writable<WorkspaceState>(initialState);
@@ -606,6 +610,13 @@ function createWorkspaceStore() {
                     const source = latestEvent.payload.source;
                     const subtype = latestEvent.subtype;
                     
+                    // Check if file watching is paused
+                    const currentState = get({ subscribe });
+                    if (currentState.isFileWatchingPaused) {
+                        console.log(`WorkspaceStore: File watching paused, ignoring ${source} ${subtype} on ${latestEvent.payload.path}`);
+                        return;
+                    }
+                    
                     // Only react to meaningful file changes from external sources
                     if (source === 'agent' || source === 'watcher') {
                         // Don't reload for read operations - they don't change the file
@@ -618,7 +629,6 @@ function createWorkspaceStore() {
                         
                         // Force reload the file if it exists in our store and was actually modified
                         const filePath = latestEvent.payload.path;
-                        const currentState = get({ subscribe });
                         
                         if ((currentState.files.has(filePath) || filePath.endsWith('.pdf')) && 
                             (subtype === 'file_modified' || subtype === 'file_created')) {
@@ -635,37 +645,10 @@ function createWorkspaceStore() {
                 }
             });
             
-            // Subscribe to compilation events to reload workspace after agent compilation
-            const compilationEvents = eventStore.createCompilationEventStream();
-            const compUnsubscribe = compilationEvents.subscribe((events: any) => {
-                const latestEvent = events[events.length - 1];
-                if (latestEvent && latestEvent.subtype === 'completed') {
-                    const mainFile = latestEvent.payload.mainFile;
-                    const pdfPath = latestEvent.payload.pdfPath;
-                    
-                    console.log(`WorkspaceStore: Compilation completed for ${mainFile}, PDF: ${pdfPath}`);
-                    
-                    // If agent performed compilation, reload related files
-                    if (mainFile === 'agent' && pdfPath) {
-                        console.log('WorkspaceStore: Agent compilation detected, triggering refresh');
-                        
-                        // Refresh file tree to pick up any new files
-                        store.refreshFileTree().then(() => {
-                            // Emit event for PDF refresh
-                            console.log(`WorkspaceStore: Emitting PDF update event for ${pdfPath}`);
-                            store.emitFileChange(pdfPath, 'modified', 'agent');
-                        });
-                    }
-                }
-            });
+            // Store unsubscribe function
+            eventUnsubscribe = fileUnsubscribe;
             
-            // Combine unsubscribe functions
-            eventUnsubscribe = () => {
-                fileUnsubscribe();
-                compUnsubscribe();
-            };
-            
-            console.log('WorkspaceStore: Subscribed to agent file and compilation events');
+            console.log('WorkspaceStore: Subscribed to agent file events');
         },
 
         // Utilities
@@ -693,6 +676,73 @@ function createWorkspaceStore() {
 
         getCurrentState(): WorkspaceState {
             return get({ subscribe });
+        },
+
+        // File watching control
+        pauseFileWatching(): void {
+            update(state => ({
+                ...state,
+                isFileWatchingPaused: true
+            }));
+            console.log('WorkspaceStore: File watching paused');
+        },
+
+        resumeFileWatching(): void {
+            update(state => ({
+                ...state,
+                isFileWatchingPaused: false
+            }));
+            console.log('WorkspaceStore: File watching resumed');
+        },
+
+        // Batch file operations
+        async batchReloadModifiedFiles(filePaths: string[]): Promise<void> {
+            if (filePaths.length === 0) {
+                console.log('WorkspaceStore: No files to batch reload');
+                return;
+            }
+
+            console.log(`WorkspaceStore: Batch reloading ${filePaths.length} files:`, filePaths);
+            
+            const reloadPromises = filePaths.map(async (filePath) => {
+                try {
+                    // Skip binary files - workspace store only handles text files
+                    const BINARY_FILE_PATTERN = /\.(pdf|png|jpg|jpeg|gif|bmp|ico|exe|bin|zip|tar|gz|7z)$/i;
+                    if (BINARY_FILE_PATTERN.test(filePath)) {
+                        console.log(`WorkspaceStore: Skipping binary file ${filePath} in batch reload`);
+                        return;
+                    }
+                    
+                    // Force reload the file to get latest content
+                    await store.loadFile(filePath, true);
+                    console.log(`WorkspaceStore: Batch reloaded ${filePath}`);
+                    
+                    // If this file is currently open, trigger a content change event
+                    const currentState = get({ subscribe });
+                    if (currentState.openFiles.includes(filePath)) {
+                        console.log(`WorkspaceStore: File ${filePath} is open, emitting content change`);
+                        store.emitFileChange(filePath, 'modified', 'agent');
+                    }
+                    
+                } catch (error) {
+                    const errorMessage = error instanceof Error ? error.message : String(error);
+                    if (errorMessage.includes('Cannot load binary file')) {
+                        console.log(`WorkspaceStore: Skipping binary file ${filePath} - not a text file`);
+                    } else {
+                        console.warn(`WorkspaceStore: Failed to batch reload ${filePath}:`, error);
+                    }
+                }
+            });
+
+            // Wait for all files to reload
+            await Promise.all(reloadPromises);
+            console.log('WorkspaceStore: Batch file reload completed');
+
+            // Update last activity
+            update(state => ({
+                ...state,
+                lastActivity: Date.now()
+            }));
         },
 
         // Cleanup

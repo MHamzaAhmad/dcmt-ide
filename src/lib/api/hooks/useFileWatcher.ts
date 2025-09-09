@@ -7,6 +7,7 @@ import type { FileEventData } from '../types';
 import { fileSystemKeys } from './useFileSystem';
 import { writable, get, derived } from 'svelte/store';
 import { eventStore } from '$lib/stores/events';
+import { agentStore } from '$lib/stores/agent';
 
 export type FileEventType = 'created' | 'modified' | 'deleted' | 'renamed';
 export type FileEventCallback = (type: FileEventType, event: FileEventData) => void;
@@ -41,6 +42,7 @@ export function useFileWatcher(
 	
 	let cleanup: (() => void) | null = null;
 	let fileWatcher: DesktopFileWatcher | WebFileWatcher | null = null;
+	let agentUnsubscribe: (() => void) | null = null;
 	let isInitialized = false;
 
 	function handleFileEvent(type: FileEventType, event: FileEventData) {
@@ -141,12 +143,41 @@ export function useFileWatcher(
 				console.error('Failed to start web file watcher:', error);
 			}
 		}
+
+		// Subscribe to agent run status to automatically pause/resume file watching
+		try {
+			agentUnsubscribe = agentStore.subscribe(agentState => {
+				if (!fileWatcher) return;
+
+				if (agentState.isAgentRunning) {
+					// Agent is running, pause file watcher
+					if ('pause' in fileWatcher) {
+						fileWatcher.pause();
+						console.log('useFileWatcher: Paused file watcher during agent run');
+					}
+				} else {
+					// Agent is not running, resume file watcher
+					if ('resume' in fileWatcher) {
+						fileWatcher.resume();
+						console.log('useFileWatcher: Resumed file watcher after agent run');
+					}
+				}
+			});
+		} catch (error) {
+			console.error('Failed to subscribe to agent status for file watcher control:', error);
+		}
 	}
 
 	function stopWatching() {
 		if (cleanup) {
 			cleanup();
 			cleanup = null;
+		}
+		
+		// Unsubscribe from agent status
+		if (agentUnsubscribe) {
+			agentUnsubscribe();
+			agentUnsubscribe = null;
 		}
 		
 		if (fileWatcher) {

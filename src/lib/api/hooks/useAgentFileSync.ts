@@ -76,8 +76,8 @@ export function useAgentFileSync(options: AgentFileSyncOptions = {}) {
     }
     
     // File tools that trigger file system changes
+    // NOTE: read_file is excluded as it doesn't modify files
     const FILE_TOOLS = new Set([
-        'read_file',
         'write_file', 
         'update_file',
         'create_file',

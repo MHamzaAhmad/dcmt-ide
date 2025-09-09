@@ -19,6 +19,7 @@ export type FileEventCallback = (event: FileEvent) => void;
 export class DesktopFileWatcher {
 	private listeners: UnlistenFn[] = [];
 	private eventCallbacks: Map<string, FileEventCallback[]> = new Map();
+	private isPaused: boolean = false;
 
 	constructor() {
 		this.initializeEventListeners();
@@ -57,6 +58,12 @@ export class DesktopFileWatcher {
 	}
 
 	private handleFileEvent(type: string, event: FileEvent) {
+		// If paused, ignore the event
+		if (this.isPaused) {
+			console.log(`[DesktopFileWatcher] Ignoring ${type} event while paused:`, event.path);
+			return;
+		}
+
 		console.log(`File ${type}:`, event);
 		
 		// Emit to EventStore first
@@ -139,6 +146,29 @@ export class DesktopFileWatcher {
 	 */
 	isActive(): boolean {
 		return this.listeners.length > 0;
+	}
+
+	/**
+	 * Pause file event processing (events will be ignored)
+	 */
+	pause(): void {
+		this.isPaused = true;
+		console.log('[DesktopFileWatcher] File event processing paused');
+	}
+
+	/**
+	 * Resume file event processing
+	 */
+	resume(): void {
+		this.isPaused = false;
+		console.log('[DesktopFileWatcher] File event processing resumed');
+	}
+
+	/**
+	 * Check if file watcher is paused
+	 */
+	isPausedState(): boolean {
+		return this.isPaused;
 	}
 
 	/**

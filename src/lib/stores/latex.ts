@@ -44,6 +44,9 @@ export interface LaTeXState {
     lastCompilationTime: number;
     pendingCompilation: boolean;
     
+    // Compilation control
+    isAutoCompilationPaused: boolean;
+    
     // Errors
     error: string | null;
 }
@@ -63,6 +66,7 @@ function createLatexStore() {
         lastSourceModified: 0,
         lastCompilationTime: 0,
         pendingCompilation: false,
+        isAutoCompilationPaused: false,
         error: null
     };
 
@@ -210,6 +214,13 @@ function createLatexStore() {
                     }
                     
                     const currentState = get({ subscribe });
+                    
+                    // Prevent compilation loops: ignore file events shortly after compilation completes
+                    const timeSinceLastCompilation = Date.now() - currentState.lastCompilationTime;
+                    if (timeSinceLastCompilation < 2000) { // 2 second cooldown
+                        console.log(`LaTeXStore: Ignoring file event ${timeSinceLastCompilation}ms after compilation (cooldown period)`);
+                        return;
+                    }
                     if (!currentState.autoCompile) {
                         console.log('LaTeXStore: Auto-compile disabled, skipping compilation');
                         return;
@@ -225,68 +236,16 @@ function createLatexStore() {
                         console.log('LaTeXStore: File watcher change detected, scheduling compilation');
                         store.scheduleCompilation(`watcher_${latestEvent.subtype}`);
                     } else if (latestEvent.payload.source === 'agent') {
-                        // Agent change - use longer delay and coordinate with job completion
-                        console.log('LaTeXStore: Agent file change detected, scheduling delayed compilation');
-                        
-                        // Clear any existing timer to prevent multiple compilations
-                        const timeSinceLastCompile = Date.now() - currentState.lastCompilationTime;
-                        const minDelayBetweenCompiles = 3000; // 3 seconds minimum
-                        
-                        if (timeSinceLastCompile < minDelayBetweenCompiles) {
-                            console.log(`LaTeXStore: Too soon since last compile (${timeSinceLastCompile}ms), deferring`);
-                            return;
-                        }
-                        
-                        // Use longer delay for agent operations to allow batch processing
-                        const originalDelay = currentState.compilationDelay;
-                        update(state => ({ ...state, compilationDelay: 2500 })); // 2.5 second delay
-                        
-                        store.scheduleCompilation(`agent_${latestEvent.subtype}`);
-                        
-                        // Restore original delay
-                        setTimeout(() => {
-                            update(state => ({ ...state, compilationDelay: originalDelay }));
-                        }, 100);
+                        // Agent change - defer to agent store coordination
+                        // Individual agent file events are handled by agent store coordination
+                        // to prevent multiple rapid compilations during agent runs
+                        console.log('LaTeXStore: Agent file change detected, deferring to agent store coordination');
                     }
                 }
             });
             
-            // Subscribe to compilation events from external sources
-            const compilationEvents = eventStore.compilationEvents;
-            const compUnsubscribe = compilationEvents.subscribe(events => {
-                const latestEvent = events[events.length - 1];
-                if (latestEvent && latestEvent.subtype === 'completed') {
-                    console.log(`LaTeXStore: Compilation completed - mainFile: ${latestEvent.payload.mainFile}, pdfPath: ${latestEvent.payload.pdfPath}`);
-                    
-                    // Update our state to reflect the successful compilation
-                    update(state => ({
-                        ...state,
-                        currentPdfPath: latestEvent.payload.pdfPath || state.currentPdfPath,
-                        lastCompilationTime: Date.now(),
-                        compilationStatus: 'success' as const
-                    }));
-                }
-            });
-            
-            // Subscribe to agent events to handle job completion
-            const agentEvents = eventStore.agentEvents;
-            const agentUnsubscribe = agentEvents.subscribe(events => {
-                const latestEvent = events[events.length - 1];
-                if (latestEvent && latestEvent.subtype === 'job_complete') {
-                    console.log('LaTeXStore: Agent job completed, coordinating with workspace for LaTeX compilation');
-                    // Use timeout to allow workspace store to settle first
-                    setTimeout(() => {
-                        store.handleAgentJobComplete(latestEvent);
-                    }, 500);
-                }
-            });
-            
-            // Store the unsubscribe functions for cleanup
-            eventUnsubscribe = () => {
-                unsubscribe();
-                compUnsubscribe();
-                agentUnsubscribe();
-            };
+            // Store the unsubscribe function for cleanup
+            eventUnsubscribe = unsubscribe;
         },
 
         // Compilation management
@@ -295,6 +254,11 @@ function createLatexStore() {
             
             if (!currentState.mainFile) {
                 console.log('LaTeXStore: No main file to compile');
+                return;
+            }
+
+            if (currentState.isAutoCompilationPaused && reason !== 'manual') {
+                console.log(`LaTeXStore: Auto-compilation paused, ignoring ${reason} compilation request`);
                 return;
             }
 
@@ -309,7 +273,9 @@ function createLatexStore() {
                 clearTimeout(compilationTimer);
             }
 
-            console.log(`LaTeXStore: Scheduling compilation (${reason}) in ${currentState.compilationDelay}ms`);
+            // Agent run completion gets immediate compilation with shorter delay
+            const delay = reason === 'agent_run_complete' ? 500 : currentState.compilationDelay;
+            console.log(`LaTeXStore: Scheduling compilation (${reason}) in ${delay}ms`);
             
             update(state => ({ 
                 ...state, 
@@ -319,7 +285,7 @@ function createLatexStore() {
 
             compilationTimer = setTimeout(() => {
                 store.compileCurrentFile();
-            }, currentState.compilationDelay);
+            }, delay);
         },
 
         async compileCurrentFile(): Promise<void> {
@@ -492,6 +458,23 @@ function createLatexStore() {
             }
         },
 
+        // Compilation control
+        pauseAutoCompilation(): void {
+            update(state => ({
+                ...state,
+                isAutoCompilationPaused: true
+            }));
+            console.log('LaTeXStore: Auto-compilation paused');
+        },
+
+        resumeAutoCompilation(): void {
+            update(state => ({
+                ...state,
+                isAutoCompilationPaused: false
+            }));
+            console.log('LaTeXStore: Auto-compilation resumed');
+        },
+
         // Event emission
         emitCompilationEvent(eventType: string, detail: any): void {
             // Emit to EventStore - unified event system with enhanced detail
@@ -534,165 +517,6 @@ function createLatexStore() {
 
         getCurrentState(): LaTeXState {
             return get({ subscribe });
-        },
-
-        // Agent integration - handle external compilation triggers
-        handleAgentFileOperation(tool: string, path: string): void {
-            // Skip if not a LaTeX file
-            if (!path.endsWith('.tex')) {
-                return;
-            }
-            
-            console.log(`LaTeXStore: Agent ${tool} on LaTeX file ${path}`);
-            
-            // Special handling for compile_latex tool
-            if (tool === 'compile_latex') {
-                console.log('LaTeXStore: Agent performed compilation, skipping auto-compile');
-                // Update last compilation time to prevent immediate recompilation
-                update(state => ({
-                    ...state,
-                    lastCompilationTime: Date.now(),
-                    compilationStatus: 'success'
-                }));
-                return;
-            }
-            
-            // Only react to write operations, not reads
-            const writeOperations = ['create_file', 'write_file', 'update_file'];
-            if (!writeOperations.includes(tool)) {
-                console.log(`LaTeXStore: Ignoring agent ${tool} (not a write operation)`);
-                return;
-            }
-            
-            const currentState = get({ subscribe });
-            
-            // Update source modification time
-            update(state => ({
-                ...state,
-                lastSourceModified: Date.now()
-            }));
-            
-            // Only compile if auto-compile is enabled and enough time has passed
-            if (currentState.autoCompile) {
-                const timeSinceLastCompile = Date.now() - currentState.lastCompilationTime;
-                const minDelayBetweenCompiles = 3000; // 3 seconds minimum between compilations
-                
-                if (timeSinceLastCompile < minDelayBetweenCompiles) {
-                    console.log(`LaTeXStore: Skipping compilation (only ${timeSinceLastCompile}ms since last compile)`);
-                    return;
-                }
-                
-                console.log(`LaTeXStore: Scheduling compilation for agent ${tool}`);
-                
-                // Use longer delay for agent operations to allow batch processing
-                const originalDelay = currentState.compilationDelay;
-                update(state => ({ ...state, compilationDelay: 2000 })); // 2 second delay
-                
-                store.scheduleCompilation(`agent_${tool}`);
-                
-                // Restore original delay after scheduling
-                setTimeout(() => {
-                    update(state => ({ ...state, compilationDelay: originalDelay }));
-                }, 100);
-            }
-        },
-
-        // Handle agent job completion - Enhanced coordination with WorkspaceStore
-        async handleAgentJobComplete(event: any): Promise<void> {
-            console.log('LaTeXStore: Handling agent job completion for LaTeX compilation coordination');
-            
-            try {
-                const currentState = get({ subscribe });
-                
-                // Check if auto-compile is enabled and we have a main file
-                if (!currentState.autoCompile) {
-                    console.log('LaTeXStore: Auto-compile disabled, skipping compilation');
-                    return;
-                }
-                
-                if (!currentState.mainFile) {
-                    console.log('LaTeXStore: No main LaTeX file detected, skipping compilation');
-                    return;
-                }
-                
-                // Get WorkspaceStore state to check for LaTeX files
-                const { workspaceStore } = await import('./workspace');
-                const workspaceState = workspaceStore.getCurrentState();
-                
-                if (workspaceState.latexFiles.length === 0) {
-                    console.log('LaTeXStore: No LaTeX files in workspace, skipping compilation');
-                    return;
-                }
-                
-                // Check if any LaTeX ecosystem files are dirty or recently modified
-                const LATEX_ECOSYSTEM_PATTERN = /\.(tex|bib|sty|cls|def|cfg|clo)$/i;
-                let hasLatexChanges = false;
-                let latexFilesNeedingCompilation: string[] = [];
-                
-                // Check workspace files for recent modifications
-                for (const [filePath, file] of workspaceState.files.entries()) {
-                    if (LATEX_ECOSYSTEM_PATTERN.test(filePath)) {
-                        // Check if file was modified recently (within last 10 seconds) or is dirty
-                        const isRecentlyModified = file.lastModified > (Date.now() - 10000);
-                        const isDirty = file.isDirty;
-                        
-                        if (isRecentlyModified || isDirty) {
-                            hasLatexChanges = true;
-                            latexFilesNeedingCompilation.push(filePath);
-                        }
-                    }
-                }
-                
-                if (!hasLatexChanges) {
-                    console.log('LaTeXStore: No recent LaTeX ecosystem file changes detected');
-                    return;
-                }
-                
-                console.log('LaTeXStore: LaTeX files needing compilation:', latexFilesNeedingCompilation);
-                
-                // Prevent excessive compilation attempts
-                const timeSinceLastCompile = Date.now() - currentState.lastCompilationTime;
-                const minDelayBetweenCompiles = 3000; // 3 seconds minimum
-                
-                if (timeSinceLastCompile < minDelayBetweenCompiles) {
-                    console.log(`LaTeXStore: Too soon since last compile (${timeSinceLastCompile}ms), deferring compilation`);
-                    
-                    // Schedule for later if there are changes
-                    setTimeout(() => {
-                        store.handleAgentJobComplete(event);
-                    }, minDelayBetweenCompiles - timeSinceLastCompile + 500);
-                    return;
-                }
-                
-                // Force reload modified LaTeX files to ensure we have latest content
-                console.log('LaTeXStore: Force reloading modified LaTeX files before compilation');
-                const reloadPromises = latexFilesNeedingCompilation.map(async (filePath) => {
-                    try {
-                        await workspaceStore.loadFile(filePath, true);
-                        console.log(`LaTeXStore: Reloaded ${filePath}`);
-                    } catch (error) {
-                        // Handle binary files gracefully - they shouldn't be loaded as text
-                        const errorMessage = error instanceof Error ? error.message : String(error);
-                        if (errorMessage.includes('Cannot load binary file')) {
-                            console.log(`LaTeXStore: Skipping binary file ${filePath} - not a text file`);
-                        } else {
-                            console.warn(`LaTeXStore: Failed to reload ${filePath}:`, error);
-                        }
-                    }
-                });
-                
-                // Wait for all files to reload
-                await Promise.all(reloadPromises);
-                
-                // Schedule compilation with delay to allow workspace to settle
-                console.log('LaTeXStore: Scheduling LaTeX compilation after agent job completion and file reloading');
-                setTimeout(() => {
-                    store.scheduleCompilation('agent_job_completed');
-                }, 1000); // 1 second delay to ensure everything is settled
-                
-            } catch (error) {
-                console.error('LaTeXStore: Error handling agent job completion:', error);
-            }
         },
 
         // Cleanup

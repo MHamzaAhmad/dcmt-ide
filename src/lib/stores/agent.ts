@@ -1,7 +1,6 @@
 import { writable } from 'svelte/store';
 import { browser } from '$app/environment';
 import { agentAPI } from '$lib/api/agent';
-import { agentWebSocket } from '$lib/api/adapters/web/agentWebSocket';
 import { eventStore } from './events';
 import type { QueryClient } from '@tanstack/svelte-query';
 import type { 
@@ -34,6 +33,7 @@ export interface AgentState {
     messages: AgentChatMessage[];
     activeToolResults: Map<string, AgentToolResult>;
     availableTools: AgentToolDefinition[];
+    currentToolStatus: { toolName: string; status: string } | null;
     
     // UI State
     isProcessing: boolean;
@@ -77,6 +77,7 @@ function createAgentStore() {
         messages: [],
         activeToolResults: new Map(),
         availableTools: [],
+        currentToolStatus: null,
         
         isProcessing: false,
         streamingContent: '',
@@ -189,11 +190,23 @@ function createAgentStore() {
         async createSession(): Promise<string> {
             const sessionId = agentAPI.generateSessionId();
             
-            // Set up direct WebSocket subscription (no hooks to avoid duplication)
+            // Set up platform-appropriate event subscription
             console.log('Subscribing to events for session:', sessionId);
             
-            // Subscribe to agent events directly via WebSocket
-            const agentUnsubscribe = agentWebSocket.onSession(sessionId, store.handleAgentEvent);
+            // Use platform-specific event handling
+            const adapter = await agentAPI.getAdapter();
+            
+            // Desktop uses Tauri events, web uses WebSocket
+            if ('onSessionEvents' in adapter) {
+                // Desktop (Tauri) - use adapter's event system
+                const unsubscribe = (adapter as any).onSessionEvents(sessionId, store.handleAgentEvent);
+            } else {
+                // Web - use WebSocket adapter
+                const webSocketAdapter = await agentAPI.getWebSocketAdapter();
+                if (webSocketAdapter) {
+                    const agentUnsubscribe = webSocketAdapter.onSession(sessionId, store.handleAgentEvent);
+                }
+            }
             
             // Subscribe to backend agent events
             await agentAPI.subscribeToEvents(sessionId);
@@ -394,53 +407,61 @@ function createAgentStore() {
                     break;
 
                 case 'LLMCallStart':
-                    // Create a streaming message when LLM starts
-                    const streamingMessage: AgentChatMessage = {
-                        id: `msg-streaming-${Date.now()}`,
-                        role: 'assistant',
-                        content: '',
-                        timestamp: new Date(),
-                        status: 'streaming',
-                        streaming: true,
-                        model: store.getCurrentState().selectedModel?.id
-                    };
-                    
-                    store.addMessage(streamingMessage);
-                    
-                    update(state => ({
-                        ...state,
-                        streamingContent: '',
-                        streamingMessageId: streamingMessage.id
-                    }));
-                    break;
-
-                case 'LLMStreaming':
+                    // Only create a streaming message if we don't already have one
                     update(state => {
-                        const newContent = state.streamingContent + event.content;
-                        
-                        // Update the streaming message with new content
                         if (state.streamingMessageId) {
-                            const messages = state.messages.map(msg => 
-                                msg.id === state.streamingMessageId
-                                    ? { ...msg, content: newContent }
-                                    : msg
-                            );
-                            
-                            return {
-                                ...state,
-                                streamingContent: newContent,
-                                messages
-                            };
+                            return state; // Already have a streaming message
                         }
+                        
+                        const streamingMessage: AgentChatMessage = {
+                            id: `msg-streaming-${Date.now()}`,
+                            role: 'assistant',
+                            content: '',
+                            timestamp: new Date(),
+                            status: 'streaming',
+                            streaming: true,
+                            model: state.selectedModel?.id
+                        };
                         
                         return {
                             ...state,
-                            streamingContent: newContent
+                            messages: [...state.messages, streamingMessage],
+                            streamingContent: '',
+                            streamingMessageId: streamingMessage.id
                         };
                     });
                     break;
 
+                case 'LLMStreaming':
+                    // Create a new message for each streaming event
+                    const streamMessage: AgentChatMessage = {
+                        id: `msg-stream-${Date.now()}`,
+                        role: 'assistant',
+                        content: event.content,
+                        timestamp: new Date(),
+                        status: 'completed',
+                        model: store.getCurrentState().selectedModel?.id
+                    };
+                    
+                    store.addMessage(streamMessage);
+                    
+                    update(state => ({
+                        ...state,
+                        streamingContent: '',
+                        streamingMessageId: null // Clear streaming state since we're showing individual messages
+                    }));
+                    break;
+
                 case 'ToolExecuting':
+                    // Update tool status for floating badge
+                    update(state => ({
+                        ...state,
+                        currentToolStatus: {
+                            toolName: event.tool,
+                            status: 'executing'
+                        }
+                    }));
+                    
                     store.updateToolResult(`temp-${event.tool}`, {
                         tool_call_id: `temp-${event.tool}`,
                         tool_name: event.tool,
@@ -450,6 +471,12 @@ function createAgentStore() {
                     break;
 
                 case 'ToolCompleted':
+                    // Clear tool status when completed
+                    update(state => ({
+                        ...state,
+                        currentToolStatus: null
+                    }));
+                    
                     store.updateToolResult(`temp-${event.tool}`, {
                         tool_call_id: `temp-${event.tool}`,
                         tool_name: event.tool,
@@ -541,55 +568,16 @@ function createAgentStore() {
         async handleJobCompletionUI(event: any): Promise<void> {
             console.log('AgentStore: Handling agent run completion UI state');
             
-            const currentState = store.getCurrentState();
-            const currentStreamingContent = currentState.streamingContent;
-            let finalContent = currentStreamingContent || '';
-            
-            // If no streaming content, try to parse the response
-            if (!finalContent && event.response) {
-                try {
-                    const parsed = JSON.parse(event.response);
-                    finalContent = parsed.message || parsed.content || parsed.response || event.response;
-                } catch {
-                    finalContent = event.response;
-                }
-            }
-            
-            // Update UI state - mark agent run as complete
-            if (currentState.streamingMessageId) {
-                update(state => ({
-                    ...state,
-                    messages: state.messages.map(msg => 
-                        msg.id === state.streamingMessageId
-                            ? { ...msg, content: finalContent, status: 'completed', streaming: false }
-                            : msg
-                    ),
-                    isProcessing: false,
-                    streamingContent: '',
-                    streamingMessageId: null,
-                    currentJobId: null,
-                    isAgentRunning: false
-                }));
-            } else {
-                const assistantMessage: AgentChatMessage = {
-                    id: `msg-${Date.now()}`,
-                    role: 'assistant',
-                    content: finalContent,
-                    timestamp: new Date(),
-                    status: 'completed',
-                    model: currentState.selectedModel?.id
-                };
-
-                store.addMessage(assistantMessage);
-                update(state => ({
-                    ...state,
-                    isProcessing: false,
-                    streamingContent: '',
-                    streamingMessageId: null,
-                    currentJobId: null,
-                    isAgentRunning: false
-                }));
-            }
+            // Since we're now showing individual streaming messages, 
+            // JobComplete just needs to clean up the processing state
+            update(state => ({
+                ...state,
+                isProcessing: false,
+                streamingContent: '',
+                streamingMessageId: null,
+                currentJobId: null,
+                isAgentRunning: false
+            }));
             
             // Clear completed tool results after a delay
             setTimeout(() => {
@@ -615,15 +603,6 @@ function createAgentStore() {
                 return; // Already on this session
             }
             
-            // Clean up current session without clearing state
-            if (agentEvents) {
-                await agentEvents.switchSession(newSessionId);
-            }
-            
-            if (agentFileSync) {
-                await agentFileSync.switchSession(newSessionId);
-            }
-            
             // Subscribe to new session
             await agentAPI.subscribeToEvents(newSessionId);
             await agentAPI.setCurrentSessionId(newSessionId);
@@ -639,10 +618,11 @@ function createAgentStore() {
 
         // Get sync status
         getSyncStatus() {
+            const currentState = store.getCurrentState();
             return {
-                fileSyncActive: agentFileSync?.isInitialized() || false,
-                eventsActive: agentEvents?.getCurrentSessionId() !== null,
-                currentSession: store.getCurrentState().currentSessionId
+                fileSyncActive: currentState.fileSyncActive,
+                eventsActive: currentState.currentSessionId !== null,
+                currentSession: currentState.currentSessionId
             };
         },
 

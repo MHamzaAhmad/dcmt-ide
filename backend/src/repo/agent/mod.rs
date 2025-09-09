@@ -31,6 +31,29 @@ pub struct AgentRepo {
 }
 
 impl AgentRepo {
+    /// Parses clean message from potentially JSON-formatted response
+    fn parse_clean_message(content: &str) -> String {
+        // First try to parse as JSON to extract clean message
+        if let Ok(json_value) = serde_json::from_str::<serde_json::Value>(content) {
+            // Try various common JSON fields for the actual message
+            if let Some(message) = json_value.get("message").and_then(|m| m.as_str()) {
+                return message.to_string();
+            }
+            if let Some(content_field) = json_value.get("content").and_then(|c| c.as_str()) {
+                return content_field.to_string();
+            }
+            if let Some(response) = json_value.get("response").and_then(|r| r.as_str()) {
+                return response.to_string();
+            }
+            if let Some(text) = json_value.get("text").and_then(|t| t.as_str()) {
+                return text.to_string();
+            }
+        }
+        
+        // If not valid JSON or no recognized fields, return content as-is
+        content.to_string()
+    }
+
     /// Creates metadata for a new operation
     fn create_metadata(operation_id: &str) -> EventMetadata {
         EventMetadata::new(operation_id.to_string())
@@ -187,17 +210,18 @@ impl AgentRepo {
             .add_message(&request.session_id, response.clone())
             .await?;
         
-        let response_content = response.content.unwrap_or_default();
+        let raw_content = response.content.unwrap_or_default();
+        let clean_response = Self::parse_clean_message(&raw_content);
         
-        // Notify completion
+        // Notify completion with clean message
         self.event_broadcaster
             .broadcast(&request.session_id, AgentEvent::JobComplete { 
-                response: response_content.clone(),
+                response: clean_response.clone(),
                 metadata: Self::create_metadata(&job_id),
             })
             .await;
         
-        Ok(response_content)
+        Ok(clean_response)
     }
     
     /// Processes messages with tool calling loop
@@ -226,7 +250,7 @@ impl AgentRepo {
                 })
                 .await;
             
-            let response = self.call_litellm(&messages, &model, false).await?; // Don't force JSON on first calls
+            let response = self.call_litellm(&messages, &model, false, session_id).await?; // Don't force JSON on first calls
             
             // Check for tool calls
             if let Some(tool_calls) = response.tool_calls.clone() {
@@ -234,7 +258,7 @@ impl AgentRepo {
                     // No tool calls - make final call with JSON format if this isn't iteration 1
                     if iteration_count > 1 {
                         // We've executed tools, now get structured JSON response
-                        let final_response = self.call_litellm(&messages, &model, true).await?; // Force JSON format
+                        let final_response = self.call_litellm(&messages, &model, true, session_id).await?; // Force JSON format
                         self.event_broadcaster
                             .broadcast(session_id, AgentEvent::LLMCallComplete {
                                 metadata: Self::create_metadata(&format!("llm-complete-{}", iteration_count)),
@@ -243,7 +267,7 @@ impl AgentRepo {
                         return Ok(final_response);
                     } else {
                         // First call with no tools needed - still get JSON format
-                        let final_response = self.call_litellm(&messages, &model, true).await?; // Force JSON format
+                        let final_response = self.call_litellm(&messages, &model, true, session_id).await?; // Force JSON format
                         self.event_broadcaster
                             .broadcast(session_id, AgentEvent::LLMCallComplete {
                                 metadata: Self::create_metadata(&format!("llm-complete-{}", iteration_count)),
@@ -406,8 +430,8 @@ impl AgentRepo {
             .await
     }
     
-    /// Calls LiteLLM API with all tools included
-    async fn call_litellm(&self, messages: &[ChatMessage], model: &str, use_json_format: bool) -> AgentResult<ChatMessage> {
+    /// Calls LiteLLM API with all tools included and handles streaming
+    async fn call_litellm(&self, messages: &[ChatMessage], model: &str, use_json_format: bool, session_id: &str) -> AgentResult<ChatMessage> {
         // Build request with ALL tools included
         let request = LiteLLMRequest {
             model: model.to_string(),
@@ -449,6 +473,17 @@ impl AgentRepo {
             .ok_or_else(|| AgentError::LiteLLMError {
                 message: "No choices in LiteLLM response".to_string(),
             })?;
+        
+        // Emit streaming event for response content
+        if let Some(content) = &choice.message.content {
+            let clean_content = Self::parse_clean_message(content);
+            self.event_broadcaster
+                .broadcast(session_id, AgentEvent::LLMStreaming {
+                    content: clean_content,
+                    metadata: Self::create_metadata("llm-stream"),
+                })
+                .await;
+        }
         
         Ok(choice.message)
     }

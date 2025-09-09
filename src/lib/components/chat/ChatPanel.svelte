@@ -1,19 +1,18 @@
 <script lang="ts">
 	import { onMount, onDestroy } from 'svelte';
-	import { ScrollArea } from '$lib/components/ui/scroll-area';
 	import { Input } from '$lib/components/ui/input';
 	import { Button } from '$lib/components/ui/button';
 	import * as Select from '$lib/components/ui/select';
 	import { Badge } from '$lib/components/ui/badge';
 	import ChatMessage from './ChatMessage.svelte';
 	import ToolExecution from './ToolExecution.svelte';
+	import FloatingBadge from '../ui/floating-badge.svelte';
 	import { chatStore } from '$lib/stores/chat';
 	import { agentStore } from '$lib/stores/agent';
-	import { apiStore } from '$lib/stores/api';
 	import { editorState } from '$lib/stores/editor';
 	import { modelsAPI } from '$lib/api/models';
-	import type { ChatMessage as ChatMessageType, LLMModel, AgentChatMessage, LiteLLMModel } from '$lib/api/types';
-	import { Send, Bot, AlertCircle, Wifi, WifiOff, Settings, Loader2, Maximize2, Minimize2, ChevronDown, ChevronUp } from '@lucide/svelte';
+	import type { ChatMessage as ChatMessageType, AgentChatMessage, LiteLLMModel } from '$lib/api/types';
+	import { Send, Bot, AlertCircle, Loader2, Maximize2, Minimize2, ChevronDown, ChevronUp, ArrowDown } from '@lucide/svelte';
 	import { createQuery, useQueryClient } from '@tanstack/svelte-query';
 	
 	interface Props {
@@ -23,7 +22,7 @@
 	let { mode = 'docked' }: Props = $props();
 	
 	let inputValue = $state('');
-	let scrollArea = $state<HTMLDivElement>();
+	let scrollContainer = $state<HTMLDivElement>();
 	let messages = $state<AgentChatMessage[]>([]);
 	let selectedModel = $state<LiteLLMModel | null>(null);
 	let selectedModelId = $state('');
@@ -31,14 +30,16 @@
 	let isAgentMode = $state(true); // Toggle between agent and simple chat
 	let isExpanded = $state(false); // For floating mode expand/collapse
 	let isMinimized = $state(false); // For floating mode minimize
+	let showScrollToBottom = $state(false);
+	let autoScroll = $state(true);
 	
 	// Agent state
 	let agentAvailable = $state(false);
-	let agentConnected = $state(false);
 	let agentError = $state<string | null>(null);
 	let toolResults = $state(new Map());
 	let streamingContent = $state('');
 	let isProcessing = $state(false);
+	let currentToolStatus = $state<{ toolName: string; status: string } | null>(null);
 	
 	// Query for fetching models from LiteLLM
 	const modelsQuery = createQuery({
@@ -54,13 +55,13 @@
 		if (isAgentMode) {
 			const agentState = $agentStore;
 			agentAvailable = agentState.isAvailable;
-			agentConnected = agentState.isConnected;
 			agentError = agentState.connectionError;
 			messages = agentState.messages;
 			selectedModel = agentState.selectedModel;
 			toolResults = agentState.activeToolResults;
 			streamingContent = agentState.streamingContent;
 			isProcessing = agentState.isProcessing;
+			currentToolStatus = agentState.currentToolStatus;
 		} else {
 			// Use legacy chat store for simple chat
 			messages = $chatStore.messages as AgentChatMessage[];
@@ -122,16 +123,44 @@
 		)
 	);
 	
-	// Auto-scroll to bottom when new messages arrive
+	// Auto-scroll to bottom when new messages arrive (if auto-scroll enabled)
 	$effect(() => {
-		if (scrollArea && (messages.length > 0 || toolResults.size > 0 || streamingContent)) {
+		if (scrollContainer && autoScroll && (messages.length > 0 || toolResults.size > 0 || streamingContent)) {
 			requestAnimationFrame(() => {
-				if (scrollArea) {
-					scrollArea.scrollTop = scrollArea.scrollHeight;
+				if (scrollContainer && autoScroll) {
+					scrollContainer.scrollTop = scrollContainer.scrollHeight;
 				}
 			});
 		}
 	});
+	
+	// Monitor scroll position to show/hide scroll-to-bottom button
+	function handleScroll() {
+		if (!scrollContainer) return;
+		
+		const { scrollTop, scrollHeight, clientHeight } = scrollContainer;
+		const distanceFromBottom = scrollHeight - scrollTop - clientHeight;
+		
+		// Show button if user scrolled up more than 100px from bottom
+		showScrollToBottom = distanceFromBottom > 100;
+		
+		// Disable auto-scroll if user manually scrolled up
+		if (distanceFromBottom > 50) {
+			autoScroll = false;
+		} else {
+			autoScroll = true;
+		}
+	}
+	
+	function scrollToBottom() {
+		if (scrollContainer) {
+			scrollContainer.scrollTo({
+				top: scrollContainer.scrollHeight,
+				behavior: 'smooth'
+			});
+			autoScroll = true;
+		}
+	}
 	
 	// Get queryClient in component context
 	const queryClient = useQueryClient();
@@ -203,17 +232,6 @@
 		}
 	}
 	
-	function toggleAgentMode() {
-		isAgentMode = !isAgentMode;
-		// Clear messages when switching modes
-		if (isAgentMode) {
-			// Pass queryClient when re-initializing
-			agentStore.setQueryClient(queryClient);
-			agentStore.initialize();
-		} else {
-			chatStore.clearMessages();
-		}
-	}
 	
 	function handleFullscreen() {
 		// Switch to chat tab when maximizing from floating mode
@@ -229,6 +247,22 @@
 	function toggleMinimized() {
 		isMinimized = !isMinimized;
 	}
+	
+	function getToolStatusText(toolName: string): string {
+		const toolStatusMap: Record<string, string> = {
+			'read_file': 'Reading file',
+			'write_file': 'Writing file',
+			'update_file': 'Updating file',
+			'create_file': 'Creating file',
+			'create_directory': 'Creating directory',
+			'list_files': 'Listing files',
+			'delete_file': 'Deleting file',
+			'search_files': 'Searching files',
+			'execute_command': 'Executing command'
+		};
+		
+		return toolStatusMap[toolName] || 'Processing';
+	}
 </script>
 
 <div class="{mode === 'floating' ? 
@@ -242,24 +276,9 @@
 				{#if mode === 'floating'}
 					<Bot size={16} class="text-primary" />
 					<span class="text-sm font-medium">AI Assistant</span>
-					{#if !isMinimized && selectedModel}
-						<Badge variant="secondary" class="text-xs">{selectedModel.id}</Badge>
-					{/if}
 				{:else}
 					<Bot size={20} class="text-primary" />
 					<h2 class="text-lg font-semibold">AI Assistant</h2>
-					{#if isAgentMode}
-						<Badge variant="default" class="gap-1">
-							{#if agentConnected}
-								<Wifi size={12} />
-							{:else}
-								<WifiOff size={12} />
-							{/if}
-							Agent Mode
-						</Badge>
-					{:else}
-						<Badge variant="outline">Simple Chat</Badge>
-					{/if}
 				{/if}
 			</div>
 			
@@ -299,9 +318,6 @@
 						<Maximize2 size={14} />
 					</Button>
 				{:else}
-					<Button variant="ghost" size="sm" onclick={toggleAgentMode}>
-						{isAgentMode ? 'Simple' : 'Agent'}
-					</Button>
 					<Button variant="ghost" size="sm" onclick={handleClearSession}>
 						Clear
 					</Button>
@@ -310,71 +326,58 @@
 		</div>
 		
 		{#if isAgentMode && agentError}
-			<div class="mt-2 p-2 bg-destructive/10 border border-destructive/20 rounded text-sm text-destructive">
-				<div class="flex items-center gap-2">
-					<AlertCircle size={14} />
-					<span>Agent Error: {agentError}</span>
-				</div>
+			<div class="mt-2 text-sm text-destructive">
+				{agentError}
 			</div>
 		{/if}
 	</div>
 
 	<!-- Chat Messages Area -->
 	{#if !isMinimized}
-	<div class="flex-1 overflow-hidden">
-		<ScrollArea class="h-full">
-			<div bind:this={scrollArea} class="h-full overflow-y-auto">
-				{#if messages.length === 0}
-					<div class="flex flex-col items-center justify-center h-full p-8 text-center">
-						<Bot size={48} class="text-muted-foreground mb-4" />
-						<h3 class="text-lg font-medium mb-2">Start a conversation</h3>
-						<p class="text-sm text-muted-foreground max-w-md">
-							{#if isAgentMode}
-								Ask questions about your LaTeX document or request help with file operations. The agent can read, write, and modify files in your workspace.
-							{:else}
-								Simple chat mode for basic conversations. Enable agent mode for file operations and advanced features.
-							{/if}
-						</p>
-					</div>
-				{:else}
-					<div class="pb-4">
-						{#each messages as message}
-							<ChatMessage {message} />
-						{/each}
-					</div>
-				{/if}
-				
-				<!-- Tool Execution Display -->
-				{#if isAgentMode && toolResults.size > 0}
-					<div class="px-4">
-						<ToolExecution {toolResults} />
-					</div>
-				{/if}
-				
-				
-				<!-- Processing Indicator (only show when no streaming message) -->
-				{#if (isAgentMode ? (isProcessing && !streamingContent) : isLoading)}
-					<div class="flex gap-3 p-4 bg-muted/30">
-						<div class="w-8 h-8 rounded-full bg-muted flex items-center justify-center">
-							<Bot size={16} class="text-muted-foreground animate-pulse" />
+	<div class="flex-1 overflow-hidden relative">
+		<div 
+			bind:this={scrollContainer} 
+			class="h-full overflow-y-auto"
+			onscroll={handleScroll}
+		>
+			{#if messages.length === 0}
+				<div class="flex flex-col items-center justify-center h-full p-8 text-center">
+					<Bot size={48} class="text-muted-foreground mb-4" />
+					<h3 class="text-lg font-medium mb-2">Start a conversation</h3>
+					<p class="text-sm text-muted-foreground max-w-md">
+						{#if isAgentMode}
+							Ask questions about your LaTeX document or request help with file operations. The agent can read, write, and modify files in your workspace.
+						{:else}
+							Simple chat mode for basic conversations. Enable agent mode for file operations and advanced features.
+						{/if}
+					</p>
+				</div>
+			{:else}
+				<div class="pb-4">
+					{#each messages as message}
+						<ChatMessage {message} />
+					{/each}
+					
+					<!-- Tool Execution Display -->
+					{#if isAgentMode && toolResults.size > 0}
+						<div class="px-4">
+							<ToolExecution {toolResults} />
 						</div>
-						<div class="flex-1">
-							<div class="flex items-center gap-2">
-								<span class="text-sm font-medium">Assistant</span>
-								<span class="text-xs text-muted-foreground">
-									• {isAgentMode && toolResults.size > 0 ? 'Using tools...' : 'Processing...'}
-								</span>
-							</div>
-							<div class="flex gap-1 mt-2">
-								<div class="w-2 h-2 bg-primary/50 rounded-full animate-bounce" style="animation-delay: 0ms"></div>
-								<div class="w-2 h-2 bg-primary/50 rounded-full animate-bounce" style="animation-delay: 150ms"></div>
-								<div class="w-2 h-2 bg-primary/50 rounded-full animate-bounce" style="animation-delay: 300ms"></div>
-							</div>
-						</div>
-					</div>
-				{/if}
-			</div>
-		</ScrollArea>
+					{/if}
+				</div>
+			{/if}
+		</div>
+		
+		<!-- Scroll to Bottom Button -->
+		{#if showScrollToBottom}
+			<button
+				onclick={scrollToBottom}
+				class="absolute bottom-4 right-4 p-2 bg-primary text-primary-foreground rounded-full shadow-lg hover:shadow-xl transition-all duration-200 hover:scale-110 z-10"
+				title="Scroll to bottom"
+			>
+				<ArrowDown size={20} />
+			</button>
+		{/if}
 	</div>
 	
 	<!-- Input Area -->
@@ -426,34 +429,6 @@
 				</Select.Content>
 			</Select.Root>
 			
-			<!-- Status Indicators -->
-			{#if mode === 'docked'}
-			<div class="flex items-center gap-1">
-				{#if isAgentMode}
-					{#if !agentAvailable}
-						<Badge variant="destructive" class="gap-1">
-							<AlertCircle size={12} />
-							<span>No Project</span>
-						</Badge>
-					{:else if !agentConnected}
-						<Badge variant="secondary" class="gap-1">
-							<WifiOff size={12} />
-							<span>Disconnected</span>
-						</Badge>
-					{:else}
-						<Badge variant="default" class="gap-1">
-							<Wifi size={12} />
-							<span>Connected</span>
-						</Badge>
-					{/if}
-				{:else if !$apiStore.isConnected}
-					<Badge variant="secondary" class="gap-1">
-						<AlertCircle size={12} />
-						<span>Offline</span>
-					</Badge>
-				{/if}
-			</div>
-			{/if}
 			{#if mode === 'floating'}
 				<Input
 					bind:value={inputValue}
@@ -478,13 +453,16 @@
 		</div>
 		
 		{#if mode === 'docked'}
-		<div class="flex gap-2">
+		<div class="flex gap-2 relative">
+			{#if (isAgentMode ? isProcessing : isLoading)}
+				<div class="absolute inset-0 bg-gradient-to-r from-blue-500/10 via-purple-500/10 to-blue-500/10 animate-pulse rounded-lg -z-10" style="animation-duration: 2s;"></div>
+			{/if}
 			<Input
 				bind:value={inputValue}
-				placeholder={selectedModel ? "Ask me to help with your LaTeX project..." : "Select a model first..."}
+				placeholder={selectedModel ? ((isAgentMode ? isProcessing : isLoading) ? "AI is working..." : "Ask me to help with your LaTeX project...") : "Select a model first..."}
 				disabled={!selectedModel || (isAgentMode ? isProcessing : isLoading)}
 				onkeydown={handleKeyDown}
-				class="flex-1"
+				class="flex-1 {(isAgentMode ? isProcessing : isLoading) ? 'opacity-75' : ''}"
 			/>
 			<Button 
 				onclick={handleSend}
@@ -502,3 +480,11 @@
 	</div>
 	{/if}
 </div>
+
+<!-- Floating Badge for Tool Status -->
+{#if currentToolStatus && isAgentMode}
+	<FloatingBadge 
+		text={getToolStatusText(currentToolStatus.toolName)}
+		visible={true}
+	/>
+{/if}

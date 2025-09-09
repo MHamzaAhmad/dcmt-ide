@@ -27,6 +27,29 @@ pub struct AgentService {
 }
 
 impl AgentService {
+    /// Parses clean message from potentially JSON-formatted response
+    fn parse_clean_message(content: &str) -> String {
+        // First try to parse as JSON to extract clean message
+        if let Ok(json_value) = serde_json::from_str::<serde_json::Value>(content) {
+            // Try various common JSON fields for the actual message
+            if let Some(message) = json_value.get("message").and_then(|m| m.as_str()) {
+                return message.to_string();
+            }
+            if let Some(content_field) = json_value.get("content").and_then(|c| c.as_str()) {
+                return content_field.to_string();
+            }
+            if let Some(response) = json_value.get("response").and_then(|r| r.as_str()) {
+                return response.to_string();
+            }
+            if let Some(text) = json_value.get("text").and_then(|t| t.as_str()) {
+                return text.to_string();
+            }
+        }
+        
+        // If not valid JSON or no recognized fields, return content as-is
+        content.to_string()
+    }
+
     /// Creates metadata for a new operation
     fn create_metadata(operation_id: &str) -> EventMetadata {
         EventMetadata::new(operation_id.to_string())
@@ -170,6 +193,8 @@ impl AgentService {
         
         // Process in background
         tokio::spawn(async move {
+            tracing::info!("Starting background processing for job {} in session {}", job_id_clone, session_id);
+            
             match Self::process_chat_background(
                 session_id.clone(),
                 message,
@@ -182,6 +207,9 @@ impl AgentService {
                 workspace_path,
             ).await {
                 Ok(response) => {
+                    tracing::info!("Job {} completed successfully for session {} with response: {}", 
+                                 job_id_clone, session_id, response);
+                    
                     // Emit completion event
                     event_broadcaster
                         .broadcast(&session_id, AgentEvent::JobComplete { 
@@ -189,6 +217,8 @@ impl AgentService {
                             metadata: EventMetadata::new(job_id_clone.clone()),
                         })
                         .await;
+                    
+                    tracing::info!("JobComplete event emitted for job {}", job_id_clone);
                 }
                 Err(e) => {
                     tracing::error!("Job {} failed for session {}: {}", 
@@ -223,15 +253,21 @@ impl AgentService {
         config: AgentConfig,
         workspace_path: PathBuf,
     ) -> AgentResult<String> {
+        tracing::info!("Processing chat background for session {}", session_id);
+        
         // Get or create session
         let _session = session_manager
             .get_or_create_session(session_id.clone(), None)
             .await;
         
+        tracing::debug!("Session created/retrieved for {}", session_id);
+        
         // Get session history
         let mut messages = session_manager
             .get_history(&session_id)
             .await?;
+        
+        tracing::debug!("Retrieved {} historical messages for session {}", messages.len(), session_id);
         
         // Add system prompt if this is the first message
         if messages.is_empty() {
@@ -254,10 +290,12 @@ impl AgentService {
             .add_message(&session_id, user_message)
             .await?;
         
+        tracing::debug!("Starting tool processing for session {}", session_id);
+        
         // Process with tool calling loop
         let response = Self::process_with_tools(
             messages,
-            model,
+            model.clone(),
             &session_id,
             session_manager.clone(),
             event_broadcaster,
@@ -267,12 +305,18 @@ impl AgentService {
             workspace_path,
         ).await?;
         
+        tracing::debug!("Tool processing completed for session {}", session_id);
+        
         // Add assistant response to session
         session_manager
             .add_message(&session_id, response.clone())
             .await?;
         
-        Ok(response.content.unwrap_or_default())
+        // Parse clean message for UI display
+        let raw_content = response.content.unwrap_or_default();
+        let clean_response = Self::parse_clean_message(&raw_content);
+        
+        Ok(clean_response)
     }
     
     /// Processes messages with tool calling loop and parallel execution
@@ -536,6 +580,8 @@ impl AgentService {
         session_id: &str,
         use_json_format: bool,
     ) -> AgentResult<ChatMessage> {
+        tracing::debug!("Calling LiteLLM for session {} with model {}", session_id, model);
+        
         // Build request with ALL tools included
         let request = LiteLLMRequest {
             model: model.to_string(),
@@ -550,6 +596,8 @@ impl AgentService {
                 None
             },
         };
+        
+        tracing::debug!("Making HTTP request to LiteLLM: {}/v1/chat/completions", config.litellm_base_url);
         
         let response = http_client
             .post(format!("{}/v1/chat/completions", config.litellm_base_url))
@@ -580,9 +628,10 @@ impl AgentService {
         
         // Emit streaming event for response content
         if let Some(content) = &choice.message.content {
+            let clean_content = Self::parse_clean_message(content);
             event_broadcaster
                 .broadcast(session_id, AgentEvent::LLMStreaming {
-                    content: content.clone(),
+                    content: clean_content,
                     metadata: EventMetadata::new(format!("llm-stream")),
                 })
                 .await;

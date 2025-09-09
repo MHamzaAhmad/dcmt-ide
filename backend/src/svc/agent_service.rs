@@ -55,9 +55,12 @@ impl AgentService {
         tokio::spawn(async move {
             // Process the job
             match agent_repo.process_chat(request).await {
-                Ok(_response) => {
-                    tracing::info!("Job {} completed successfully for session {}", 
-                                 job_id_clone, session_id_clone);
+                Ok(response) => {
+                    tracing::info!("Job {} completed successfully for session {} with response: {}", 
+                                 job_id_clone, session_id_clone, response);
+                    
+                    // The AgentRepo already emits JobComplete event internally,
+                    // but we log here for verification
                 }
                 Err(e) => {
                     tracing::error!("Job {} failed for session {}: {}", 

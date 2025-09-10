@@ -47,11 +47,11 @@ coverage
 src-tauri
 
 # Backend development files
-backend/target/debug
-backend/Cargo.lock
+backend/target/
+# Keep Cargo.lock for reproducible builds
 
 # Frontend development files
-pnpm-lock.yaml
+# Keep pnpm-lock.yaml for reproducible builds
 package-lock.json
 yarn.lock
 

@@ -200,38 +200,13 @@ function createPdfStore() {
                 const errorMessage = error instanceof Error ? error.message : 'Failed to initialize PDF store';
                 console.error('PDFStore initialization failed:', errorMessage);
                 
-                // Try retry logic for worker loading failures
-                const currentState = get({ subscribe });
-                if (currentState.retryCount < currentState.maxRetries) {
-                    console.log(`PDFStore: Retrying initialization (attempt ${currentState.retryCount + 1}/${currentState.maxRetries})`);
-                    
-                    update(state => ({
-                        ...state,
-                        retryCount: state.retryCount + 1,
-                        error: `Retry ${state.retryCount + 1}/${state.maxRetries}: ${errorMessage}`
-                    }));
-
-                    // Retry with delay
-                    setTimeout(() => {
-                        // Reset initialized flag for retry
-                        isInitialized = false;
-                        store.initialize().catch(retryError => {
-                            console.error('PDFStore: Retry failed:', retryError);
-                            const finalError = retryError instanceof Error ? retryError.message : 'Retry failed';
-                            update(state => ({
-                                ...state,
-                                error: `Initialization failed after ${currentState.maxRetries} attempts: ${finalError}`,
-                                isReady: false
-                            }));
-                        });
-                    }, 1000 * (currentState.retryCount + 1)); // Exponential backoff
-                } else {
-                    update(state => ({
-                        ...state,
-                        error: errorMessage,
-                        isReady: false
-                    }));
-                }
+                // Enable graceful degradation immediately for worker loading failures
+                // Don't retry endlessly - just enable degraded mode
+                console.log('PDFStore: Enabling graceful degradation due to initialization failure');
+                store.enableGracefulDegradation();
+                
+                // Mark as initialized but not ready (degraded mode)
+                isInitialized = true;
             }
         },
 
@@ -394,6 +369,13 @@ function createPdfStore() {
                 return;
             }
 
+            // Check if in graceful degradation mode - don't attempt PDF loading
+            const currentState = get({ subscribe });
+            if (!currentState.isReady && currentState.error?.includes('PDF preview unavailable')) {
+                console.log(`PDFStore: In graceful degradation mode - skipping PDF load for ${pdfPath}`);
+                return;
+            }
+
             // Generate operation ID if not provided
             const finalOperationId = operationId || store.createOperationId(operationType, operationSource);
             
@@ -529,7 +511,7 @@ function createPdfStore() {
                     retryCount: state.retryCount + 1
                 }));
 
-                // Auto-retry with exponential backoff
+                // Enable graceful degradation instead of endless retries
                 const currentRetryState = get({ subscribe });
                 if (currentRetryState.retryCount < currentRetryState.maxRetries) {
                     const retryDelay = Math.pow(2, currentRetryState.retryCount) * 1000;
@@ -538,6 +520,9 @@ function createPdfStore() {
                     setTimeout(() => {
                         store.loadPdf(pdfPath);
                     }, retryDelay);
+                } else {
+                    console.log('PDFStore: Max retries reached, enabling graceful degradation');
+                    store.enableGracefulDegradation();
                 }
             }
         },

@@ -312,8 +312,8 @@ function createPdfStore() {
         },
 
         // Operation tracking helpers
-        createOperationId(type: 'compilation' | 'agent' | 'manual' | 'file_watcher', source: string, metadata?: any): string {
-            return `${type}-${source}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+        createOperationId(type: 'compilation' | 'agent' | 'manual' | 'file_watcher', source: string): string {
+            return `${type}-${source}-${Date.now()}-${Math.random().toString(36).substring(2, 11)}`;
         },
 
         addOperation(type: 'compilation' | 'agent' | 'manual' | 'file_watcher', source: string, operationId: string, pdfPath?: string): void {
@@ -370,7 +370,7 @@ function createPdfStore() {
             }
 
             // Check if in graceful degradation mode - don't attempt PDF loading
-            const currentState = get({ subscribe });
+            let currentState = get({ subscribe });
             if (!currentState.isReady && currentState.error?.includes('PDF preview unavailable')) {
                 console.log(`PDFStore: In graceful degradation mode - skipping PDF load for ${pdfPath}`);
                 return;
@@ -390,7 +390,7 @@ function createPdfStore() {
                 return;
             }
 
-            const currentState = get({ subscribe });
+            currentState = get({ subscribe });
             
             // Force reload for compilation events - PDF content may have changed
             if (currentState.currentPdf?.path === pdfPath && !currentState.error) {
@@ -755,8 +755,7 @@ function createPdfStore() {
                     } else if (latestEvent.subtype === 'job_complete') {
                         const agentOperationId = store.createOperationId(
                             'agent', 
-                            'job_complete',
-                            { sessionId: latestEvent.payload.sessionId }
+                            'job_complete'
                         );
                         
                         update(state => ({
@@ -791,11 +790,7 @@ function createPdfStore() {
                             // Create operation-specific ID for compilation events
                             const compilationOperationId = store.createOperationId(
                                 'compilation', 
-                                'latex',
-                                { 
-                                    eventTimestamp: latestEvent.payload.timestamp,
-                                    mainFile: latestEvent.payload.mainFile 
-                                }
+                                'latex'
                             );
                             
                             console.log(`PDFStore: Compilation completed, loading PDF: ${pdfPath} (operation: ${compilationOperationId})`);
@@ -819,7 +814,7 @@ function createPdfStore() {
                 
                 const currentState = get({ subscribe });
                 if (currentState.autoRefresh && (tool === 'write_file' || tool === 'create_file')) {
-                    const agentFileOperationId = store.createOperationId('agent', tool, { path });
+                    const agentFileOperationId = store.createOperationId('agent', tool);
                     store.loadPdf(path, agentFileOperationId, 'agent', tool);
                 }
             }

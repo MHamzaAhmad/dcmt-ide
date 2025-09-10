@@ -138,6 +138,7 @@ function createPdfStore() {
     let eventUnsubscribe: (() => void) | null = null;
     let pdfjsLib: any = null;
     let currentLoadingPath: string | null = null;
+    let currentRenderTask: any = null; // Track current render operation for cancellation
 
     const store = {
         subscribe,
@@ -531,45 +532,76 @@ function createPdfStore() {
 
         // Rendering
         async renderCurrentPage(): Promise<void> {
-            const currentState = get({ subscribe });
+            const initialState = get({ subscribe });
             
-            if (!currentState.currentPdf?.pdfDoc || !currentState.canvas || !currentState.context) {
+            if (!initialState.currentPdf?.pdfDoc || !initialState.canvas || !initialState.context) {
                 console.log('PDFStore: Cannot render - missing PDF document or canvas');
                 return;
             }
 
-            if (currentState.isRendering) {
+            if (initialState.isRendering) {
                 console.log('PDFStore: Already rendering, skipping');
                 return;
             }
 
-            update(state => ({ ...state, isRendering: true }));
+            // Cancel any ongoing render operation
+            if (currentRenderTask) {
+                console.log('PDFStore: Cancelling previous render operation');
+                try {
+                    currentRenderTask.cancel();
+                } catch (e) {
+                    // Ignore cancellation errors
+                }
+                currentRenderTask = null;
+            }
+
+            update(state => ({ ...state, isRendering: true, error: null }));
 
             try {
-                const page = await currentState.currentPdf.pdfDoc.getPage(currentState.viewer.currentPage);
+                // Get fresh state for rendering
+                const renderState = get({ subscribe });
+                if (!renderState.currentPdf?.pdfDoc || !renderState.canvas || !renderState.context) {
+                    console.log('PDFStore: State changed during render setup, aborting');
+                    return;
+                }
+
+                const page = await renderState.currentPdf.pdfDoc.getPage(renderState.viewer.currentPage);
                 const viewport = page.getViewport({ 
-                    scale: currentState.viewer.scale,
-                    rotation: currentState.viewer.rotation 
+                    scale: renderState.viewer.scale,
+                    rotation: renderState.viewer.rotation 
                 });
 
                 // Update canvas size
-                currentState.canvas.width = viewport.width;
-                currentState.canvas.height = viewport.height;
+                renderState.canvas.width = viewport.width;
+                renderState.canvas.height = viewport.height;
 
                 // Clear canvas
-                currentState.context.clearRect(0, 0, viewport.width, viewport.height);
+                renderState.context.clearRect(0, 0, viewport.width, viewport.height);
 
-                // Render page
+                // Create render context and start render task
                 const renderContext = {
-                    canvasContext: currentState.context,
+                    canvasContext: renderState.context,
                     viewport: viewport
                 };
 
-                await page.render(renderContext).promise;
+                // Store render task for potential cancellation
+                currentRenderTask = page.render(renderContext);
                 
-                console.log(`PDFStore: Page ${currentState.viewer.currentPage} rendered successfully`);
+                // Wait for render completion
+                await currentRenderTask.promise;
+                
+                console.log(`PDFStore: Page ${renderState.viewer.currentPage} rendered successfully`);
+                currentRenderTask = null;
 
             } catch (error) {
+                currentRenderTask = null;
+                
+                // Don't log cancellation errors as actual errors
+                if (error && typeof error === 'object' && 'name' in error && error.name === 'RenderingCancelledException') {
+                    console.log('PDFStore: Render operation was cancelled');
+                    return;
+                }
+                
                 console.error('PDFStore: Error rendering page:', error);
                 update(state => ({
                     ...state,
@@ -802,6 +834,17 @@ function createPdfStore() {
 
         // Cleanup
         async destroy(): Promise<void> {
+            // Cancel any ongoing render operation
+            if (currentRenderTask) {
+                console.log('PDFStore: Cancelling render operation during cleanup');
+                try {
+                    currentRenderTask.cancel();
+                } catch (e) {
+                    // Ignore cancellation errors during cleanup
+                }
+                currentRenderTask = null;
+            }
+
             // Clean up PDF document
             const currentState = get({ subscribe });
             if (currentState.currentPdf?.pdfDoc && typeof currentState.currentPdf.pdfDoc.destroy === 'function') {

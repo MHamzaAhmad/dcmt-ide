@@ -124,7 +124,7 @@
 		<div class="text-center space-y-4">
 			<div class="h-8 w-8 animate-spin rounded-full border-2 border-primary border-t-transparent mx-auto"></div>
 			<p class="text-muted-foreground">
-				Initializing DCMT Editor...
+				Initializing Researgent Editor...
 			</p>
 		</div>
 	</div>

@@ -73,9 +73,16 @@ RUN mkdir -p /app/frontend \
     /var/log/supervisor \
     /run/nginx \
     /var/www/certbot \
+    /var/lib/nginx/body \
+    /var/lib/nginx/proxy \
+    /var/lib/nginx/fastcgi \
+    /var/lib/nginx/uwsgi \
+    /var/lib/nginx/scgi \
     && chown -R appuser:appgroup /app \
     && chown -R appuser:appgroup /var/log/supervisor \
-    && chown -R appuser:appgroup /var/www/certbot
+    && chown -R appuser:appgroup /var/www/certbot \
+    && chown -R appuser:appgroup /var/lib/nginx \
+    && chown -R appuser:appgroup /run/nginx
 
 # Copy built frontend
 COPY --from=frontend-builder --chown=appuser:appgroup /app/build /app/frontend

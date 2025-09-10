@@ -8,7 +8,10 @@ litellm:
 		--config /app/config.yaml --detailed_debug
 
 docker-build:
-	docker build -t dcmt-editor:latest .
+	docker build \
+		--build-arg VITE_API_BASE_URL=$(VITE_API_BASE_URL) \
+		--build-arg VITE_LITELLM_BASE_URL=$(VITE_LITELLM_BASE_URL) \
+		-t dcmt-editor:latest .
 
 docker-run:
 	docker run \

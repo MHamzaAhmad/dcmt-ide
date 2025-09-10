@@ -72,6 +72,12 @@ echo "⚙️  Creating nginx configuration for $DOMAIN..."
 # Get the current working directory (project root)
 PROJECT_ROOT=$(pwd)
 
+# First, add rate limiting zones to main nginx.conf
+if ! grep -q "limit_req_zone" /etc/nginx/nginx.conf; then
+    echo "Adding rate limiting configuration to nginx.conf..."
+    sed -i '/http {/a\\n    # Rate limiting zones\n    limit_req_zone \$binary_remote_addr zone=api:10m rate=10r/s;\n    limit_req_zone \$binary_remote_addr zone=general:10m rate=30r/s;' /etc/nginx/nginx.conf
+fi
+
 cat > /etc/nginx/sites-available/dcmt-editor << EOF
 # DCMT Editor nginx configuration
 server {
@@ -83,7 +89,8 @@ server {
 }
 
 server {
-    listen 443 ssl http2;
+    listen 443 ssl;
+    http2 on;
     server_name $DOMAIN;
 
     # SSL certificates from Let's Encrypt
@@ -104,10 +111,6 @@ server {
     add_header X-XSS-Protection "1; mode=block" always;
     add_header Referrer-Policy "strict-origin-when-cross-origin" always;
 
-    # Rate limiting
-    limit_req_zone \$binary_remote_addr zone=api:10m rate=10r/s;
-    limit_req_zone \$binary_remote_addr zone=general:10m rate=30r/s;
-
     # Gzip compression
     gzip on;
     gzip_vary on;
@@ -125,6 +128,8 @@ server {
 
     # Proxy all requests to Docker container on port 80
     location / {
+        limit_req zone=general burst=20 nodelay;
+        
         proxy_pass http://127.0.0.1:80;
         proxy_http_version 1.1;
         proxy_set_header Upgrade \$http_upgrade;
@@ -144,6 +149,27 @@ server {
         # For SSE and WebSocket support
         proxy_buffering off;
         chunked_transfer_encoding on;
+    }
+
+    # API routes with stricter rate limiting
+    location /api/ {
+        limit_req zone=api burst=10 nodelay;
+        
+        proxy_pass http://127.0.0.1:80;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade \$http_upgrade;
+        proxy_set_header Connection 'upgrade';
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+        proxy_set_header X-Forwarded-Host \$host;
+        proxy_set_header X-Forwarded-Port \$server_port;
+        
+        proxy_cache_bypass \$http_upgrade;
+        proxy_connect_timeout 60s;
+        proxy_send_timeout 60s;
+        proxy_read_timeout 60s;
     }
 
     # Let's Encrypt challenge location

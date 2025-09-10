@@ -1,5 +1,5 @@
 # Multi-stage Docker build for dcmt-editor with SSL support
-FROM node:20-alpine AS frontend-builder
+FROM node:22-alpine AS frontend-builder
 
 WORKDIR /app
 

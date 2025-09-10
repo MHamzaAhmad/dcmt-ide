@@ -216,10 +216,10 @@ function createPdfStore() {
                 pdfjsLib = await import('pdfjs-dist');
                 
                 // Use jsdelivr CDN which has proper CORS headers for cross-origin requests
-                // This works identically in development, production, Docker, and all environments
+                // For PDF.js 5.x+, use .mjs extension as per jsdelivr package structure
                 if (browser) {
                     pdfjsLib.GlobalWorkerOptions.workerSrc = 
-                        `https://cdn.jsdelivr.net/npm/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.js`;
+                        `https://cdn.jsdelivr.net/npm/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.mjs`;
                 }
 
                 console.log('PDFStore: PDF.js loaded successfully with CDN worker');

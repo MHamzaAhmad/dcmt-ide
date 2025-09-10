@@ -56,8 +56,9 @@ sudo certbot certonly \
 
 # Copy certificates to the expected location
 if [ -d "/app/letsencrypt/config/live/$DOMAIN" ]; then
-    cp /app/letsencrypt/config/live/$DOMAIN/fullchain.pem "$CERT_FILE"
-    cp /app/letsencrypt/config/live/$DOMAIN/privkey.pem "$KEY_FILE"
+    sudo cp /app/letsencrypt/config/live/$DOMAIN/fullchain.pem "$CERT_FILE"
+    sudo cp /app/letsencrypt/config/live/$DOMAIN/privkey.pem "$KEY_FILE"
+    sudo chown appuser:appgroup "$CERT_FILE" "$KEY_FILE"
 fi
 
 # Check if certificates were created

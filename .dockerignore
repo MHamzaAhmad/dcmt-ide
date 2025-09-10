@@ -1,0 +1,113 @@
+# Version control
+.git
+.gitignore
+.gitattributes
+
+# Dependencies
+node_modules
+target
+.pnpm-store
+.npm
+.yarn
+
+# Build outputs (except the ones we need)
+dist
+build
+.svelte-kit
+.vite
+
+# Development files
+.env
+.env.local
+.env.*.local
+.vscode
+.idea
+
+# OS files
+.DS_Store
+Thumbs.db
+*.log
+*.tmp
+
+# Documentation
+README.md
+AGENT.md
+STATE.md
+*.md
+
+# Development tools
+.prettierrc
+.eslintrc*
+vitest.config.js
+playwright.config.js
+test-results
+coverage
+
+# Tauri (since we're not using it in Docker)
+src-tauri
+
+# Backend development files
+backend/target/debug
+backend/Cargo.lock
+
+# Frontend development files
+pnpm-lock.yaml
+package-lock.json
+yarn.lock
+
+# Docker files (prevent recursive copying)
+Dockerfile*
+docker-compose*
+.dockerignore
+
+# IDE and editor files
+*.swp
+*.swo
+*~
+.vscode/
+.idea/
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+*.temp
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Runtime data
+pids
+*.pid
+*.seed
+*.pid.lock
+
+# Optional npm cache directory
+.npm
+
+# Optional eslint cache
+.eslintcache
+
+# Output of 'npm pack'
+*.tgz
+
+# Yarn Integrity file
+.yarn-integrity
+
+# dotenv environment variables file (keep .env.example)
+.env
+.env.test
+.env.production
+
+# Workspace files that might contain sensitive data
+workspace/
+
+# SSL certificates (will be generated at runtime)
+ssl/
+*.pem
+*.key
+*.crt

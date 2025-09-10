@@ -160,7 +160,7 @@ function createInitializationOrchestrator() {
                     }
                 }
 
-                // Step 1: Initialize EventStore
+                // Step 1: Initialize EventStore (quick, synchronous setup)
                 await orchestrator.executeStep('eventStore', async () => {
                     console.log('InitializationOrchestrator: Initializing EventStore...');
                     
@@ -177,7 +177,7 @@ function createInitializationOrchestrator() {
                     console.log('InitializationOrchestrator: EventStore initialized');
                 });
 
-                // Step 1: Initialize Workspace
+                // Step 2: Initialize Workspace (required for other steps)
                 await orchestrator.executeStep('workspace', async () => {
                     console.log('InitializationOrchestrator: Initializing workspace...');
                     await workspaceStore.initialize(rootPath, queryClient);
@@ -189,43 +189,106 @@ function createInitializationOrchestrator() {
                     }
                 });
 
-                // Step 2: Initialize LaTeX
-                await orchestrator.executeStep('latex', async () => {
-                    console.log('InitializationOrchestrator: Initializing LaTeX system...');
-                    await latexStore.initialize();
-                    
-                    // Verify LaTeX is ready
-                    const latexState = latexStore.getCurrentState();
-                    if (!latexState.isReady) {
-                        throw new Error('LaTeX system initialization incomplete');
-                    }
-                });
-
-                // Step 3: Initialize PDF
-                await orchestrator.executeStep('pdf', async () => {
-                    console.log('InitializationOrchestrator: Initializing PDF system...');
-                    await pdfStore.initialize();
-                    
-                    // Verify PDF is ready
-                    const pdfState = pdfStore.getCurrentState();
-                    if (!pdfState.isReady) {
-                        throw new Error('PDF system initialization incomplete');
-                    }
-                });
-
-                // Step 4: Initialize Agent (if not skipped)
-                if (!skipAgentInit) {
-                    await orchestrator.executeStep('agent', async () => {
-                        console.log('InitializationOrchestrator: Initializing agent system...');
+                // Step 3-5: Initialize LaTeX, PDF, and Agent in parallel (independent operations)
+                const parallelInitPromises: Promise<void>[] = [];
+                
+                // LaTeX initialization
+                parallelInitPromises.push(
+                    orchestrator.executeStep('latex', async () => {
+                        console.log('InitializationOrchestrator: Initializing LaTeX system...');
+                        await latexStore.initialize();
                         
-                        // Set query client if available
-                        if (queryClient) {
-                            agentStore.setQueryClient(queryClient);
+                        // Verify LaTeX is ready
+                        const latexState = latexStore.getCurrentState();
+                        if (!latexState.isReady) {
+                            throw new Error('LaTeX system initialization incomplete');
                         }
+                    })
+                );
+
+                // PDF initialization (can be parallel with LaTeX as they're independent)
+                parallelInitPromises.push(
+                    orchestrator.executeStep('pdf', async () => {
+                        console.log('InitializationOrchestrator: Initializing PDF system...');
                         
-                        await agentStore.initialize();
-                    });
+                        // Use lazy loading for PDF.js to improve startup performance
+                        try {
+                            await pdfStore.initialize();
+                            
+                            // Verify PDF is ready
+                            const pdfState = pdfStore.getCurrentState();
+                            if (!pdfState.isReady) {
+                                throw new Error('PDF system initialization incomplete');
+                            }
+                        } catch (error) {
+                            // Don't fail the entire initialization if PDF fails
+                            // User can still use the app without PDF preview
+                            console.warn('InitializationOrchestrator: PDF initialization failed, enabling graceful degradation:', error);
+                            
+                            // Enable graceful degradation following EventStore pattern
+                            try {
+                                pdfStore.enableGracefulDegradation();
+                                
+                                // Mark step as completed with warning rather than failed
+                                // This allows the app to continue functioning
+                                update(state => ({
+                                    ...state,
+                                    steps: state.steps.map(step => 
+                                        step.name === 'pdf' 
+                                            ? { ...step, status: 'completed', error: `Warning: ${error instanceof Error ? error.message : 'PDF initialization failed'} - graceful degradation enabled` }
+                                            : step
+                                    )
+                                }));
+                            } catch (degradationError) {
+                                // If even graceful degradation fails, mark as failed
+                                console.error('InitializationOrchestrator: PDF graceful degradation failed:', degradationError);
+                                update(state => ({
+                                    ...state,
+                                    steps: state.steps.map(step => 
+                                        step.name === 'pdf' 
+                                            ? { ...step, status: 'failed', error: error instanceof Error ? error.message : 'PDF initialization completely failed' }
+                                            : step
+                                    )
+                                }));
+                            }
+                        }
+                    })
+                );
+
+                // Agent initialization (independent of LaTeX/PDF)
+                if (!skipAgentInit) {
+                    parallelInitPromises.push(
+                        orchestrator.executeStep('agent', async () => {
+                            console.log('InitializationOrchestrator: Initializing agent system...');
+                            
+                            // Set query client if available
+                            if (queryClient) {
+                                agentStore.setQueryClient(queryClient);
+                            }
+                            
+                            try {
+                                await agentStore.initialize();
+                            } catch (error) {
+                                // Don't fail the entire initialization if agent fails
+                                // User can still use the app without agent functionality
+                                console.warn('InitializationOrchestrator: Agent initialization failed, continuing without agent features:', error);
+                                
+                                // Mark agent as failed but don't throw
+                                update(state => ({
+                                    ...state,
+                                    steps: state.steps.map(step => 
+                                        step.name === 'agent' 
+                                            ? { ...step, status: 'failed', error: error instanceof Error ? error.message : 'Agent initialization failed' }
+                                            : step
+                                    )
+                                }));
+                            }
+                        })
+                    );
                 }
+
+                // Wait for all parallel operations to complete
+                await Promise.all(parallelInitPromises);
 
                 // All steps completed successfully
                 const totalDuration = Date.now() - startTime;

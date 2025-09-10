@@ -200,10 +200,38 @@ function createPdfStore() {
                 const errorMessage = error instanceof Error ? error.message : 'Failed to initialize PDF store';
                 console.error('PDFStore initialization failed:', errorMessage);
                 
-                update(state => ({
-                    ...state,
-                    error: errorMessage
-                }));
+                // Try retry logic for worker loading failures
+                const currentState = get({ subscribe });
+                if (currentState.retryCount < currentState.maxRetries) {
+                    console.log(`PDFStore: Retrying initialization (attempt ${currentState.retryCount + 1}/${currentState.maxRetries})`);
+                    
+                    update(state => ({
+                        ...state,
+                        retryCount: state.retryCount + 1,
+                        error: `Retry ${state.retryCount + 1}/${state.maxRetries}: ${errorMessage}`
+                    }));
+
+                    // Retry with delay
+                    setTimeout(() => {
+                        // Reset initialized flag for retry
+                        isInitialized = false;
+                        store.initialize().catch(retryError => {
+                            console.error('PDFStore: Retry failed:', retryError);
+                            const finalError = retryError instanceof Error ? retryError.message : 'Retry failed';
+                            update(state => ({
+                                ...state,
+                                error: `Initialization failed after ${currentState.maxRetries} attempts: ${finalError}`,
+                                isReady: false
+                            }));
+                        });
+                    }, 1000 * (currentState.retryCount + 1)); // Exponential backoff
+                } else {
+                    update(state => ({
+                        ...state,
+                        error: errorMessage,
+                        isReady: false
+                    }));
+                }
             }
         },
 
@@ -212,17 +240,80 @@ function createPdfStore() {
             try {
                 pdfjsLib = await import('pdfjs-dist');
                 
-                // Set worker path
-                pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
-                    'pdfjs-dist/build/pdf.worker.mjs',
-                    import.meta.url
-                ).toString();
+                // Set worker path with fallback for Docker/production environments
+                if (browser) {
+                    try {
+                        // Try dynamic import approach first (works in dev)
+                        const workerUrl = new URL(
+                            'pdfjs-dist/build/pdf.worker.mjs',
+                            import.meta.url
+                        ).toString();
+                        pdfjsLib.GlobalWorkerOptions.workerSrc = workerUrl;
+                    } catch (workerError) {
+                        console.warn('PDFStore: Dynamic worker import failed, trying CDN fallback:', workerError);
+                        
+                        // Emit system event for worker loading issue
+                        if (eventStore) {
+                            eventStore.events.systemError('PDF worker loading failed, using CDN fallback');
+                        }
+                        
+                        // Fallback to CDN for Docker/production environments
+                        pdfjsLib.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.mjs`;
+                    }
+                }
 
                 console.log('PDFStore: PDF.js loaded successfully');
                 
             } catch (error) {
                 console.error('PDFStore: Failed to load PDF.js:', error);
-                throw new Error('Failed to load PDF viewer library');
+                
+                // Try with different approach for worker loading
+                try {
+                    if (browser && pdfjsLib) {
+                        // Last resort: use inline worker
+                        pdfjsLib.GlobalWorkerOptions.workerSrc = `data:application/javascript,${encodeURIComponent(`
+                            import 'https://unpkg.com/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.mjs';
+                        `)}`;
+                        console.log('PDFStore: Using inline worker as fallback');
+                    }
+                } catch (fallbackError) {
+                    console.error('PDFStore: All worker loading methods failed:', fallbackError);
+                    
+                    // Emit system error event following EventStore pattern
+                    if (eventStore) {
+                        eventStore.events.systemError('PDF.js worker initialization completely failed - PDF preview unavailable');
+                    }
+                    
+                    throw new Error('Failed to load PDF viewer library - worker initialization failed');
+                }
+            }
+        },
+
+        // Graceful degradation when PDF system fails
+        enableGracefulDegradation(): void {
+            console.log('PDFStore: Enabling graceful degradation mode');
+            
+            update(state => ({
+                ...state,
+                isReady: false,
+                error: 'PDF preview unavailable - application remains functional for LaTeX editing',
+                currentPdf: null
+            }));
+
+            // Emit event following EventStore pattern
+            if (browser && eventStore) {
+                eventStore.events.systemError('PDF preview disabled - LaTeX editing still available');
+            }
+
+            // Still subscribe to compilation events in case PDF system recovers later
+            if (browser && eventStore) {
+                const compilationEvents = eventStore.compilationEvents;
+                compilationEvents.subscribe(events => {
+                    const latestEvent = events[events.length - 1];
+                    if (latestEvent && latestEvent.subtype === 'completed') {
+                        console.log('PDFStore: LaTeX compiled but PDF preview unavailable');
+                    }
+                });
             }
         },
 

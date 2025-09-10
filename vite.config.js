@@ -6,7 +6,7 @@ import { sveltekit } from "@sveltejs/kit/vite";
 const host = process.env.TAURI_DEV_HOST;
 
 // https://vitejs.dev/config/
-export default defineConfig(async () => ({
+export default defineConfig(() => ({
   plugins: [tailwindcss(), sveltekit()],
   // Vite options tailored for Tauri development and only applied in `tauri dev` or `tauri build`
   //
@@ -20,5 +20,14 @@ export default defineConfig(async () => ({
     hmr: host ? { protocol: "ws", host, port: 1421 } : undefined,
     watch: { // 3. tell vite to ignore watching `src-tauri`
     ignored: ["**/src-tauri/**"] }
+  },
+  // Optimize PDF.js worker handling for Docker deployment
+  worker: {
+    format: /** @type {'es'} */ ('es')
+  },
+  // Handle PDF.js dependencies properly
+  optimizeDeps: {
+    include: ['pdfjs-dist'],
+    exclude: ['pdfjs-dist/build/pdf.worker.mjs']
   }
 }));

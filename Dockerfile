@@ -16,7 +16,7 @@ COPY . .
 RUN pnpm run build
 
 # Backend build stage
-FROM rust:1.75-alpine AS backend-builder
+FROM rust:1.89-alpine AS backend-builder
 
 # Install build dependencies
 RUN apk add --no-cache musl-dev pkgconfig openssl-dev

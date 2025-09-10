@@ -452,7 +452,7 @@
 {/snippet}
 
 <div class="h-full flex flex-col">
-	<div class="p-3 border-b flex items-center justify-between">
+	<div class="px-3 py-1 border-b flex items-center justify-between">
 		<h3 class="text-sm font-medium">Explorer</h3>
 		<div class="flex items-center gap-1">
 			<Button 

@@ -4,19 +4,32 @@
 	import VersionControlPanel from './VersionControlPanel.svelte';
 	import MonacoEditor from '../editor/MonacoEditor.svelte';
 	import PDFPreview from '../preview/PDFPreview.svelte';
-	import EditorHeader from './EditorHeader.svelte';
 	import ChatPanel from '../chat/ChatPanel.svelte';
 	import WelcomeScreen from '../welcome/WelcomeScreen.svelte';
+	import UnifiedEditorHeader from './UnifiedEditorHeader.svelte';
 	import { ResizablePaneGroup, ResizablePane, ResizableHandle } from '$lib/components/ui/resizable';
 	import { editorState } from '$lib/stores/editor.js';
 	import { fileSystemApi } from '$lib/api/adapters';
-	import { workspaceStore, orchestrator, projectStore } from '$lib/stores';
+	import { workspaceStore, orchestrator, projectStore, latexStore } from '$lib/stores';
 
-	let isFileExplorerOpen = $state(true);
+	let isFileExplorerOpen = $state(false);
 	let isVersionControlOpen = $state(false);
-	let activeTab = $state<'code' | 'chat'>('code');
+	let activeTab = $state<'code' | 'chat'>('chat');
 
 	import { isTauri } from '$lib/utils/platform';
+
+	// Initialize editor state on startup
+	$effect(() => {
+		// Set initial state on startup (collapsed panels, chat mode)
+		if (orchestratorState.isReady) {
+			editorState.update(state => ({
+				...state,
+				isFileExplorerOpen: false,
+				isVersionControlOpen: false,
+				activeTab: 'chat'
+			}));
+		}
+	});
 
 	$effect(() => {
 		isFileExplorerOpen = $editorState.isFileExplorerOpen;
@@ -28,6 +41,33 @@
 	const workspaceState = $derived($workspaceStore);
 	const orchestratorState = $derived($orchestrator);
 	const projectState = $derived($projectStore);
+	const latexState = $derived($latexStore);
+	
+	// Derived values for UnifiedEditorHeader
+	const activeFilePath = $derived(workspaceState.activeFile);
+	const activeFile = $derived(activeFilePath ? workspaceState.files.get(activeFilePath) : null);
+	
+	// Helper function to check if file is LaTeX
+	function isLatexFile(path: string): boolean {
+		const ext = path.split('.').pop()?.toLowerCase();
+		return ext === 'tex';
+	}
+	
+	// Helper function to get file basename
+	function getFileBasename(path: string): string {
+		return path.split('/').pop() || path;
+	}
+	
+	// Function to refresh file content (for conflict resolution)
+	async function refreshFileContent() {
+		if (!activeFilePath) return;
+		
+		try {
+			await workspaceStore.loadFile(activeFilePath, true);
+		} catch (error) {
+			console.error('Failed to refresh file content:', error);
+		}
+	}
 
 	// Auto-load main LaTeX file when new reactive stores are ready
 	$effect(() => {
@@ -125,7 +165,25 @@
 				<!-- Editor Panel -->
 				<ResizablePane defaultSize={40} minSize={25} class="border-r">
 					<div class="h-full flex flex-col relative overflow-visible">
-						<EditorHeader />
+						<!-- Unified Header -->
+						<UnifiedEditorHeader 
+							{activeFilePath}
+							fileBasename={activeFile ? getFileBasename(activeFile.path) : undefined}
+							isDirty={activeFile?.isDirty || false}
+							fullPath={activeFile?.path}
+							isOperationPending={activeFilePath ? workspaceState.pendingOperations.has(activeFilePath) : false}
+							operationType={activeFilePath ? workspaceState.pendingOperations.get(activeFilePath) : undefined}
+							agentIsModifying={false}
+							hasConflict={false}
+							lastAgentUpdateTime={0}
+							isLatexFile={activeFile ? isLatexFile(activeFile.path) : false}
+							isCompiling={latexState.isCompiling}
+							compilationStatus={latexState.compilationStatus === 'success' ? 'success' : latexState.compilationStatus === 'error' ? 'error' : null}
+							showTabs={true}
+							activeTab={activeTab}
+							onRefreshFile={refreshFileContent}
+						/>
+						
 						<div class="flex-1 overflow-hidden">
 							{#if activeTab === 'code'}
 								<MonacoEditor />

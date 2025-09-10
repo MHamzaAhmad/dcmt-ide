@@ -3,7 +3,7 @@
 </script>
 
 <div class="h-full flex flex-col">
-	<div class="p-3 border-b">
+	<div class="px-3 py-1 border-b">
 		<h3 class="text-sm font-medium">Version Control</h3>
 	</div>
 	

@@ -61,7 +61,7 @@
 			toolResults = agentState.activeToolResults;
 			streamingContent = agentState.streamingContent;
 			isProcessing = agentState.isProcessing;
-			currentToolStatus = agentState.currentToolStatus;
+			currentToolStatus = null; // agentState.currentToolStatus;
 		} else {
 			// Use legacy chat store for simple chat
 			messages = $chatStore.messages as AgentChatMessage[];
@@ -223,14 +223,6 @@
 		}
 	}
 	
-	async function handleClearSession() {
-		if (isAgentMode) {
-			await agentStore.clearSession();
-			await agentStore.createSession();
-		} else {
-			chatStore.clearMessages();
-		}
-	}
 	
 	
 	function handleFullscreen() {
@@ -269,21 +261,17 @@
 	'absolute bottom-4 left-4 right-4 bg-background/95 backdrop-blur border rounded-lg shadow-lg transition-all duration-300 z-50' + 
 	(isMinimized ? ' h-12' : isExpanded ? ' h-[600px]' : ' h-80') : 
 	'h-full bg-background'} flex flex-col">
-	<!-- Header with Mode Toggle -->
-	<div class="{mode === 'floating' ? 'border-b p-2 bg-muted/30' : 'border-b p-3'}">
-		<div class="flex items-center justify-between">
-			<div class="flex items-center gap-2">
-				{#if mode === 'floating'}
+	
+	<!-- Header - Only for floating mode -->
+	{#if mode === 'floating'}
+		<div class="border-b p-2 bg-muted/30">
+			<div class="flex items-center justify-between">
+				<div class="flex items-center gap-2">
 					<Bot size={16} class="text-primary" />
-					<span class="text-sm font-medium">AI Assistant</span>
-				{:else}
-					<Bot size={20} class="text-primary" />
-					<h2 class="text-lg font-semibold">AI Assistant</h2>
-				{/if}
-			</div>
-			
-			<div class="flex items-center gap-1">
-				{#if mode === 'floating'}
+					<span class="text-sm font-medium">Researgent AI</span>
+				</div>
+				
+				<div class="flex items-center gap-1">
 					{#if !isMinimized}
 						<Button
 							onclick={toggleExpanded}
@@ -317,20 +305,16 @@
 					>
 						<Maximize2 size={14} />
 					</Button>
-				{:else}
-					<Button variant="ghost" size="sm" onclick={handleClearSession}>
-						Clear
-					</Button>
-				{/if}
+				</div>
 			</div>
+			
+			{#if isAgentMode && agentError}
+				<div class="mt-2 text-sm text-destructive">
+					{agentError}
+				</div>
+			{/if}
 		</div>
-		
-		{#if isAgentMode && agentError}
-			<div class="mt-2 text-sm text-destructive">
-				{agentError}
-			</div>
-		{/if}
-	</div>
+	{/if}
 
 	<!-- Chat Messages Area -->
 	{#if !isMinimized}
@@ -344,9 +328,9 @@
 				<div class="flex flex-col items-center justify-center h-full p-8 text-center">
 					<Bot size={48} class="text-muted-foreground mb-4" />
 					<h3 class="text-lg font-medium mb-2">Start a conversation</h3>
-					<p class="text-sm text-muted-foreground max-w-md">
+					<p class="text-sm text-muted-foreground max-w-md leading-relaxed">
 						{#if isAgentMode}
-							Ask questions about your LaTeX document or request help with file operations. The agent can read, write, and modify files in your workspace.
+							Talk with AI to create, format or structure your document. Try: "create a research paper in IEEE style on generative AI and advancements in it" or "update the name in my resume to John Doe"
 						{:else}
 							Simple chat mode for basic conversations. Enable agent mode for file operations and advanced features.
 						{/if}
@@ -399,7 +383,7 @@
 				onValueChange={handleModelSelection}
 				disabled={$modelsQuery.isLoading}
 			>
-				<Select.Trigger class={mode === 'floating' ? 'w-[140px] h-8' : 'w-[200px] h-9'}>
+				<Select.Trigger class={mode === 'floating' ? 'w-[140px] h-8' : 'w-[200px] h-8'}>
 					{triggerContent}
 				</Select.Trigger>
 				<Select.Content>
@@ -415,9 +399,6 @@
 								<Select.Item value={model.id} label={model.id}>
 									<div class="flex items-center justify-between w-full">
 										<span>{model.id}</span>
-										<Badge variant="outline" class="text-xs ml-2">
-											{model.owned_by}
-										</Badge>
 									</div>
 								</Select.Item>
 							{/each}
@@ -439,10 +420,11 @@
 				</Select.Content>
 			</Select.Root>
 			
+			
 			{#if mode === 'floating'}
 				<Input
 					bind:value={inputValue}
-					placeholder={selectedModel ? 'Ask about your LaTeX project...' : 'Select a model first...'}
+					placeholder={selectedModel ? 'Ask the AI to about your document...' : 'Select a model first...'}
 					disabled={!selectedModel || (isAgentMode ? isProcessing : isLoading)}
 					onkeydown={handleKeyDown}
 					class="flex-1 h-8"

@@ -69,6 +69,7 @@
 	});
 
 
+
 	// Create debounced save function
 	const debouncedSave = debounce(async (filePath: string, content: string) => {
 		if (!filePath) return;
@@ -349,52 +350,8 @@
 	});
 </script>
 
-<div class="h-full flex flex-col">
-	{#if activeFilePath}
-		{@const activeFile = workspaceState.files.get(activeFilePath)}
-		<div class="h-8 border-b bg-muted/50 flex items-center px-3 text-sm">
-			<span class="text-muted-foreground">{activeFile?.path || 'Untitled'}</span>
-			{#if activeFile?.isDirty}
-				<span class="ml-1 text-orange-500">•</span>
-			{/if}
-			{#if workspaceState.pendingOperations.has(activeFilePath)}
-				{@const operation = workspaceState.pendingOperations.get(activeFilePath)}
-				{#if operation === 'writing'}
-					<span class="ml-2 text-xs text-muted-foreground">Saving...</span>
-				{:else if operation === 'reading'}
-					<span class="ml-2 text-xs text-muted-foreground">Loading...</span>
-				{/if}
-			{/if}
-			
-			{#if agentIsModifyingFile}
-				<span class="ml-2 text-xs text-blue-500 animate-pulse">🤖 Agent updating...</span>
-			{:else if hasConflict}
-				<span class="ml-2 text-xs text-orange-500">⚠️ Content conflict</span>
-				<button 
-					class="ml-1 text-xs text-blue-500 hover:text-blue-700 underline"
-					onclick={refreshFileContent}
-				>
-					Reload
-				</button>
-			{:else if lastAgentUpdateTime > 0 && (Date.now() - lastAgentUpdateTime < 5000)}
-				<span class="ml-2 text-xs text-green-500">✓ Updated by agent</span>
-			{/if}
-			
-			{#if activeFile && isLatexFile(activeFile.path)}
-				{#if latexState.isCompiling}
-					<span class="ml-2 text-xs text-blue-500">Compiling LaTeX...</span>
-				{:else if latexState.compilationStatus === 'success'}
-					<span class="ml-2 text-xs text-green-500">✓ Compiled</span>
-				{:else if latexState.compilationStatus === 'error'}
-					<span class="ml-2 text-xs text-red-500">✗ Compile failed</span>
-				{/if}
-			{/if}
-		</div>
-	{/if}
-	
-	<div 
-		bind:this={editorContainer} 
-		class="flex-1"
-		style="min-height: 0;"
-	></div>
-</div>
+<div 
+	bind:this={editorContainer} 
+	class="h-full"
+	style="min-height: 0;"
+></div>

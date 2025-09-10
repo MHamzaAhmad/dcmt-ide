@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { onMount, onDestroy } from 'svelte';
 	import { Button } from '$lib/components/ui/button';
-	import { ZoomIn, ZoomOut, RotateCw, Download, FileText } from '@lucide/svelte';
+	import { Play, Download, FileText } from '@lucide/svelte';
 	import { pdfStore, latexStore } from '$lib/stores';
 
 	// Props
@@ -12,33 +12,74 @@
 	
 	let { showToolbar = true, fullPanel = false }: Props = $props();
 
-	let canvasContainer: HTMLDivElement;
-	let canvas = $state<HTMLCanvasElement>();
+	let canvases = $state<HTMLCanvasElement[]>([]);
 	
 	// Reactive store subscriptions
 	const pdfState = $derived($pdfStore);
 	const latexState = $derived($latexStore);
 	// Use store derivatives directly - no manual subscriptions needed
 	const hasValidPdf = $derived(pdfState.currentPdf && pdfState.currentPdf.pdfDoc && !pdfState.isLoading && !pdfState.error);
-	const canRender = $derived(pdfState.currentPdf?.pdfDoc && pdfState.canvas && pdfState.context && !pdfState.isRendering);
-	const currentPageInfo = $derived({
-		current: pdfState.viewer.currentPage,
-		total: pdfState.currentPdf?.numPages || 0,
-		text: pdfState.currentPdf ? `${pdfState.viewer.currentPage} / ${pdfState.currentPdf.numPages}` : '- / -'
-	});
 
-	// Canvas reactive effect - connect canvas to PDF store
+	// Update canvases when PDF changes
 	$effect(() => {
-		if (canvas) {
-			console.log('PDFPreview: Setting canvas in PDF store');
-			pdfStore.setCanvas(canvas);
-		} else {
-			console.log('PDFPreview: Canvas not available yet');
+		if (pdfState.currentPdf && canvases.length !== pdfState.currentPdf.numPages) {
+			// Initialize canvases array for all pages
+			canvases = Array(pdfState.currentPdf.numPages).fill(null);
 		}
 	});
 
-	// The PDF store handles all rendering automatically when canvas is set
-	// and when PDF loads. No need for additional auto-render triggers here.
+	// Render all pages when canvases are available
+	$effect(() => {
+		if (pdfState.currentPdf && canvases.length > 0 && canvases.some(c => c)) {
+			renderAllPages();
+		}
+	});
+
+	async function renderAllPages() {
+		if (!pdfState.currentPdf?.pdfDoc) return;
+
+		try {
+			// Get device pixel ratio for high-DPI displays
+			const devicePixelRatio = window.devicePixelRatio || 1;
+			
+			for (let pageNum = 1; pageNum <= pdfState.currentPdf.numPages; pageNum++) {
+				const canvas = canvases[pageNum - 1];
+				if (!canvas) continue;
+
+				const page = await pdfState.currentPdf.pdfDoc.getPage(pageNum);
+				const context = canvas.getContext('2d');
+				if (!context) continue;
+
+				// Use reasonable display scale that fits well in the viewport
+				const displayScale = 1.4;
+				// Render at higher internal resolution for crisp text
+				const renderScale = displayScale * devicePixelRatio;
+				
+				// Get viewports for both display and rendering
+				const displayViewport = page.getViewport({ scale: displayScale });
+				const renderViewport = page.getViewport({ scale: renderScale });
+				
+				// Set canvas internal size (high resolution for crisp rendering)
+				canvas.width = renderViewport.width;
+				canvas.height = renderViewport.height;
+				
+				// Set CSS display size (reasonable size for viewing)
+				canvas.style.width = `${displayViewport.width}px`;
+				canvas.style.height = `${displayViewport.height}px`;
+				
+				// Enable crisp text rendering
+				context.imageSmoothingEnabled = true;
+				context.imageSmoothingQuality = 'high';
+
+				await page.render({
+					canvasContext: context,
+					viewport: renderViewport
+				}).promise;
+			}
+		} catch (error) {
+			console.error('Failed to render PDF pages:', error);
+		}
+	}
 
 	// Public method to load a PDF by path - delegates to store
 	export async function loadPDFByPath(relativePath: string) {
@@ -51,25 +92,26 @@
 		console.log('PDFPreview: Component mounted, stores handle initialization');
 	});
 
-	// Viewer control functions - delegate to store
-	function nextPage() {
-		pdfStore.nextPage();
+	// Handler functions following STATE.md reactive patterns
+	function handleCompile() {
+		// Use latexStore.forceCompile() as per STATE.md
+		latexStore.forceCompile();
 	}
 
-	function prevPage() {
-		pdfStore.prevPage();
-	}
-
-	function zoomIn() {
-		pdfStore.zoomIn();
-	}
-
-	function zoomOut() {
-		pdfStore.zoomOut();
-	}
-
-	function rotate() {
-		pdfStore.rotate();
+	async function handleDownload() {
+		if (!hasValidPdf || !pdfState.currentPdf) return;
+		
+		try {
+			// Create download link for PDF
+			const link = document.createElement('a');
+			link.href = pdfState.currentPdf.url;
+			link.download = pdfState.currentPdf.path.split('/').pop() || 'document.pdf';
+			document.body.appendChild(link);
+			link.click();
+			document.body.removeChild(link);
+		} catch (error) {
+			console.error('Failed to download PDF:', error);
+		}
 	}
 
 	onDestroy(() => {
@@ -81,65 +123,45 @@
 <div class="h-full flex flex-col {fullPanel ? 'bg-background' : 'bg-muted/20'}">
 	<!-- PDF Toolbar -->
 	{#if showToolbar}
-	<div class="h-12 border-b bg-background flex items-center px-3 gap-2">
-		<div class="flex items-center gap-1">
-			<Button
-				variant="ghost"
-				size="sm"
-				onclick={prevPage}
-				disabled={!hasValidPdf || currentPageInfo.current <= 1}
-			>
-				←
-			</Button>
-			
-			<span class="text-sm px-2">
-				{currentPageInfo.text}
-			</span>
-			
-			<Button
-				variant="ghost"
-				size="sm"
-				onclick={nextPage}
-				disabled={!hasValidPdf || currentPageInfo.current >= currentPageInfo.total}
-			>
-				→
-			</Button>
-		</div>
-
-		<div class="h-4 w-px bg-border mx-1"></div>
-
-		<div class="flex items-center gap-1">
-			<Button variant="ghost" size="sm" onclick={zoomOut} disabled={!hasValidPdf}>
-				<ZoomOut size={14} />
-			</Button>
-			
-			<span class="text-xs px-1 min-w-12 text-center">
-				{Math.round(pdfState.viewer.scale * 100)}%
-			</span>
-			
-			<Button variant="ghost" size="sm" onclick={zoomIn} disabled={!hasValidPdf}>
-				<ZoomIn size={14} />
-			</Button>
-		</div>
-
-		<div class="h-4 w-px bg-border mx-1"></div>
-
-		<Button variant="ghost" size="sm" onclick={rotate} disabled={!hasValidPdf}>
-			<RotateCw size={14} />
+	<div class="h-8 border-b bg-background flex items-center px-3 gap-2">
+		<Button
+			variant="default"
+			size="sm"
+			onclick={handleCompile}
+			disabled={latexState.isCompiling}
+			class="h-6 gap-1.5 px-2"
+		>
+			<Play size={12} />
+			{latexState.isCompiling ? 'Compiling...' : 'Compile'}
+		</Button>
+		
+		<Button
+			variant="outline"
+			size="sm"
+			onclick={handleDownload}
+			disabled={!hasValidPdf}
+			class="h-6 gap-1.5 px-2"
+		>
+			<Download size={12} />
+			Download
 		</Button>
 	</div>
 	{/if}
 
 	<!-- PDF Viewer -->
-	<div class="flex-1 overflow-auto p-0 relative" bind:this={canvasContainer}>
-		<!-- Always render canvas so it's available for PDF rendering -->
-		<canvas 
-			bind:this={canvas}
-			class="max-w-full h-auto {hasValidPdf ? '' : 'invisible'}"
-			class:absolute={!hasValidPdf}
-			class:inset-0={!hasValidPdf}
-			style="{fullPanel ? '' : 'box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1);'}"
-		></canvas>
+	<div class="flex-1 overflow-auto p-4 relative">
+		{#if hasValidPdf && pdfState.currentPdf}
+			<!-- Render all PDF pages in scrollable container -->
+			<div class="flex flex-col items-center gap-4">
+				{#each Array(pdfState.currentPdf.numPages) as _, pageIndex}
+					<canvas 
+						bind:this={canvases[pageIndex]}
+						class="max-w-full h-auto border border-border rounded-lg shadow-sm"
+						style="box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1);"
+					></canvas>
+				{/each}
+			</div>
+		{/if}
 
 		<!-- Overlay states when PDF is not ready -->
 		{#if pdfState.isLoading}

@@ -715,7 +715,7 @@ function createPdfStore() {
                             // Create operation-specific ID for compilation events
                             const compilationOperationId = store.createOperationId(
                                 'compilation', 
-                                latestEvent.payload.source || 'latex',
+                                'latex',
                                 { 
                                     eventTimestamp: latestEvent.payload.timestamp,
                                     mainFile: latestEvent.payload.mainFile 
@@ -723,7 +723,7 @@ function createPdfStore() {
                             );
                             
                             console.log(`PDFStore: Compilation completed, loading PDF: ${pdfPath} (operation: ${compilationOperationId})`);
-                            store.loadPdf(pdfPath, compilationOperationId, 'compilation', latestEvent.payload.source || 'latex');
+                            store.loadPdf(pdfPath, compilationOperationId, 'compilation', 'latex');
                         }
                     }
                 }

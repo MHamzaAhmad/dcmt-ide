@@ -1,5 +1,4 @@
 // Web File WebSocket Adapter for File Watching
-import { apiClient } from '../../client';
 import type { FileWatcherOperations } from '../../types';
 import { eventStore } from '$lib/stores/events';
 
@@ -187,7 +186,10 @@ export class WebSocketAdapter implements FileWatcherOperations {
 		}
 
 		try {
-			const wsUrl = apiClient.baseURL.replace(/^http/, 'ws') + '/ws';
+			// Use relative URL to let nginx handle proxying in Docker deployment
+			// Construct WebSocket URL based on current protocol and host
+			const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+			const wsUrl = `${protocol}//${window.location.host}/ws`;
 			this.ws = new WebSocket(wsUrl);
 			
 			this.ws.onopen = () => {

@@ -1,5 +1,4 @@
 // Agent WebSocket Adapter for Real-time Agent Events
-import { apiClient } from '../../client';
 import type { AgentEvent, FileEventData } from '../../types';
 import type { FileEventCallback, FileEventType } from '../../hooks/useFileWatcher';
 import { eventStore } from '$lib/stores/events';
@@ -31,7 +30,10 @@ export class AgentWebSocketAdapter {
         this.isConnecting = true;
 
         try {
-            const wsUrl = apiClient.baseURL.replace(/^http/, 'ws') + '/ws';
+            // Use relative URL to let nginx handle proxying in Docker deployment
+            // Construct WebSocket URL based on current protocol and host
+            const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+            const wsUrl = `${protocol}//${window.location.host}/ws`;
             console.log('Connecting to agent WebSocket:', wsUrl);
             
             this.ws = new WebSocket(wsUrl);

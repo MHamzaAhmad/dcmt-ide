@@ -1,5 +1,4 @@
 // Agent SSE (Server-Sent Events) Adapter for Real-time Agent Events
-import { apiClient } from '../../client';
 import type { AgentEvent } from '../../types';
 import { eventStore } from '$lib/stores/events';
 
@@ -30,7 +29,8 @@ export class AgentSSEAdapter {
         this.disconnect();
         
         this.currentSessionId = sessionId;
-        const sseUrl = `${apiClient.baseURL}/sse/agent/session/${sessionId}/events`;
+        // Use relative URL to let nginx handle proxying in Docker deployment
+        const sseUrl = `/sse/agent/session/${sessionId}/events`;
         
         console.log('Connecting to agent SSE for session:', sessionId, 'URL:', sseUrl);
         
@@ -95,7 +95,8 @@ export class AgentSSEAdapter {
         this.disconnect();
         
         this.currentSessionId = null;
-        const sseUrl = `${apiClient.baseURL}/sse/agent/events`;
+        // Use relative URL to let nginx handle proxying in Docker deployment
+        const sseUrl = `/sse/agent/events`;
         
         console.log('Connecting to global agent SSE, URL:', sseUrl);
         

@@ -56,7 +56,7 @@ sudo certbot certonly \
 
 # Copy certificates to the expected location
 echo "📁 Looking for certificates in: /app/letsencrypt/config/live/$DOMAIN"
-if [ -d "/app/letsencrypt/config/live/$DOMAIN" ]; then
+if sudo test -d "/app/letsencrypt/config/live/$DOMAIN"; then
     echo "✓ Certificate directory found"
     echo "📋 Copying certificates to /app/ssl/"
     sudo cp /app/letsencrypt/config/live/$DOMAIN/fullchain.pem "$CERT_FILE"
@@ -67,7 +67,7 @@ if [ -d "/app/letsencrypt/config/live/$DOMAIN" ]; then
 else
     echo "❌ Certificate directory not found at: /app/letsencrypt/config/live/$DOMAIN"
     echo "📂 Checking available directories:"
-    ls -la /app/letsencrypt/config/live/ || echo "No live directory found"
+    sudo ls -la /app/letsencrypt/config/live/ || echo "No live directory found"
 fi
 
 # Check if certificates were created

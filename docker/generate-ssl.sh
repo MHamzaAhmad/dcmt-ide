@@ -27,6 +27,7 @@ openssl req -new -key "$KEY_FILE" -out /tmp/cert.csr -subj "/C=$COUNTRY/ST=$STAT
 
 # Create certificate extensions file for SAN
 cat > /tmp/cert.ext << EOF
+[v3_req]
 authorityKeyIdentifier=keyid,issuer
 basicConstraints=CA:FALSE
 keyUsage = digitalSignature, nonRepudiation, keyEncipherment, dataEncipherment

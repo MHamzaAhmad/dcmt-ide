@@ -18,6 +18,5 @@ docker-run:
 		-v $(PWD)/workspace:/app/workspace \
 		-v dcmt-logs:/app/logs \
 		--name dcmt-editor \
-		--rm \
 		-d \
 		dcmt-editor:latest

@@ -126,11 +126,11 @@ server {
         application/xml
         image/svg+xml;
 
-    # Proxy all requests to Docker container on port 80
+    # Proxy all requests to Docker container on port 8080
     location / {
         limit_req zone=general burst=20 nodelay;
         
-        proxy_pass http://127.0.0.1:80;
+        proxy_pass http://127.0.0.1:8080;
         proxy_http_version 1.1;
         proxy_set_header Upgrade \$http_upgrade;
         proxy_set_header Connection 'upgrade';
@@ -155,7 +155,7 @@ server {
     location /api/ {
         limit_req zone=api burst=10 nodelay;
         
-        proxy_pass http://127.0.0.1:80;
+        proxy_pass http://127.0.0.1:8080;
         proxy_http_version 1.1;
         proxy_set_header Upgrade \$http_upgrade;
         proxy_set_header Connection 'upgrade';
@@ -207,10 +207,10 @@ echo "  - Domain: $DOMAIN"
 echo "  - SSL Certificate: /etc/letsencrypt/live/$DOMAIN/fullchain.pem"
 echo "  - SSL Private Key: /etc/letsencrypt/live/$DOMAIN/privkey.pem"
 echo "  - Nginx Configuration: /etc/nginx/sites-available/dcmt-editor"
-echo "  - Docker Container: Proxied on http://127.0.0.1:80"
+echo "  - Docker Container: Proxied on http://127.0.0.1:8080"
 echo ""
 echo "🌐 Your DCMT Editor will be accessible at: https://$DOMAIN"
-echo "📋 Make sure your Docker container is running on port 80"
+echo "📋 Make sure your Docker container is running on port 8080"
 echo ""
 echo "🔧 To check nginx status: systemctl status nginx"
 echo "🔧 To reload nginx: systemctl reload nginx"

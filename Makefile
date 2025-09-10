@@ -13,10 +13,11 @@ docker-build:
 docker-run:
 	docker run \
 		--env-file .env \
-		-p 80:80 \
+		-p 8080:80 \
 		-v $(PWD)/workspace:/app/workspace \
 		-v dcmt-logs:/app/logs \
 		--name dcmt-editor \
+		--rm \
 		-d \
 		dcmt-editor:latest
 

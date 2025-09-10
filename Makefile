@@ -1,4 +1,4 @@
-.PHONY: litellm docker-build docker-run
+.PHONY: litellm docker-build docker-run ssl-setup
 litellm:
 	docker run \
 		--env-file .env \
@@ -14,9 +14,15 @@ docker-run:
 	docker run \
 		--env-file .env \
 		-p 80:80 \
-		-p 443:443 \
 		-v $(PWD)/workspace:/app/workspace \
 		-v dcmt-logs:/app/logs \
 		--name dcmt-editor \
 		-d \
 		dcmt-editor:latest
+
+ssl-setup:
+	@if [ "$$(id -u)" -ne 0 ]; then \
+		echo "❌ This target must be run as root. Use: sudo make ssl-setup"; \
+		exit 1; \
+	fi
+	@./docker/generate-ssl.sh

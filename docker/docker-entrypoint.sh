@@ -4,38 +4,10 @@ set -e
 echo "🚀 Starting DCMT Editor Container..."
 
 # Create necessary directories
-mkdir -p /app/logs /app/ssl /app/workspace
+mkdir -p /app/logs /app/workspace
 
 # Set permissions
-chown -R appuser:appgroup /app/logs /app/ssl /app/workspace 2>/dev/null || true
-
-# SSL Certificate Setup
-echo "🔒 Setting up SSL certificates..."
-
-if [ -f "/app/ssl/cert.pem" ] && [ -f "/app/ssl/key.pem" ]; then
-    echo "✓ SSL certificates found, using existing certificates"
-elif [ ! -z "$SSL_CERT_PATH" ] && [ ! -z "$SSL_KEY_PATH" ]; then
-    echo "📋 Copying SSL certificates from environment paths..."
-    cp "$SSL_CERT_PATH" /app/ssl/cert.pem
-    cp "$SSL_KEY_PATH" /app/ssl/key.pem
-    chown appuser:appgroup /app/ssl/cert.pem /app/ssl/key.pem
-    echo "✓ SSL certificates copied successfully"
-elif [ ! -z "$DOMAIN" ]; then
-    echo "🌐 Domain specified: $DOMAIN"
-    echo "🔧 Obtaining Let's Encrypt certificate..."
-    /app/generate-ssl.sh
-else
-    echo "❌ No DOMAIN specified in environment"
-    echo "Please set DOMAIN in your .env file"
-    echo "Example: DOMAIN=yourdomain.com"
-    exit 1
-fi
-
-# Verify SSL certificates exist
-if [ ! -f "/app/ssl/cert.pem" ] || [ ! -f "/app/ssl/key.pem" ]; then
-    echo "❌ SSL certificates not found!"
-    exit 1
-fi
+chown -R appuser:appgroup /app/logs /app/workspace 2>/dev/null || true
 
 # Environment variable validation
 echo "🔧 Validating configuration..."
@@ -68,8 +40,8 @@ chown -R appuser:appgroup "$DCMT_WORKSPACE_PATH"
 
 # Fix permissions for mounted workspace volume
 if [ -d "$DCMT_WORKSPACE_PATH" ]; then
-    sudo chown -R appuser:appgroup "$DCMT_WORKSPACE_PATH" 2>/dev/null || true
-    sudo chmod -R 755 "$DCMT_WORKSPACE_PATH" 2>/dev/null || true
+    chown -R appuser:appgroup "$DCMT_WORKSPACE_PATH" 2>/dev/null || true
+    chmod -R 755 "$DCMT_WORKSPACE_PATH" 2>/dev/null || true
 fi
 
 # Test backend binary
@@ -83,22 +55,18 @@ if ! timeout 2 /app/backend/dcmt-backend --help >/dev/null 2>&1; then
     echo "⚠️  Backend binary test skipped (no --help flag), continuing..."
 fi
 
-# Test nginx configuration
-echo "🧪 Testing nginx configuration..."
-if ! nginx -t -c /etc/nginx/nginx.conf; then
-    echo "❌ Nginx configuration test failed!"
-    exit 1
-fi
 
 # Final permissions check
-chown -R appuser:appgroup /app/logs /app/ssl /app/workspace 2>/dev/null || true
+chown -R appuser:appgroup /app/logs /app/workspace 2>/dev/null || true
 
 echo "✅ Container initialization completed successfully!"
 echo "🌐 Starting services..."
-echo "  - Frontend: https://localhost:443"
-echo "  - API: https://localhost:443/api/"
-echo "  - LiteLLM: https://localhost:443/llm/"
-echo "  - WebSocket: wss://localhost:443/ws"
+echo "  - Frontend: http://localhost:80"
+echo "  - API: http://localhost:80/api/"
+echo "  - LiteLLM: http://localhost:80/llm/"
+echo "  - WebSocket: ws://localhost:80/ws"
+echo ""
+echo "📋 Note: SSL termination should be handled by host nginx"
 
 # Execute the command passed to the container
 exec "$@"

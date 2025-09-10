@@ -1,4 +1,4 @@
-# Multi-stage Docker build for dcmt-editor with SSL support
+# Multi-stage Docker build for dcmt-editor
 FROM node:22-alpine AS frontend-builder
 
 WORKDIR /app
@@ -44,16 +44,12 @@ FROM texlive/texlive:latest
 
 # Install runtime dependencies
 RUN apt-get update && apt-get install -y \
-    nginx \
     supervisor \
-    openssl \
     ca-certificates \
     wget \
-    sudo \
     python3 \
     python3-pip \
     python3-venv \
-    certbot \
     && rm -rf /var/lib/apt/lists/*
 
 # Install LiteLLM
@@ -68,21 +64,10 @@ RUN groupadd -g 1001 appgroup && \
 # Create necessary directories
 RUN mkdir -p /app/frontend \
     /app/backend \
-    /app/ssl \
     /app/logs \
     /var/log/supervisor \
-    /run/nginx \
-    /var/www/certbot \
-    /var/lib/nginx/body \
-    /var/lib/nginx/proxy \
-    /var/lib/nginx/fastcgi \
-    /var/lib/nginx/uwsgi \
-    /var/lib/nginx/scgi \
     && chown -R appuser:appgroup /app \
-    && chown -R appuser:appgroup /var/log/supervisor \
-    && chown -R appuser:appgroup /var/www/certbot \
-    && chown -R appuser:appgroup /var/lib/nginx \
-    && chown -R appuser:appgroup /run/nginx
+    && chown -R appuser:appgroup /var/log/supervisor
 
 # Copy built frontend
 COPY --from=frontend-builder --chown=appuser:appgroup /app/build /app/frontend
@@ -91,25 +76,20 @@ COPY --from=frontend-builder --chown=appuser:appgroup /app/build /app/frontend
 COPY --from=backend-builder --chown=appuser:appgroup /app/backend/target/release/dcmt-backend /app/backend/dcmt-backend
 
 # Copy configuration files
-COPY --chown=appuser:appgroup docker/nginx-ssl.conf /etc/nginx/nginx.conf
 COPY --chown=appuser:appgroup docker/supervisord.conf /etc/supervisord.conf
 COPY --chown=appuser:appgroup docker/docker-entrypoint.sh /app/docker-entrypoint.sh
-COPY --chown=appuser:appgroup docker/generate-ssl.sh /app/generate-ssl.sh
 
 # Copy LiteLLM configuration
 COPY --chown=appuser:appgroup litellm/config.yaml /app/litellm/config.yaml
 
 # Make scripts executable
-RUN chmod +x /app/docker-entrypoint.sh /app/generate-ssl.sh
+RUN chmod +x /app/docker-entrypoint.sh
 
 # Create workspace directory with proper permissions
 RUN mkdir -p /app/workspace && chown -R appuser:appgroup /app/workspace
 
-# Set proper permissions for the appuser to access mounted volumes and run certbot
-RUN echo "appuser ALL=(ALL) NOPASSWD: /bin/chown, /bin/chmod, /usr/bin/certbot, /bin/cp, /usr/bin/test, /bin/ls" >> /etc/sudoers || true
-
-# Expose ports
-EXPOSE 80 443
+# Expose port 80 for internal HTTP traffic
+EXPOSE 80
 
 # Set environment variables
 ENV DCMT_HOST=0.0.0.0
@@ -122,7 +102,7 @@ USER appuser
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
-    CMD wget --no-verbose --tries=1 --spider https://localhost:443/ || exit 1
+    CMD wget --no-verbose --tries=1 --spider http://localhost:80/ || exit 1
 
 ENTRYPOINT ["/app/docker-entrypoint.sh"]
 CMD ["/usr/bin/supervisord", "-c", "/etc/supervisord.conf"]

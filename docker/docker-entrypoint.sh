@@ -55,6 +55,12 @@ if ! timeout 2 /app/backend/dcmt-backend --help >/dev/null 2>&1; then
     echo "⚠️  Backend binary test skipped (no --help flag), continuing..."
 fi
 
+# Test nginx configuration
+echo "🧪 Testing nginx configuration..."
+if ! nginx -t -c /etc/nginx/nginx.conf; then
+    echo "❌ Nginx configuration test failed!"
+    exit 1
+fi
 
 # Final permissions check
 chown -R appuser:appgroup /app/logs /app/workspace 2>/dev/null || true

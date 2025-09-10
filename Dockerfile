@@ -44,6 +44,7 @@ FROM texlive/texlive:latest
 
 # Install runtime dependencies
 RUN apt-get update && apt-get install -y \
+    nginx \
     supervisor \
     ca-certificates \
     wget \
@@ -66,8 +67,16 @@ RUN mkdir -p /app/frontend \
     /app/backend \
     /app/logs \
     /var/log/supervisor \
+    /run/nginx \
+    /var/lib/nginx/body \
+    /var/lib/nginx/proxy \
+    /var/lib/nginx/fastcgi \
+    /var/lib/nginx/uwsgi \
+    /var/lib/nginx/scgi \
     && chown -R appuser:appgroup /app \
-    && chown -R appuser:appgroup /var/log/supervisor
+    && chown -R appuser:appgroup /var/log/supervisor \
+    && chown -R appuser:appgroup /var/lib/nginx \
+    && chown -R appuser:appgroup /run/nginx
 
 # Copy built frontend
 COPY --from=frontend-builder --chown=appuser:appgroup /app/build /app/frontend
@@ -76,6 +85,7 @@ COPY --from=frontend-builder --chown=appuser:appgroup /app/build /app/frontend
 COPY --from=backend-builder --chown=appuser:appgroup /app/backend/target/release/dcmt-backend /app/backend/dcmt-backend
 
 # Copy configuration files
+COPY --chown=appuser:appgroup docker/nginx-internal.conf /etc/nginx/nginx.conf
 COPY --chown=appuser:appgroup docker/supervisord.conf /etc/supervisord.conf
 COPY --chown=appuser:appgroup docker/docker-entrypoint.sh /app/docker-entrypoint.sh
 

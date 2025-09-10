@@ -71,8 +71,10 @@ RUN mkdir -p /app/frontend \
     /app/logs \
     /var/log/supervisor \
     /run/nginx \
+    /var/www/certbot \
     && chown -R appuser:appgroup /app \
-    && chown -R appuser:appgroup /var/log/supervisor
+    && chown -R appuser:appgroup /var/log/supervisor \
+    && chown -R appuser:appgroup /var/www/certbot
 
 # Copy built frontend
 COPY --from=frontend-builder --chown=appuser:appgroup /app/build /app/frontend

@@ -4,7 +4,7 @@ set -e
 echo "🚀 Starting DCMT Editor Container..."
 
 # Create necessary directories
-mkdir -p /app/logs /app/ssl /app/workspace /var/www/certbot
+mkdir -p /app/logs /app/ssl /app/workspace
 
 # Set permissions
 chown -R appuser:appgroup /app/logs /app/ssl /app/workspace 2>/dev/null || true

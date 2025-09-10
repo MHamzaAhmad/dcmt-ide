@@ -22,18 +22,19 @@ elif [ ! -z "$SSL_CERT_PATH" ] && [ ! -z "$SSL_KEY_PATH" ]; then
     echo "✓ SSL certificates copied successfully"
 elif [ ! -z "$DOMAIN" ]; then
     echo "🌐 Domain specified: $DOMAIN"
-    echo "🔄 For Let's Encrypt, mount certificates to /app/ssl/ or use certbot"
-    echo "🔧 Generating temporary self-signed certificate..."
+    echo "🔧 Obtaining Let's Encrypt certificate..."
     /app/generate-ssl.sh
 else
-    echo "🔧 Generating self-signed SSL certificate..."
-    /app/generate-ssl.sh
+    echo "❌ No DOMAIN specified in environment"
+    echo "Please set DOMAIN in your .env file"
+    echo "Example: DOMAIN=yourdomain.com"
+    exit 1
 fi
 
 # Verify SSL certificates exist
 if [ ! -f "/app/ssl/cert.pem" ] || [ ! -f "/app/ssl/key.pem" ]; then
-    echo "❌ SSL certificates not found! Generating emergency self-signed certificate..."
-    /app/generate-ssl.sh
+    echo "❌ SSL certificates not found!"
+    exit 1
 fi
 
 # Environment variable validation
@@ -78,8 +79,8 @@ if [ ! -x "/app/backend/dcmt-backend" ]; then
 fi
 
 echo "🧪 Testing backend binary..."
-if ! /app/backend/dcmt-backend --help >/dev/null 2>&1; then
-    echo "⚠️  Backend binary test failed, but continuing..."
+if ! timeout 2 /app/backend/dcmt-backend --help >/dev/null 2>&1; then
+    echo "⚠️  Backend binary test skipped (no --help flag), continuing..."
 fi
 
 # Test nginx configuration

@@ -1,7 +1,7 @@
 #!/bin/sh
 set -e
 
-echo "🔧 Generating self-signed SSL certificate..."
+echo "🔒 Setting up SSL certificate..."
 
 # Create SSL directory if it doesn't exist
 mkdir -p /app/ssl
@@ -9,65 +9,65 @@ mkdir -p /app/ssl
 # Certificate configuration
 CERT_FILE="/app/ssl/cert.pem"
 KEY_FILE="/app/ssl/key.pem"
-DAYS=365
-COUNTRY="US"
-STATE="CA"
-CITY="San Francisco"
-ORG="DCMT Editor"
-OU="Development"
-CN="${DOMAIN:-localhost}"
 
-# Generate private key
-echo "🔑 Generating private key..."
-openssl genrsa -out "$KEY_FILE" 2048
-
-# Generate certificate signing request
-echo "📝 Generating certificate signing request..."
-openssl req -new -key "$KEY_FILE" -out /tmp/cert.csr -subj "/C=$COUNTRY/ST=$STATE/L=$CITY/O=$ORG/OU=$OU/CN=$CN"
-
-# Create certificate extensions file for SAN
-cat > /tmp/cert.ext << EOF
-[v3_req]
-authorityKeyIdentifier=keyid,issuer
-basicConstraints=CA:FALSE
-keyUsage = digitalSignature, nonRepudiation, keyEncipherment, dataEncipherment
-subjectAltName = @alt_names
-
-[alt_names]
-DNS.1 = localhost
-DNS.2 = *.localhost
-DNS.3 = $CN
-IP.1 = 127.0.0.1
-IP.2 = ::1
-EOF
-
-# If domain is specified, add it to SAN
-if [ ! -z "$DOMAIN" ]; then
-    echo "DNS.4 = $DOMAIN" >> /tmp/cert.ext
-    echo "DNS.5 = *.$DOMAIN" >> /tmp/cert.ext
+if [ -z "$DOMAIN" ]; then
+    echo "❌ Error: DOMAIN environment variable is required"
+    echo "Please set DOMAIN in your .env file"
+    exit 1
 fi
 
-# Generate self-signed certificate
-echo "📜 Generating self-signed certificate..."
-openssl x509 -req -in /tmp/cert.csr -signkey "$KEY_FILE" -out "$CERT_FILE" -days $DAYS -extensions v3_req -extfile /tmp/cert.ext
+echo "🌐 Domain: $DOMAIN"
 
-# Set proper permissions
-chown appuser:appgroup "$CERT_FILE" "$KEY_FILE"
-chmod 644 "$CERT_FILE"
-chmod 600 "$KEY_FILE"
+# Check if we should use Let's Encrypt staging (for testing)
+if [ "$LETSENCRYPT_STAGING" = "true" ]; then
+    STAGING_FLAG="--staging"
+    echo "⚠️  Using Let's Encrypt staging environment (for testing)"
+else
+    STAGING_FLAG=""
+fi
 
-# Clean up temporary files
-rm -f /tmp/cert.csr /tmp/cert.ext
+# Email for Let's Encrypt (optional but recommended)
+if [ -z "$LETSENCRYPT_EMAIL" ]; then
+    EMAIL_ARG="--register-unsafely-without-email"
+    echo "⚠️  No email provided for Let's Encrypt notifications"
+else
+    EMAIL_ARG="--email $LETSENCRYPT_EMAIL"
+fi
 
-echo "✅ Self-signed SSL certificate generated successfully!"
-echo "📊 Certificate details:"
-echo "  - Certificate: $CERT_FILE"
-echo "  - Private key: $KEY_FILE"
-echo "  - Common Name: $CN"
-echo "  - Valid for: $DAYS days"
+echo "🔧 Obtaining Let's Encrypt certificate for $DOMAIN..."
 
-# Verify the certificate
-echo "🔍 Certificate verification:"
-openssl x509 -in "$CERT_FILE" -text -noout | grep -E "(Subject:|DNS:|IP Address:)" || true
+# Use certbot to get the certificate
+certbot certonly \
+    --standalone \
+    --non-interactive \
+    --agree-tos \
+    $EMAIL_ARG \
+    $STAGING_FLAG \
+    --domains "$DOMAIN" \
+    --cert-path "$CERT_FILE" \
+    --key-path "$KEY_FILE" \
+    --fullchain-path "$CERT_FILE" \
+    --work-dir /tmp/letsencrypt \
+    --logs-dir /app/logs
 
-echo "⚠️  Note: This is a self-signed certificate. For production, use proper SSL certificates from a trusted CA."
+# Check if certificates were created
+if [ -f "$CERT_FILE" ] && [ -f "$KEY_FILE" ]; then
+    echo "✅ Let's Encrypt certificate obtained successfully!"
+    
+    # Set proper permissions
+    chown appuser:appgroup "$CERT_FILE" "$KEY_FILE"
+    chmod 644 "$CERT_FILE"
+    chmod 600 "$KEY_FILE"
+    
+    echo "📊 Certificate details:"
+    echo "  - Certificate: $CERT_FILE"
+    echo "  - Private key: $KEY_FILE"
+    echo "  - Domain: $DOMAIN"
+    
+    # Verify the certificate
+    echo "🔍 Certificate verification:"
+    openssl x509 -in "$CERT_FILE" -text -noout | grep -E "(Subject:|DNS:)" || true
+else
+    echo "❌ Failed to obtain Let's Encrypt certificate"
+    exit 1
+fi

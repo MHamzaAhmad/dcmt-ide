@@ -36,19 +36,29 @@ fi
 
 echo "🔧 Obtaining Let's Encrypt certificate for $DOMAIN..."
 
+# Create certbot directories with proper permissions
+mkdir -p /app/letsencrypt/config /app/letsencrypt/work /app/letsencrypt/logs
+chown -R appuser:appgroup /app/letsencrypt
+
 # Use certbot to get the certificate
-certbot certonly \
+sudo certbot certonly \
     --standalone \
     --non-interactive \
     --agree-tos \
     $EMAIL_ARG \
     $STAGING_FLAG \
     --domains "$DOMAIN" \
-    --cert-path "$CERT_FILE" \
-    --key-path "$KEY_FILE" \
-    --fullchain-path "$CERT_FILE" \
-    --work-dir /tmp/letsencrypt \
-    --logs-dir /app/logs
+    --config-dir /app/letsencrypt/config \
+    --work-dir /app/letsencrypt/work \
+    --logs-dir /app/letsencrypt/logs \
+    --preferred-challenges http \
+    --http-01-port 80
+
+# Copy certificates to the expected location
+if [ -d "/app/letsencrypt/config/live/$DOMAIN" ]; then
+    cp /app/letsencrypt/config/live/$DOMAIN/fullchain.pem "$CERT_FILE"
+    cp /app/letsencrypt/config/live/$DOMAIN/privkey.pem "$KEY_FILE"
+fi
 
 # Check if certificates were created
 if [ -f "$CERT_FILE" ] && [ -f "$KEY_FILE" ]; then

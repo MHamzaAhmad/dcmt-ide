@@ -98,8 +98,8 @@ RUN chmod +x /app/docker-entrypoint.sh /app/generate-ssl.sh
 # Create workspace directory with proper permissions
 RUN mkdir -p /app/workspace && chown -R appuser:appgroup /app/workspace
 
-# Set proper permissions for the appuser to access mounted volumes
-RUN echo "appuser ALL=(ALL) NOPASSWD: /bin/chown, /bin/chmod" >> /etc/sudoers || true
+# Set proper permissions for the appuser to access mounted volumes and run certbot
+RUN echo "appuser ALL=(ALL) NOPASSWD: /bin/chown, /bin/chmod, /usr/bin/certbot" >> /etc/sudoers || true
 
 # Expose ports
 EXPOSE 80 443

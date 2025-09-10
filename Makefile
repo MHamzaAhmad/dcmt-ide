@@ -15,7 +15,7 @@ docker-run:
 		--env-file .env \
 		-p 80:80 \
 		-p 443:443 \
-		-v dcmt-workspace:/app/workspace \
+		-v $(PWD)/workspace:/app/workspace \
 		-v dcmt-logs:/app/logs \
 		--name dcmt-editor \
 		--rm \

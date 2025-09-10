@@ -56,9 +56,15 @@ echo "  - Host: $DCMT_HOST"
 echo "  - Port: $DCMT_PORT"
 echo "  - Workspace: $DCMT_WORKSPACE_PATH"
 
-# Create workspace if it doesn't exist
+# Create workspace if it doesn't exist and set permissions
 mkdir -p "$DCMT_WORKSPACE_PATH"
 chown -R appuser:appgroup "$DCMT_WORKSPACE_PATH"
+
+# Fix permissions for mounted workspace volume
+if [ -d "$DCMT_WORKSPACE_PATH" ]; then
+    sudo chown -R appuser:appgroup "$DCMT_WORKSPACE_PATH" 2>/dev/null || true
+    sudo chmod -R 755 "$DCMT_WORKSPACE_PATH" 2>/dev/null || true
+fi
 
 # Test backend binary
 if [ ! -x "/app/backend/dcmt-backend" ]; then

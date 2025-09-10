@@ -40,19 +40,21 @@ COPY backend/src ./src
 RUN touch src/cmd/main.rs && cargo build --release
 
 # Production stage
-FROM alpine:3.19
+FROM texlive/texlive:latest
 
 # Install runtime dependencies
-RUN apk add --no-cache \
+RUN apt-get update && apt-get install -y \
     nginx \
     supervisor \
     openssl \
     ca-certificates \
-    tzdata
+    wget \
+    sudo \
+    && rm -rf /var/lib/apt/lists/*
 
 # Create app user
-RUN addgroup -g 1001 -S appgroup && \
-    adduser -S appuser -u 1001 -G appgroup
+RUN groupadd -g 1001 appgroup && \
+    useradd -u 1001 -g appgroup -m -s /bin/bash appuser
 
 # Create necessary directories
 RUN mkdir -p /app/frontend \
@@ -79,8 +81,11 @@ COPY --chown=appuser:appgroup docker/generate-ssl.sh /app/generate-ssl.sh
 # Make scripts executable
 RUN chmod +x /app/docker-entrypoint.sh /app/generate-ssl.sh
 
-# Create workspace directory
+# Create workspace directory with proper permissions
 RUN mkdir -p /app/workspace && chown -R appuser:appgroup /app/workspace
+
+# Set proper permissions for the appuser to access mounted volumes
+RUN echo "appuser ALL=(ALL) NOPASSWD: /bin/chown, /bin/chmod" >> /etc/sudoers || true
 
 # Expose ports
 EXPOSE 80 443

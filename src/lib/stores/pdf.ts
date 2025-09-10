@@ -215,11 +215,11 @@ function createPdfStore() {
             try {
                 pdfjsLib = await import('pdfjs-dist');
                 
-                // Always use CDN for worker - clean, consistent, and reliable
+                // Use jsdelivr CDN which has proper CORS headers for cross-origin requests
                 // This works identically in development, production, Docker, and all environments
                 if (browser) {
                     pdfjsLib.GlobalWorkerOptions.workerSrc = 
-                        `https://unpkg.com/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.js`;
+                        `https://cdn.jsdelivr.net/npm/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.js`;
                 }
 
                 console.log('PDFStore: PDF.js loaded successfully with CDN worker');
@@ -352,8 +352,15 @@ function createPdfStore() {
             const finalOperationId = operationId || store.createOperationId(operationType, operationSource);
             
             // Check if we should skip this operation (duplicate prevention)
+            // But allow retries with the same operation ID
             if (operationId && store.shouldSkipOperation(operationId, pdfPath)) {
-                return;
+                const currentState = get({ subscribe });
+                const isRetry = currentState.retryCount > 0;
+                if (!isRetry) {
+                    return;
+                }
+                // Allow retries to proceed
+                console.log(`PDFStore: Allowing retry for operation ${operationId} (retry count: ${currentState.retryCount})`);
             }
 
             // Prevent concurrent loading of the same PDF
@@ -490,7 +497,8 @@ function createPdfStore() {
                     console.log(`PDFStore: Retrying in ${retryDelay}ms (attempt ${currentRetryState.retryCount + 1})`);
                     
                     setTimeout(() => {
-                        store.loadPdf(pdfPath);
+                        // Preserve the operation context for retry - use the same operation ID to prevent infinite loops
+                        store.loadPdf(pdfPath, finalOperationId, operationType, operationSource);
                     }, retryDelay);
                 } else {
                     console.log('PDFStore: Max retries reached, enabling graceful degradation');

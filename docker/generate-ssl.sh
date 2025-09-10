@@ -55,20 +55,29 @@ sudo certbot certonly \
     --http-01-port 80
 
 # Copy certificates to the expected location
+echo "📁 Looking for certificates in: /app/letsencrypt/config/live/$DOMAIN"
 if [ -d "/app/letsencrypt/config/live/$DOMAIN" ]; then
+    echo "✓ Certificate directory found"
+    echo "📋 Copying certificates to /app/ssl/"
     sudo cp /app/letsencrypt/config/live/$DOMAIN/fullchain.pem "$CERT_FILE"
     sudo cp /app/letsencrypt/config/live/$DOMAIN/privkey.pem "$KEY_FILE"
     sudo chown appuser:appgroup "$CERT_FILE" "$KEY_FILE"
+    sudo chmod 644 "$CERT_FILE"
+    sudo chmod 600 "$KEY_FILE"
+else
+    echo "❌ Certificate directory not found at: /app/letsencrypt/config/live/$DOMAIN"
+    echo "📂 Checking available directories:"
+    ls -la /app/letsencrypt/config/live/ || echo "No live directory found"
 fi
 
 # Check if certificates were created
+echo "🔍 Checking for certificates at:"
+echo "  - $CERT_FILE"
+echo "  - $KEY_FILE"
+ls -la /app/ssl/ || true
+
 if [ -f "$CERT_FILE" ] && [ -f "$KEY_FILE" ]; then
     echo "✅ Let's Encrypt certificate obtained successfully!"
-    
-    # Set proper permissions
-    chown appuser:appgroup "$CERT_FILE" "$KEY_FILE"
-    chmod 644 "$CERT_FILE"
-    chmod 600 "$KEY_FILE"
     
     echo "📊 Certificate details:"
     echo "  - Certificate: $CERT_FILE"
@@ -79,6 +88,6 @@ if [ -f "$CERT_FILE" ] && [ -f "$KEY_FILE" ]; then
     echo "🔍 Certificate verification:"
     openssl x509 -in "$CERT_FILE" -text -noout | grep -E "(Subject:|DNS:)" || true
 else
-    echo "❌ Failed to obtain Let's Encrypt certificate"
+    echo "❌ Failed to copy Let's Encrypt certificates to /app/ssl/"
     exit 1
 fi

@@ -185,15 +185,4 @@
 			</div>
 		{/if}
 	</div>
-
-	<!-- Status Bar -->
-	{#if showToolbar}
-	<div class="h-6 border-t bg-muted/50 flex items-center px-3 text-xs text-muted-foreground">
-		{#if hasValidPdf}
-			PDF loaded • {currentPageInfo.total} pages
-		{:else}
-			Ready for PDF preview
-		{/if}
-	</div>
-	{/if}
 </div>

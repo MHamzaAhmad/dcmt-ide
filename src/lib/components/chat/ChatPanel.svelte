@@ -368,6 +368,16 @@
 			{/if}
 		</div>
 		
+		<!-- Floating Badge for Tool Status - Now inside chat panel -->
+		{#if currentToolStatus && isAgentMode}
+			<div class="absolute bottom-4 left-1/2 -translate-x-1/2 z-20 pointer-events-none">
+				<FloatingBadge 
+					text={getToolStatusText(currentToolStatus.toolName)}
+					visible={true}
+				/>
+			</div>
+		{/if}
+		
 		<!-- Scroll to Bottom Button -->
 		{#if showScrollToBottom}
 			<button
@@ -400,7 +410,7 @@
 						</div>
 					{:else if isAgentMode && $agentStore.availableModels.length > 0}
 						<Select.Group>
-							<Select.Label>LiteLLM Models</Select.Label>
+							<Select.Label>Models</Select.Label>
 							{#each $agentStore.availableModels as model (model.id)}
 								<Select.Item value={model.id} label={model.id}>
 									<div class="flex items-center justify-between w-full">
@@ -480,11 +490,3 @@
 	</div>
 	{/if}
 </div>
-
-<!-- Floating Badge for Tool Status -->
-{#if currentToolStatus && isAgentMode}
-	<FloatingBadge 
-		text={getToolStatusText(currentToolStatus.toolName)}
-		visible={true}
-	/>
-{/if}

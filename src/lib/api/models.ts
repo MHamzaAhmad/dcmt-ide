@@ -1,6 +1,7 @@
 // Models API Endpoints
 
 import { apiClient } from './client';
+import { liteLLMClient } from './litellm';
 import type { ModelsResponse, ChatRequest, ChatResponse, LiteLLMModelsResponse, LiteLLMModel, LLMModel } from './types';
 
 export const modelsAPI = {
@@ -9,19 +10,8 @@ export const modelsAPI = {
 	 */
 	async listModels(): Promise<ModelsResponse> {
 		try {
-			// Try to fetch from LiteLLM directly
-			const liteLLMUrl = import.meta.env.VITE_LITELLM_BASE_URL || 'http://localhost:4000';
-			const response = await fetch(`${liteLLMUrl}/v1/models`, {
-				headers: {
-					'Authorization': `Bearer ${import.meta.env.VITE_LITELLM_API_KEY || 'your-api-key'}`
-				}
-			});
-			
-			if (!response.ok) {
-				throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-			}
-			
-			const liteLLMResponse: LiteLLMModelsResponse = await response.json();
+			// Use centralized LiteLLM client
+			const liteLLMResponse = await liteLLMClient.fetchModels();
 			
 			// Transform LiteLLM response to our format
 			const models: LLMModel[] = liteLLMResponse.data.map((model: LiteLLMModel) => ({
@@ -50,18 +40,8 @@ export const modelsAPI = {
 	 * List models with raw LiteLLM format
 	 */
 	async listLiteLLMModels(): Promise<LiteLLMModelsResponse> {
-		const liteLLMUrl = import.meta.env.VITE_LITELLM_BASE_URL || 'http://localhost:4000';
-		const response = await fetch(`${liteLLMUrl}/v1/models`, {
-			headers: {
-				'Authorization': `Bearer ${import.meta.env.VITE_LITELLM_API_KEY || 'your-api-key'}`
-			}
-		});
-		
-		if (!response.ok) {
-			throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-		}
-		
-		return await response.json();
+		// Use centralized LiteLLM client
+		return await liteLLMClient.fetchModels();
 	},
 
 	/**

@@ -55,7 +55,7 @@
 	const statusInfo = $derived(agentMessage?.status ? getStatusInfo(agentMessage.status) : null);
 </script>
 
-<div class="py-3 px-4 {message.role === 'user' ? 'text-slate-500 dark:text-slate-400' : 'text-slate-900 dark:text-slate-100'} mb-2">
+<div class="py-1 px-4 {message.role === 'user' ? 'text-slate-500 dark:text-slate-400' : 'text-slate-900 dark:text-slate-100'} mb-2">
 	
 	<div class="flex-1">
 		

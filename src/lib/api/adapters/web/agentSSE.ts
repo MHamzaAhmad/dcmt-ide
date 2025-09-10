@@ -169,10 +169,13 @@ export class AgentSSEAdapter {
     private handleAgentEvent(event: AgentEvent): void {
         console.log('Processing agent event:', event.type, event);
         
-        // Get session ID from event if available
+        // Get session ID from event if available, or use current session
         let sessionId: string | null = null;
         if ('session_id' in event) {
             sessionId = event.session_id;
+        } else {
+            // For events without session_id, use the current session we're connected to
+            sessionId = this.currentSessionId;
         }
 
         // Emit to EventStore
@@ -192,6 +195,7 @@ export class AgentSSEAdapter {
         // Call session-specific callbacks if we have a session ID
         if (sessionId) {
             const sessionCallbacks = this.sessionCallbacks.get(sessionId) || [];
+            console.log(`Calling ${sessionCallbacks.length} session callbacks for session ${sessionId}`);
             sessionCallbacks.forEach(callback => {
                 try {
                     callback(event);
@@ -199,6 +203,8 @@ export class AgentSSEAdapter {
                     console.error(`Error in session agent event callback for ${sessionId}:`, error);
                 }
             });
+        } else {
+            console.log('No session ID found for event, skipping session callbacks');
         }
     }
 

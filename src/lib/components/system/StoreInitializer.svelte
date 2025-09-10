@@ -132,26 +132,3 @@
     </div>
   </div>
 {/if}
-
-<!-- Debug info (only in development) -->
-{#if browser && import.meta.env.DEV}
-  <div class="fixed bottom-4 right-4 z-40">
-    {#if isInitialized}
-      <div class="bg-green-100 border border-green-300 rounded px-2 py-1 text-xs text-green-800">
-        ✓ Stores Ready
-      </div>
-    {:else if orchestratorState.isInitializing}
-      <div class="bg-blue-100 border border-blue-300 rounded px-2 py-1 text-xs text-blue-800">
-        ⏳ Initializing... {orchestrator.getInitializationProgress()}%
-      </div>
-    {:else if initError}
-      <div class="bg-red-100 border border-red-300 rounded px-2 py-1 text-xs text-red-800">
-        ✗ Init Failed
-      </div>
-    {:else}
-      <div class="bg-yellow-100 border border-yellow-300 rounded px-2 py-1 text-xs text-yellow-800">
-        ⏳ Starting...
-      </div>
-    {/if}
-  </div>
-{/if}

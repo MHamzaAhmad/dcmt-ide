@@ -354,6 +354,11 @@ function createAgentStore() {
         // Event handling (now used by unified hooks)
         handleAgentEvent(event: AgentEvent): void {
             console.log('Agent event received via unified hooks:', event);
+            console.log('Event type:', event.type);
+            if (event.type === 'LLMStreaming') {
+                console.log('LLMStreaming event content:', event.content);
+                console.log('Full event object:', JSON.stringify(event, null, 2));
+            }
 
             // Check for event deduplication using flattened metadata fields
             if (event.event_id) {
@@ -407,12 +412,9 @@ function createAgentStore() {
                     break;
 
                 case 'LLMCallStart':
-                    // Only create a streaming message if we don't already have one
+                    console.log('Processing LLMCallStart in agent store');
+                    // Reset streaming state for new LLM call
                     update(state => {
-                        if (state.streamingMessageId) {
-                            return state; // Already have a streaming message
-                        }
-                        
                         const streamingMessage: AgentChatMessage = {
                             id: `msg-streaming-${Date.now()}`,
                             role: 'assistant',
@@ -422,6 +424,8 @@ function createAgentStore() {
                             streaming: true,
                             model: state.selectedModel?.id
                         };
+                        
+                        console.log('Creating initial streaming message for LLMCallStart');
                         
                         return {
                             ...state,
@@ -433,23 +437,45 @@ function createAgentStore() {
                     break;
 
                 case 'LLMStreaming':
-                    // Create a new message for each streaming event
-                    const streamMessage: AgentChatMessage = {
-                        id: `msg-stream-${Date.now()}`,
-                        role: 'assistant',
-                        content: event.content,
-                        timestamp: new Date(),
-                        status: 'completed',
-                        model: store.getCurrentState().selectedModel?.id
-                    };
-                    
-                    store.addMessage(streamMessage);
-                    
-                    update(state => ({
-                        ...state,
-                        streamingContent: '',
-                        streamingMessageId: null // Clear streaming state since we're showing individual messages
-                    }));
+                    // Update the streaming message content incrementally
+                    console.log('Processing LLMStreaming in agent store, content:', event.content);
+                    update(state => {
+                        if (!state.streamingMessageId) {
+                            // Create a new streaming message if we don't have one
+                            const streamingMessage: AgentChatMessage = {
+                                id: `msg-streaming-${Date.now()}`,
+                                role: 'assistant',
+                                content: event.content || '',
+                                timestamp: new Date(),
+                                status: 'streaming',
+                                streaming: true,
+                                model: state.selectedModel?.id
+                            };
+                            
+                            console.log('Creating new streaming message:', streamingMessage);
+                            
+                            return {
+                                ...state,
+                                messages: [...state.messages, streamingMessage],
+                                streamingContent: event.content || '',
+                                streamingMessageId: streamingMessage.id
+                            };
+                        } else {
+                            // Update existing streaming message
+                            const newContent = state.streamingContent + (event.content || '');
+                            console.log('Updating streaming message, new content length:', newContent.length);
+                            
+                            return {
+                                ...state,
+                                messages: state.messages.map(msg => 
+                                    msg.id === state.streamingMessageId 
+                                        ? { ...msg, content: newContent }
+                                        : msg
+                                ),
+                                streamingContent: newContent
+                            };
+                        }
+                    });
                     break;
 
                 case 'ToolExecuting':
@@ -541,6 +567,28 @@ function createAgentStore() {
                         // Non-file tool completed
                         console.log(`AgentStore: Non-file tool completed: ${event.tool}`);
                     }
+                    break;
+
+                case 'LLMCallComplete':
+                    console.log('Processing LLMCallComplete in agent store');
+                    // Finalize the streaming message
+                    update(state => {
+                        if (state.streamingMessageId) {
+                            console.log('Finalizing streaming message:', state.streamingMessageId);
+                            return {
+                                ...state,
+                                messages: state.messages.map(msg => 
+                                    msg.id === state.streamingMessageId 
+                                        ? { ...msg, status: 'completed', streaming: false }
+                                        : msg
+                                ),
+                                streamingContent: '',
+                                streamingMessageId: null
+                            };
+                        }
+                        console.log('No streaming message to finalize');
+                        return state;
+                    });
                     break;
 
                 case 'JobComplete':

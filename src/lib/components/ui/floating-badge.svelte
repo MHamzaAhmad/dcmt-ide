@@ -1,29 +1,27 @@
 <script lang="ts">
 	import { fly, fade } from 'svelte/transition';
-	import { Badge } from '$lib/components/ui/badge';
 	import { Loader2 } from '@lucide/svelte';
 	
 	interface Props {
 		text: string;
 		visible?: boolean;
-		variant?: 'default' | 'secondary' | 'destructive' | 'outline';
 	}
 	
-	let { text, visible = false, variant = 'secondary' }: Props = $props();
+	let { text, visible = false }: Props = $props();
 </script>
 
 {#if visible}
 	<div
-		class="fixed bottom-8 left-1/2 -translate-x-1/2 z-50"
-		transition:fly={{ y: 20, duration: 200 }}
+		transition:fly={{ y: 10, duration: 150 }}
+		class="inline-block"
 	>
 		<div
-			class="bg-background/95 backdrop-blur-sm rounded-full shadow-lg border px-4 py-2"
-			transition:fade={{ duration: 150 }}
+			class="bg-background/90 backdrop-blur-sm rounded-full shadow-md border px-3 py-1.5"
+			transition:fade={{ duration: 100 }}
 		>
-			<div class="flex items-center gap-2">
-				<Loader2 size={14} class="animate-spin text-primary" />
-				<span class="text-sm font-medium">{text}</span>
+			<div class="flex items-center gap-1.5">
+				<Loader2 size={12} class="animate-spin text-muted-foreground" />
+				<span class="text-xs text-muted-foreground">{text}</span>
 			</div>
 		</div>
 	</div>

@@ -1,5 +1,6 @@
 // Web Agent Operations via HTTP API
 import { apiClient } from '../../client';
+import { liteLLMClient } from '../../litellm';
 import type { 
     AgentOperations, 
     AgentChatRequest, 
@@ -13,25 +14,8 @@ export class WebAgentAdapter implements AgentOperations {
     private currentSessionId: string | null = null;
 
     async listModels(): Promise<LiteLLMModelsResponse> {
-        // Direct LiteLLM API call
-        try {
-            const liteLLMUrl = import.meta.env.VITE_LITELLM_BASE_URL || 'http://localhost:4000';
-            const response = await fetch(`${liteLLMUrl}/v1/models`, {
-                headers: {
-                    'Authorization': `Bearer ${import.meta.env.VITE_LITELLM_API_KEY || 'your-api-key'}`
-                }
-            });
-            
-            if (!response.ok) {
-                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-            }
-            
-            return await response.json();
-        } catch (error) {
-            console.error('Failed to fetch models from LiteLLM:', error);
-            // Return empty list instead of throwing
-            return { data: [], object: 'list' };
-        }
+        // Use centralized LiteLLM client
+        return await liteLLMClient.fetchModels();
     }
 
     async sendMessage(request: AgentChatRequest): Promise<AgentChatResponse> {

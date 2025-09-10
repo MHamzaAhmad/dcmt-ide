@@ -215,52 +215,24 @@ function createPdfStore() {
             try {
                 pdfjsLib = await import('pdfjs-dist');
                 
-                // Set worker path with fallback for Docker/production environments
+                // Always use CDN for worker - clean, consistent, and reliable
+                // This works identically in development, production, Docker, and all environments
                 if (browser) {
-                    try {
-                        // Try dynamic import approach first (works in dev)
-                        const workerUrl = new URL(
-                            'pdfjs-dist/build/pdf.worker.mjs',
-                            import.meta.url
-                        ).toString();
-                        pdfjsLib.GlobalWorkerOptions.workerSrc = workerUrl;
-                    } catch (workerError) {
-                        console.warn('PDFStore: Dynamic worker import failed, trying CDN fallback:', workerError);
-                        
-                        // Emit system event for worker loading issue
-                        if (eventStore) {
-                            eventStore.events.systemError('PDF worker loading failed, using CDN fallback');
-                        }
-                        
-                        // Fallback to CDN for Docker/production environments
-                        pdfjsLib.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.mjs`;
-                    }
+                    pdfjsLib.GlobalWorkerOptions.workerSrc = 
+                        `https://unpkg.com/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.js`;
                 }
 
-                console.log('PDFStore: PDF.js loaded successfully');
+                console.log('PDFStore: PDF.js loaded successfully with CDN worker');
                 
             } catch (error) {
                 console.error('PDFStore: Failed to load PDF.js:', error);
                 
-                // Try with different approach for worker loading
-                try {
-                    if (browser && pdfjsLib) {
-                        // Last resort: use inline worker
-                        pdfjsLib.GlobalWorkerOptions.workerSrc = `data:application/javascript,${encodeURIComponent(`
-                            import 'https://unpkg.com/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.mjs';
-                        `)}`;
-                        console.log('PDFStore: Using inline worker as fallback');
-                    }
-                } catch (fallbackError) {
-                    console.error('PDFStore: All worker loading methods failed:', fallbackError);
-                    
-                    // Emit system error event following EventStore pattern
-                    if (eventStore) {
-                        eventStore.events.systemError('PDF.js worker initialization completely failed - PDF preview unavailable');
-                    }
-                    
-                    throw new Error('Failed to load PDF viewer library - worker initialization failed');
+                // Emit system error event following EventStore pattern
+                if (eventStore) {
+                    eventStore.events.systemError('PDF.js initialization failed - PDF preview unavailable');
                 }
+                
+                throw new Error('Failed to load PDF viewer library');
             }
         },
 

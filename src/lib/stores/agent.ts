@@ -196,15 +196,15 @@ function createAgentStore() {
             // Use platform-specific event handling
             const adapter = await agentAPI.getAdapter();
             
-            // Desktop uses Tauri events, web uses WebSocket
+            // Desktop uses Tauri events, web uses SSE
             if ('onSessionEvents' in adapter) {
                 // Desktop (Tauri) - use adapter's event system
                 const unsubscribe = (adapter as any).onSessionEvents(sessionId, store.handleAgentEvent);
             } else {
-                // Web - use WebSocket adapter
-                const webSocketAdapter = await agentAPI.getWebSocketAdapter();
-                if (webSocketAdapter) {
-                    const agentUnsubscribe = webSocketAdapter.onSession(sessionId, store.handleAgentEvent);
+                // Web - use SSE adapter for agent events
+                const sseAdapter = await agentAPI.getSSEAdapter();
+                if (sseAdapter) {
+                    const agentUnsubscribe = sseAdapter.onSession(sessionId, store.handleAgentEvent);
                 }
             }
             
@@ -490,6 +490,12 @@ function createAgentStore() {
                     if (event.is_file_operation && event.file_paths && event.file_paths.length > 0) {
                         console.log(`AgentStore: Processing file operation ${event.tool} on ${event.file_paths.join(', ')}`);
                         
+                        // Skip read operations - they don't modify files
+                        if (event.tool === 'read_file') {
+                            console.log(`AgentStore: Skipping read operation for ${event.file_paths.join(', ')}`);
+                            break;
+                        }
+                        
                         // Convert to appropriate file event for each path
                         for (const path of event.file_paths) {
                             let changeType: 'created' | 'modified' | 'deleted';
@@ -505,6 +511,8 @@ function createAgentStore() {
                                     changeType = 'modified';
                                     break;
                                 default:
+                                    // Only count actual modification tools, not read operations
+                                    console.log(`AgentStore: Unknown file operation tool: ${event.tool}, treating as modified`);
                                     changeType = 'modified';
                                     break;
                             }

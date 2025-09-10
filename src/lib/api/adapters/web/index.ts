@@ -3,6 +3,7 @@ import { WebFileSystemAdapter } from './filesystem';
 import { WebProjectAdapter } from './project';
 import { WebSocketAdapter, WebFileWatcher } from './fileWebSocket';
 import { WebLatexAdapter } from './latex';
+import { AgentSSEAdapter } from './agentSSE';
 import type { PlatformAPI } from '../../types';
 
 // Combined Web API Adapter using composition with spread
@@ -12,6 +13,7 @@ export class WebApiAdapter implements PlatformAPI {
 	private websocket = new WebSocketAdapter();
 	private fileWatcher = new WebFileWatcher();
 	private latex = new WebLatexAdapter();
+	private agentSSE = new AgentSSEAdapter();
 
 	constructor() {
 		// Auto-connect WebSocket for file watching
@@ -42,8 +44,9 @@ export class WebApiAdapter implements PlatformAPI {
 	// Web-specific functionality
 	getWebSocket = () => this.websocket;
 	getFileWatcher = () => this.fileWatcher;
+	getAgentSSE = () => this.agentSSE;
 	getProjectInfo = this.project.getProjectInfo.bind(this.project);
 }
 
 // Export individual adapters for direct access if needed
-export { WebFileSystemAdapter, WebProjectAdapter, WebSocketAdapter, WebFileWatcher, WebLatexAdapter };
+export { WebFileSystemAdapter, WebProjectAdapter, WebSocketAdapter, WebFileWatcher, WebLatexAdapter, AgentSSEAdapter };

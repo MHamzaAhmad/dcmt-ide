@@ -1,5 +1,4 @@
 use crate::transport::routes::websocket::WebSocketServices;
-use crate::model::agent::AgentEvent;
 use crate::model::events::FileEvent;
 use axum::{
     extract::{ws::{Message, WebSocket, WebSocketUpgrade}, State},
@@ -7,7 +6,6 @@ use axum::{
 };
 use futures_util::{sink::SinkExt, stream::StreamExt};
 use std::sync::Arc;
-use std::collections::HashMap;
 use tracing::{debug, error, info, warn};
 use tokio::sync::broadcast;
 use uuid::Uuid;
@@ -124,7 +122,6 @@ struct ConnectionState {
     connection_id: String,
     services: WebSocketServices,
     file_subscribed: Arc<tokio::sync::RwLock<bool>>,
-    agent_subscriptions: Arc<tokio::sync::RwLock<HashMap<String, tokio::sync::mpsc::UnboundedReceiver<AgentEvent>>>>,
     file_event_receiver: Arc<tokio::sync::Mutex<Option<broadcast::Receiver<FileEvent>>>>,
     event_tx: Arc<tokio::sync::mpsc::UnboundedSender<WebSocketEvent>>,
     event_rx: Arc<tokio::sync::Mutex<Option<tokio::sync::mpsc::UnboundedReceiver<WebSocketEvent>>>>,
@@ -133,10 +130,6 @@ struct ConnectionState {
 #[derive(Debug, Clone)]
 enum WebSocketEvent {
     FileEvent(FileEvent),
-    AgentEvent {
-        session_id: String,
-        event: AgentEvent,
-    },
     ConnectionStatus {
         status: String,
         timestamp: u64,
@@ -151,7 +144,6 @@ impl ConnectionState {
             connection_id,
             services,
             file_subscribed: Arc::new(tokio::sync::RwLock::new(false)),
-            agent_subscriptions: Arc::new(tokio::sync::RwLock::new(HashMap::new())),
             file_event_receiver: Arc::new(tokio::sync::Mutex::new(None)),
             event_tx: Arc::new(event_tx),
             event_rx: Arc::new(tokio::sync::Mutex::new(Some(event_rx))),
@@ -196,20 +188,7 @@ impl ConnectionState {
             "unsubscribe_files" => {
                 self.unsubscribe_from_files().await?;
             }
-            "subscribe_agent" => {
-                let session_id = json.get("session_id")
-                    .and_then(|s| s.as_str())
-                    .ok_or("subscribe_agent message missing session_id")?;
-                    
-                self.subscribe_to_agent_session(session_id).await?;
-            }
-            "unsubscribe_agent" => {
-                let session_id = json.get("session_id")
-                    .and_then(|s| s.as_str())
-                    .ok_or("unsubscribe_agent message missing session_id")?;
-                    
-                self.unsubscribe_from_agent_session(session_id).await?;
-            }
+            // Agent events are now handled via SSE, no longer supported via WebSocket
             "subscribe" => {
                 // Legacy support for file events
                 self.subscribe_to_files().await?;
@@ -272,65 +251,7 @@ impl ConnectionState {
         Ok(())
     }
     
-    async fn subscribe_to_agent_session(&mut self, session_id: &str) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-        let mut agent_subscriptions = self.agent_subscriptions.write().await;
-        
-        if agent_subscriptions.contains_key(session_id) {
-            debug!("Connection {} already subscribed to agent session {}", self.connection_id, session_id);
-            return Ok(());
-        }
-        
-        // Subscribe to backend agent events via the service
-        self.services.agent_service.subscribe_to_session_events(session_id.to_string());
-        
-        // Get event receiver for this session
-        let agent_receiver = self.services.agent_service.subscribe_to_session_events(session_id.to_string());
-        
-        // Start agent event forwarding task
-        let event_tx = self.event_tx.clone();
-        let session_id_clone = session_id.to_string();
-        let connection_id = self.connection_id.clone();
-        
-        tokio::spawn(async move {
-            let mut receiver = agent_receiver;
-            while let Some(agent_event) = receiver.recv().await {
-                let websocket_event = WebSocketEvent::AgentEvent {
-                    session_id: session_id_clone.clone(),
-                    event: agent_event,
-                };
-                
-                if event_tx.send(websocket_event).is_err() {
-                    debug!("Agent event receiver stopped for connection {} session {}", connection_id, session_id_clone);
-                    break;
-                }
-            }
-        });
-        
-        // Store placeholder receiver (actual forwarding is handled by the spawn above)
-        let (_, placeholder_rx) = tokio::sync::mpsc::unbounded_channel();
-        agent_subscriptions.insert(session_id.to_string(), placeholder_rx);
-        
-        info!("Connection {} subscribed to agent session {}", self.connection_id, session_id);
-        Ok(())
-    }
-    
-    async fn unsubscribe_from_agent_session(&mut self, session_id: &str) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-        let mut agent_subscriptions = self.agent_subscriptions.write().await;
-        
-        if !agent_subscriptions.contains_key(session_id) {
-            debug!("Connection {} not subscribed to agent session {}", self.connection_id, session_id);
-            return Ok(());
-        }
-        
-        // Note: AgentService doesn't have unsubscribe method in current implementation
-        // The receiver will be cleaned up when the task ends
-        
-        // Remove from local subscriptions
-        agent_subscriptions.remove(session_id);
-        
-        info!("Connection {} unsubscribed from agent session {}", self.connection_id, session_id);
-        Ok(())
-    }
+    // Agent subscription methods removed - agent events now handled via SSE
     
     async fn handle_outgoing_events(
         &mut self,
@@ -362,12 +283,7 @@ impl ConnectionState {
                         }
                     })
                 }
-                WebSocketEvent::AgentEvent { session_id: _, event } => {
-                    serde_json::json!({
-                        "type": "agent_event",
-                        "event": event
-                    })
-                }
+                // AgentEvent handling removed - now using SSE
                 WebSocketEvent::ConnectionStatus { status, timestamp } => {
                     serde_json::json!({
                         "type": "connection",
@@ -389,17 +305,7 @@ impl ConnectionState {
     }
     
     async fn cleanup(&mut self) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-        // Clean up agent subscriptions (receivers will be cleaned up when tasks end)
-        let agent_subscriptions = self.agent_subscriptions.read().await;
-        let session_count = agent_subscriptions.len();
-        drop(agent_subscriptions);
-        
-        if session_count > 0 {
-            debug!("Cleaned up {} agent session subscriptions for connection {}", session_count, self.connection_id);
-        }
-        
-        // Clear all subscriptions
-        *self.agent_subscriptions.write().await = HashMap::new();
+        // Clean up subscriptions
         *self.file_subscribed.write().await = false;
         *self.file_event_receiver.lock().await = None;
         

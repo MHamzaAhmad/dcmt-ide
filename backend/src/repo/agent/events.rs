@@ -3,7 +3,7 @@ use dashmap::DashMap;
 use tokio::sync::mpsc;
 use crate::model::agent::AgentEvent;
 
-/// Broadcasts agent events to WebSocket subscribers
+/// Broadcasts agent events to SSE and WebSocket subscribers
 pub struct EventBroadcaster {
     /// Map of session_id -> sender channel for that session
     subscribers: Arc<DashMap<String, mpsc::UnboundedSender<AgentEvent>>>,
@@ -36,19 +36,38 @@ impl EventBroadcaster {
         self.subscribers.remove(session_id);
     }
     
-    /// Broadcasts an event to a specific session
+    /// Broadcasts an event to a specific session and also to all global subscribers
     pub async fn broadcast(&self, session_id: &str, event: AgentEvent) {
+        let mut stale_subscriptions = Vec::new();
+        
+        // Send to specific session if subscriber exists
         if let Some(entry) = self.subscribers.get(session_id) {
             let sender = entry.value();
             
             // Try to send the event
-            if let Err(_) = sender.send(event) {
+            if let Err(_) = sender.send(event.clone()) {
                 // If sending fails, the receiver is likely dropped
                 // Remove the stale subscription
                 tracing::debug!("Removing stale subscription for session: {}", session_id);
                 drop(entry); // Release the reference before removing
-                self.subscribers.remove(session_id);
+                stale_subscriptions.push(session_id.to_string());
             }
+        }
+        
+        // Also send to all global subscribers (those with session IDs starting with "global-")
+        for entry in self.subscribers.iter() {
+            let subscriber_id = entry.key();
+            if subscriber_id.starts_with("global-") {
+                let sender = entry.value();
+                if let Err(_) = sender.send(event.clone()) {
+                    stale_subscriptions.push(subscriber_id.clone());
+                }
+            }
+        }
+        
+        // Clean up stale subscriptions
+        for sub_id in stale_subscriptions {
+            self.subscribers.remove(&sub_id);
         }
     }
     

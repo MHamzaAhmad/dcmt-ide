@@ -143,6 +143,14 @@ impl AgentService {
             .subscribe(session_id)
     }
     
+    /// Subscribes to all agent events (global subscription)
+    pub fn subscribe_to_all_events(&self) -> tokio::sync::mpsc::UnboundedReceiver<crate::model::agent::AgentEvent> {
+        // Create a unique ID for this global subscription
+        let global_id = format!("global-{}", uuid::Uuid::new_v4());
+        self.agent_repo.get_event_broadcaster()
+            .subscribe(global_id)
+    }
+    
     /// Gets available tool definitions
     pub fn get_available_tools(&self) -> Vec<crate::model::agent::ToolDefinition> {
         self.agent_repo.get_tool_definitions()

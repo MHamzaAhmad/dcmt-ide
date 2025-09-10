@@ -209,54 +209,50 @@ export function useAgentEvents(options: AgentEventHookOptions = {}) {
     }
 
     async function startDesktopEventListeners(targetSessionId: string) {
-        // Import Tauri listen function
+        // Import and use the desktop SSE adapter for agent events
+        const { desktopAgentSSE } = await import('../adapters/desktop/agentSSE');
+        
+        // Subscribe to session-specific agent events via SSE
+        const agentUnsubscribe = desktopAgentSSE.onSession(targetSessionId, handleAgentEvent);
+        
+        // Keep Tauri events for file events only (from file watcher)
         const { listen } = await import('@tauri-apps/api/event');
-        
-        // Listen for agent events
-        const agentEventUnlisten = await listen(`agent-event-${targetSessionId}`, (event) => {
-            const agentEvent = event.payload as AgentEvent;
-            handleAgentEvent(agentEvent);
-        });
-        
-        // Listen for file events (from file watcher)
         const fileEventUnlisten = await listen('file-event', (event) => {
             const { event_type, event_data } = event.payload as { event_type: string; event_data: FileEventData };
             handleFileEvent(event_type, event_data);
         });
         
         eventCleanup = () => {
-            agentEventUnlisten();
+            agentUnsubscribe();
             fileEventUnlisten();
         };
         
-        console.log(`Started desktop event listeners for session: ${targetSessionId}`);
+        console.log(`Started desktop event listeners for session: ${targetSessionId} (SSE for agent, Tauri events for files)`);
     }
 
     async function startWebEventListeners(targetSessionId: string) {
-        // Import and use the web WebSocket adapter
-        const { agentWebSocket } = await import('../adapters/web/agentWebSocket');
+        // Import and use the web SSE adapter for agent events
+        const { agentSSE } = await import('../adapters/web/agentSSE');
         
-        // Subscribe to session-specific events
-        const agentUnsubscribe = agentWebSocket.onSession(targetSessionId, handleAgentEvent);
+        // Subscribe to session-specific agent events via SSE
+        const agentUnsubscribe = agentSSE.onSession(targetSessionId, handleAgentEvent);
         
-        // Subscribe to all agent events (for file operations)
-        const allEventsUnsubscribe = agentWebSocket.onAny(handleAgentEvent);
+        // Keep WebSocket for file events only
+        const { WebFileWatcher } = await import('../adapters/web/fileWebSocket');
+        const fileWatcher = new WebFileWatcher();
         
-        // Also listen for file events from the same WebSocket
-        // This requires the backend to send both agent and file events
-        const fileUnsubscribe = agentWebSocket.on('file_event' as any, (event: any) => {
-            if (event.event_type && event.event_data) {
-                handleFileEvent(event.event_type, event.event_data);
-            }
+        // Subscribe to file events from WebSocket
+        const fileUnsubscribe = fileWatcher.onAny((eventType: string, fileEvent) => {
+            handleFileEvent(eventType, fileEvent);
         });
         
         eventCleanup = () => {
             agentUnsubscribe();
-            allEventsUnsubscribe();
             fileUnsubscribe();
+            fileWatcher.destroy();
         };
         
-        console.log(`Started web event listeners for session: ${targetSessionId}`);
+        console.log(`Started web event listeners for session: ${targetSessionId} (SSE for agent, WebSocket for files)`);
     }
 
     async function stopListening() {

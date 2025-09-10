@@ -149,6 +149,18 @@ export const agentAPI = {
         
         const { agentWebSocket } = await import('./adapters/web/agentWebSocket');
         return agentWebSocket;
+    },
+
+    /**
+     * Get platform-specific SSE adapter (for web platform)
+     */
+    async getSSEAdapter(): Promise<any> {
+        if (isDesktop()) {
+            return null; // Desktop uses Tauri event system
+        }
+        
+        const { agentSSE } = await import('./adapters/web/agentSSE');
+        return agentSSE;
     }
 };
 

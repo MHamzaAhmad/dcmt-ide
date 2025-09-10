@@ -50,7 +50,15 @@ RUN apt-get update && apt-get install -y \
     ca-certificates \
     wget \
     sudo \
+    python3 \
+    python3-pip \
+    python3-venv \
     && rm -rf /var/lib/apt/lists/*
+
+# Install LiteLLM
+RUN python3 -m venv /app/litellm-venv && \
+    /app/litellm-venv/bin/pip install --upgrade pip && \
+    /app/litellm-venv/bin/pip install 'litellm[proxy]'
 
 # Create app user
 RUN groupadd -g 1001 appgroup && \
@@ -78,6 +86,9 @@ COPY --chown=appuser:appgroup docker/supervisord.conf /etc/supervisord.conf
 COPY --chown=appuser:appgroup docker/docker-entrypoint.sh /app/docker-entrypoint.sh
 COPY --chown=appuser:appgroup docker/generate-ssl.sh /app/generate-ssl.sh
 
+# Copy LiteLLM configuration
+COPY --chown=appuser:appgroup litellm/config.yaml /app/litellm/config.yaml
+
 # Make scripts executable
 RUN chmod +x /app/docker-entrypoint.sh /app/generate-ssl.sh
 
@@ -94,6 +105,7 @@ EXPOSE 80 443
 ENV DCMT_HOST=0.0.0.0
 ENV DCMT_PORT=3001
 ENV DCMT_WORKSPACE_PATH=/app/workspace
+ENV LITELLM_BASE_URL=http://127.0.0.1:4000
 
 # Switch to app user
 USER appuser

@@ -12,7 +12,8 @@ class LiteLLMClient {
     private token: string = ''; // Empty for now, will implement auth tokens later
 
     constructor() {
-        this.baseURL = import.meta.env.VITE_LITELLM_BASE_URL || 'http://localhost:4000';
+        // Use relative path for production, fall back to localhost for development
+        this.baseURL = import.meta.env.VITE_LITELLM_BASE_URL || '/llm';
     }
 
     /**

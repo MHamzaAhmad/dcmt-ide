@@ -37,7 +37,7 @@ impl Config {
             .map_err(|e| anyhow::anyhow!("Invalid DCMT_PORT value: {}", e))?;
         
         let litellm_base_url = std::env::var("LITELLM_BASE_URL")
-            .unwrap_or_else(|_| "http://0.0.0.0:4000".to_string());
+            .unwrap_or_else(|_| "http://127.0.0.1:4000".to_string());
         
         Ok(Config {
             workspace_path,

@@ -2,7 +2,7 @@
 	import { onMount, onDestroy } from 'svelte';
 	import { Button } from '$lib/components/ui/button';
 	import { Play, Download, FileText } from '@lucide/svelte';
-	import { pdfStore, latexStore } from '$lib/stores';
+	import { pdfStore, latexStore, isCompiling } from '$lib/stores';
 
 	// Props
 	interface Props {
@@ -128,11 +128,11 @@
 			variant="default"
 			size="sm"
 			onclick={handleCompile}
-			disabled={latexState.isCompiling}
+			disabled={$isCompiling}
 			class="h-6 gap-1.5 px-2"
 		>
 			<Play size={12} />
-			{latexState.isCompiling ? 'Compiling...' : 'Compile'}
+			{$isCompiling ? 'Compiling...' : 'Compile'}
 		</Button>
 		
 		<Button
@@ -171,7 +171,7 @@
 					<p class="text-sm">Loading PDF... {pdfState.loadingProgress}%</p>
 				</div>
 			</div>
-		{:else if latexState.isCompiling}
+		{:else if $isCompiling}
 			<div class="absolute inset-0 flex items-center justify-center bg-background">
 				<div class="text-center text-muted-foreground">
 					<div class="animate-spin h-8 w-8 border-2 border-blue-500 border-t-transparent rounded-full mx-auto mb-4"></div>

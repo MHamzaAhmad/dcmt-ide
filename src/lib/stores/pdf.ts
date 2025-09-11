@@ -139,6 +139,7 @@ function createPdfStore() {
     let pdfjsLib: any = null;
     let currentLoadingPath: string | null = null;
     let currentRenderTask: any = null; // Track current render operation for cancellation
+    let processedCompilationEventIds = new Set<string>(); // Track processed compilation events
 
     const store = {
         subscribe,
@@ -172,21 +173,6 @@ function createPdfStore() {
                 if (latexState.currentPdfPath) {
                     const initOperationId = store.createOperationId('manual', 'initialization');
                     await store.loadPdf(latexState.currentPdfPath, initOperationId, 'manual', 'initialization');
-                } else {
-                    // Check if workspace has a main LaTeX file with corresponding PDF
-                    const workspaceState = workspaceStore.getCurrentState();
-                    if (workspaceState.mainLatexFile) {
-                        const potentialPdfPath = workspaceState.mainLatexFile.replace(/\.tex$/, '.pdf');
-                        console.log(`PDFStore: Checking for existing PDF: ${potentialPdfPath}`);
-                        
-                        try {
-                            // Try to load the PDF if it exists
-                            const initOperationId = store.createOperationId('manual', 'initialization');
-                            await store.loadPdf(potentialPdfPath, initOperationId, 'manual', 'initialization');
-                        } catch (error) {
-                            console.log(`PDFStore: No existing PDF found at ${potentialPdfPath}`);
-                        }
-                    }
                 }
 
                 update(state => ({
@@ -785,7 +771,23 @@ function createPdfStore() {
             
             // React to compilation completion
             const compilationUnsubscribe = compilationEvents.subscribe(events => {
-                const latestEvent = events[events.length - 1];
+                // Only process new compilation events we haven't seen before
+                const newCompletionEvents = events.filter(event => 
+                    event.subtype === 'completed' && 
+                    !processedCompilationEventIds.has(`${event.payload.timestamp}-${event.payload.pdfPath}`)
+                );
+                
+                if (newCompletionEvents.length === 0) {
+                    return; // No new completion events to process
+                }
+                
+                const latestEvent = newCompletionEvents[newCompletionEvents.length - 1];
+                // Mark this event as processed
+                const eventId = `${latestEvent.payload.timestamp}-${latestEvent.payload.pdfPath}`;
+                processedCompilationEventIds.add(eventId);
+                
+                console.log('✅ PDFStore: Processing NEW compilation completion event:', latestEvent);
+                
                 if (latestEvent && latestEvent.subtype === 'completed') {
                     const pdfPath = latestEvent.payload.pdfPath;
                     

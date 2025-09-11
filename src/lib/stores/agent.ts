@@ -41,23 +41,15 @@ export interface AgentState {
     streamingMessageId: string | null;
     currentJobId: string | null;
     
-    // Events & File Sync
+    // Events
     recentEvents: AgentEvent[];
     maxRecentEvents: number;
-    fileSyncActive: boolean;
-    fileOperationsCount: number;
+    processedEvents: Map<string, number>;
+    eventDeduplicationWindow: number;
     
-    // Agent run coordination
-    modifiedFiles: Map<string, {
-        tool: string;
-        changeType: 'created' | 'modified' | 'deleted';
-        timestamp: number;
-    }>;
+    // Agent execution state
     isAgentRunning: boolean;
-    
-    // Event deduplication
-    processedEvents: Map<string, number>; // eventId -> timestamp
-    eventDeduplicationWindow: number; // milliseconds
+    modifiedFiles: Map<string, any>;
 }
 
 function createAgentStore() {
@@ -86,14 +78,11 @@ function createAgentStore() {
         
         recentEvents: [],
         maxRecentEvents: 50,
-        fileSyncActive: false,
-        fileOperationsCount: 0,
-        
-        modifiedFiles: new Map(),
-        isAgentRunning: false,
-        
         processedEvents: new Map(),
-        eventDeduplicationWindow: 200 // 200ms window
+        eventDeduplicationWindow: 5000, // 5 seconds
+        
+        isAgentRunning: false,
+        modifiedFiles: new Map()
     };
 
     const { subscribe, set, update } = writable<AgentState>(initialState);
@@ -396,11 +385,6 @@ function createAgentStore() {
 
             switch (event.type) {
                 case 'JobQueued':
-                    // Pause file systems before starting agent run
-                    store.pauseFileSystems().catch(error => {
-                        console.error('AgentStore: Error pausing file systems:', error);
-                    });
-                    
                     update(state => ({
                         ...state,
                         isProcessing: true,
@@ -638,19 +622,16 @@ function createAgentStore() {
             return currentState!;
         },
 
-        // Handle job completion UI state only (no file system coordination)
+        // Handle job completion - simplified
         async handleJobCompletionUI(event: any): Promise<void> {
-            console.log('AgentStore: Handling agent run completion UI state');
+            console.log('AgentStore: Handling agent run completion');
             
-            // Since we're now showing individual streaming messages, 
-            // JobComplete just needs to clean up the processing state
             update(state => ({
                 ...state,
                 isProcessing: false,
                 streamingContent: '',
                 streamingMessageId: null,
-                currentJobId: null,
-                isAgentRunning: false
+                currentJobId: null
             }));
             
             // Clear completed tool results after a delay
@@ -662,11 +643,6 @@ function createAgentStore() {
                     }
                 });
             }, 3000);
-            
-            // Resume file systems and handle batch refresh
-            // Agent completion naturally involves both UI updates AND file system coordination
-            console.log('AgentStore: Job completion UI handled, now handling file system coordination');
-            await store.resumeFileSystemsAndBatchRefresh();
         },
 
         // Session switching
@@ -694,156 +670,11 @@ function createAgentStore() {
         getSyncStatus() {
             const currentState = store.getCurrentState();
             return {
-                fileSyncActive: currentState.fileSyncActive,
                 eventsActive: currentState.currentSessionId !== null,
                 currentSession: currentState.currentSessionId
             };
         },
 
-        // EventStore integration methods
-        handleAgentFileChange(path: string, changeType: 'created' | 'modified' | 'deleted' | 'renamed'): void {
-            console.log(`AgentStore: Duplicate file change ${changeType} on ${path} - skipping (handled by tool operation)`);
-            
-            // This method is redundant - file changes are already handled by handleAgentToolOperation
-            // when the tool operations complete. No need to emit duplicate events.
-        },
-
-        handleAgentToolOperation(tool: string, path: string, result: any): void {
-            console.log(`AgentStore: LEGACY tool operation handler called - ${tool} on ${path}`);
-            console.log(`AgentStore: File events now handled via ToolCompleted event metadata system`);
-            
-            try {
-                // Only emit the agent tool event for tracking - file events handled elsewhere
-                eventStore.events.agentToolCompleted(
-                    store.getCurrentState().currentSessionId || 'unknown',
-                    tool,
-                    result
-                );
-                
-                console.log(`AgentStore: Legacy handler completed, file processing handled by ToolCompleted event`);
-                
-            } catch (error) {
-                console.error('AgentStore: Error in legacy tool operation handler:', error);
-            }
-        },
-
-        // Enhanced file operation tracking with EventStore integration
-        async handleEnhancedFileOperation(operation: {
-            tool: string;
-            path: string;
-            args?: any;
-            result?: string;
-        }): Promise<void> {
-            const { tool, path, args, result } = operation;
-            
-            console.log(`AgentStore: Enhanced file operation - ${tool} on ${path}`);
-            
-            try {
-                // Use the standard tool operation handler which emits to EventStore
-                store.handleAgentToolOperation(tool, path, result || args);
-                
-                // Update operation count
-                update(state => ({
-                    ...state,
-                    fileOperationsCount: state.fileOperationsCount + 1
-                }));
-                
-            } catch (error) {
-                console.error('AgentStore: Error in enhanced file operation handling:', error);
-            }
-        },
-
-        // File system coordination methods
-        async pauseFileSystems(): Promise<void> {
-            console.log('AgentStore: Pausing all file systems during agent run');
-            
-            try {
-                // 1. Pause EventStore file event processing
-                eventStore.pauseProcessing();
-                
-                // 2. Pause stores
-                const { workspaceStore } = await import('./workspace');
-                const { latexStore } = await import('./latex');
-                
-                workspaceStore.pauseFileWatching();
-                latexStore.pauseAutoCompilation();
-                
-                console.log('AgentStore: All file systems paused');
-                
-            } catch (error) {
-                console.error('AgentStore: Error pausing file systems:', error);
-            }
-        },
-
-        async resumeFileSystemsAndBatchRefresh(): Promise<void> {
-            console.log('AgentStore: Resuming file systems and performing batch refresh');
-            
-            const currentState = store.getCurrentState();
-            const modifiedFiles = currentState.modifiedFiles;
-            
-            try {
-                // 1. Resume EventStore processing
-                eventStore.resumeProcessing();
-                
-                // 2. Resume stores
-                const { workspaceStore } = await import('./workspace');
-                const { latexStore } = await import('./latex');
-                
-                workspaceStore.resumeFileWatching();
-                latexStore.resumeAutoCompilation();
-                
-                // 3. Batch refresh modified files
-                if (modifiedFiles.size > 0) {
-                    const filePaths = Array.from(modifiedFiles.keys());
-                    console.log(`AgentStore: Batch refreshing ${filePaths.length} modified files`);
-                    
-                    // Reload files in workspace
-                    await workspaceStore.batchReloadModifiedFiles(filePaths);
-                    
-                    // Check if we need LaTeX compilation
-                    const LATEX_ECOSYSTEM_PATTERN = /\.(tex|bib|sty|cls|def|cfg|clo)$/i;
-                    const latexFilesModified = filePaths.filter(path => LATEX_ECOSYSTEM_PATTERN.test(path));
-                    
-                    if (latexFilesModified.length > 0) {
-                        console.log('AgentStore: LaTeX files were modified, scheduling compilation');
-                        setTimeout(() => {
-                            latexStore.scheduleCompilation('agent_run_complete');
-                        }, 1000); // Give files time to settle
-                    }
-                } else {
-                    console.log('AgentStore: No files were modified during agent run');
-                }
-                
-                // 4. Clear modified files tracking
-                update(state => ({
-                    ...state,
-                    modifiedFiles: new Map()
-                }));
-                
-                console.log('AgentStore: File system coordination completed');
-                
-            } catch (error) {
-                console.error('AgentStore: Error during file system coordination:', error);
-                
-                // Ensure systems are resumed even on error
-                eventStore.resumeProcessing();
-                
-                try {
-                    const { workspaceStore } = await import('./workspace');
-                    const { latexStore } = await import('./latex');
-                    workspaceStore.resumeFileWatching();
-                    latexStore.resumeAutoCompilation();
-                } catch (importError) {
-                    console.error('AgentStore: Error importing stores for cleanup:', importError);
-                }
-                
-                // Clear tracking even on error
-                update(state => ({
-                    ...state,
-                    modifiedFiles: new Map()
-                }));
-            }
-        },
 
         // Cleanup
         async destroy(): Promise<void> {

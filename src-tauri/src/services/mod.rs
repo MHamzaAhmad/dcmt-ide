@@ -10,4 +10,4 @@ pub mod git_service;
 pub use file_service::*;
 pub use watcher::*;
 pub use latex_service::*;
-pub use git_service::GitService;
+// pub use git_service::GitService;

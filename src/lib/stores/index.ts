@@ -9,7 +9,7 @@ export { eventStore } from './events';
 // Core stores
 export { projectStore } from './project';
 export { workspaceStore } from './workspace';
-export { latexStore } from './latex';
+export { latexStore, isCompiling } from './latex';
 export { pdfStore } from './pdf';
 export { agentStore } from './agent';
 export { gitStore } from './git';

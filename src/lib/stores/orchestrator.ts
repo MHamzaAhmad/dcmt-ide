@@ -209,6 +209,15 @@ function createInitializationOrchestrator() {
                         if (!latexState.isReady) {
                             throw new Error('LaTeX system initialization incomplete');
                         }
+                        
+                        // Trigger startup compilation and PDF loading
+                        console.log('InitializationOrchestrator: Triggering startup compilation...');
+                        try {
+                            await latexStore.triggerStartupCompilation();
+                        } catch (error) {
+                            // Don't fail initialization if startup compilation fails
+                            console.warn('InitializationOrchestrator: Startup compilation failed:', error);
+                        }
                     })
                 );
 

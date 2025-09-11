@@ -97,6 +97,11 @@ export interface PlatformAPI {
 	// LaTeX compilation
 	compileLatex?(request: LaTeXCompileRequest): Promise<LaTeXCompileResponse>;
 	findMainLatexFile?(): Promise<string>;
+	
+	// Compilation events
+	onCompilationEvent?(callback: (event: CompilationEvent) => void): () => void;
+	setAutoCompile?(enabled: boolean): Promise<void>;
+	setMainFile?(filePath: string | null): Promise<void>;
 }
 
 // Specific interfaces for different API categories
@@ -176,6 +181,20 @@ export interface LaTeXCompileError {
 	message: string;
 	line?: number;
 	file?: string;
+}
+
+export interface CompilationEvent {
+	id: string;
+	event_type: 'queued' | 'started' | 'success' | 'error' | 'main_file_detected';
+	main_file: string;
+	timestamp: number;
+	metadata?: {
+		reason?: string;
+		pdf_path?: string;
+		errors?: string[];
+		engine?: string;
+		duration_ms?: number;
+	};
 }
 
 // Agent System Types

@@ -40,6 +40,11 @@ export class WebApiAdapter implements PlatformAPI {
 	// LaTeX operations
 	compileLatex = this.latex.compileLatex.bind(this.latex);
 	findMainLatexFile = this.latex.findMainLatexFile.bind(this.latex);
+	
+	// Compilation events
+	onCompilationEvent = this.websocket.onCompilationEvent?.bind(this.websocket);
+	setAutoCompile = this.latex.setAutoCompile?.bind(this.latex);
+	setMainFile = this.latex.setMainFile?.bind(this.latex);
 
 	// Web-specific functionality
 	getWebSocket = () => this.websocket;

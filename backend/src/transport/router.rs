@@ -10,6 +10,20 @@ pub async fn create_router(config: Config) -> Result<Router> {
     // Create services with config
     let file_service = Arc::new(FileService::new(config.workspace_path.clone())?);
     let latex_service = Arc::new(LaTeXService::new(config.workspace_path.clone()));
+    
+    // Connect file watcher to LaTeX service for automatic compilation
+    {
+        let latex_service_clone = latex_service.clone();
+        let mut file_receiver = file_service.subscribe_to_events();
+        tokio::spawn(async move {
+            while let Ok(file_event) = file_receiver.recv().await {
+                // Check if this is a LaTeX-related file modification
+                if file_event.event_type == crate::model::FileEventType::Modified {
+                    latex_service_clone.handle_file_change(&file_event).await;
+                }
+            }
+        });
+    }
     let git_service = Arc::new(GitService::new(
         config.workspace_path.clone(),
         config.agent.litellm_base_url.clone(),
@@ -24,7 +38,7 @@ pub async fn create_router(config: Config) -> Result<Router> {
     
     // Create separate routers for different services
     let files_routes = files_router().with_state(file_service.clone());
-    let latex_routes = latex_router().with_state(latex_service);
+    let latex_routes = latex_router().with_state(latex_service.clone());
     let git_routes = git_router().with_state(git_service);
     let agent_routes = agent_router().with_state(agent_service.clone());
     let sse_routes = sse_router().with_state(agent_service.clone());
@@ -40,6 +54,7 @@ pub async fn create_router(config: Config) -> Result<Router> {
     let websocket_services = WebSocketServices {
         file_service: file_service.clone(),
         agent_service: agent_service,
+        latex_service: latex_service.clone(),
     };
     
     // Main application router

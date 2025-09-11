@@ -42,9 +42,6 @@ export interface WorkspaceState {
     openFiles: string[];
     activeFile: string | null;
     
-    // LaTeX specific
-    mainLatexFile: string | null;
-    latexFiles: string[];
     
     // Status
     isLoading: boolean;
@@ -66,8 +63,6 @@ function createWorkspaceStore() {
         fileTree: [],
         openFiles: [],
         activeFile: null,
-        mainLatexFile: null,
-        latexFiles: [],
         isLoading: false,
         error: null,
         lastActivity: Date.now(),
@@ -94,11 +89,6 @@ function createWorkspaceStore() {
         return dirtyFiles;
     });
 
-    const latexFilesContent = derived([{ subscribe }], ([$workspace]) => {
-        return $workspace.latexFiles
-            .map(path => $workspace.files.get(path))
-            .filter((file): file is FileContent => file !== undefined);
-    });
 
     // Internal state
     let queryClient: QueryClient | undefined;
@@ -112,7 +102,6 @@ function createWorkspaceStore() {
         // Derived stores
         openFileContents,
         dirtyFiles,
-        latexFilesContent,
 
         // Initialization
         async initialize(rootPath: string = '', providedQueryClient?: QueryClient): Promise<void> {
@@ -138,9 +127,6 @@ function createWorkspaceStore() {
             try {
                 // Load initial file tree
                 await store.refreshFileTree();
-                
-                // Detect main LaTeX file
-                await store.detectMainLatexFile();
                 
                 // Set up file watching if supported
                 store.setupFileWatching();
@@ -176,8 +162,7 @@ function createWorkspaceStore() {
                 const currentState = get({ subscribe });
                 const files = await fileSystemApi.getDirectoryTree(currentState.rootPath || '');
                 
-                // Process files and detect LaTeX files
-                const latexFiles: string[] = [];
+                // Process files
                 const processNode = (node: any): FileTreeNode => {
                     // Map API response format to internal format
                     const nodeType = node.file_type === 'File' ? 'file' : 
@@ -191,14 +176,6 @@ function createWorkspaceStore() {
                         size: node.size,
                         lastModified: node.modified || node.lastModified
                     };
-                    
-                    // Detect LaTeX ecosystem files (not just .tex)
-                    if (nodeType === 'file') {
-                        const LATEX_ECOSYSTEM_PATTERN = /\.(tex|bib|sty|cls|def|cfg|clo)$/i;
-                        if (LATEX_ECOSYSTEM_PATTERN.test(node.name)) {
-                            latexFiles.push(node.path);
-                        }
-                    }
                     
                     if (node.children) {
                         result.children = node.children.map(processNode);
@@ -215,7 +192,6 @@ function createWorkspaceStore() {
                 update(state => ({
                     ...state,
                     fileTree,
-                    latexFiles,
                     lastActivity: Date.now()
                 }));
 
@@ -524,48 +500,6 @@ function createWorkspaceStore() {
             }));
         },
 
-        // LaTeX specific functionality
-        async detectMainLatexFile(): Promise<void> {
-            const currentState = get({ subscribe });
-            
-            // Look for main.tex first
-            let mainFile = currentState.latexFiles.find(path => 
-                path.toLowerCase().includes('main.tex')
-            );
-            
-            // If not found, look for any .tex file with \documentclass (only check .tex files)
-            if (!mainFile && currentState.latexFiles.length > 0) {
-                const texFiles = currentState.latexFiles.filter(path => path.endsWith('.tex'));
-                for (const latexPath of texFiles) {
-                    try {
-                        const file = await store.loadFile(latexPath);
-                        if (file.content.includes('\\documentclass')) {
-                            mainFile = latexPath;
-                            break;
-                        }
-                    } catch (error) {
-                        console.warn(`Could not check ${latexPath} for \\documentclass:`, error);
-                    }
-                }
-            }
-            
-            // Fall back to first .tex file (only .tex files can be main files)
-            if (!mainFile) {
-                const texFiles = currentState.latexFiles.filter(path => path.endsWith('.tex'));
-                if (texFiles.length > 0) {
-                    mainFile = texFiles[0];
-                }
-            }
-
-            if (mainFile) {
-                update(state => ({
-                    ...state,
-                    mainLatexFile: mainFile!
-                }));
-                
-                console.log(`Detected main LaTeX file: ${mainFile}`);
-            }
-        },
 
         // Event emission for external systems
         emitFileChange(path: string, changeType: 'created' | 'modified' | 'deleted', source?: 'agent' | 'user' | 'watcher'): void {

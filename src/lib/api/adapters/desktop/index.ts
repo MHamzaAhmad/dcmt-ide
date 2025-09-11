@@ -32,6 +32,11 @@ export class DesktopApiAdapter implements PlatformAPI {
 	// LaTeX operations
 	compileLatex = this.latex.compileLatex.bind(this.latex);
 	findMainLatexFile = this.latex.findMainLatexFile.bind(this.latex);
+	
+	// Compilation events
+	onCompilationEvent = this.latex.onCompilationEvent?.bind(this.latex);
+	setAutoCompile = this.latex.setAutoCompile?.bind(this.latex);
+	setMainFile = this.latex.setMainFile?.bind(this.latex);
 
 	// Additional desktop-specific helpers
 	getProjectInfo = this.project.getProjectInfo.bind(this.project);

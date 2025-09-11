@@ -1,5 +1,5 @@
 use crate::transport::routes::websocket::WebSocketServices;
-use crate::model::events::FileEvent;
+use crate::model::events::{FileEvent, CompilationEvent};
 use axum::{
     extract::{ws::{Message, WebSocket, WebSocketUpgrade}, State},
     response::Response,
@@ -122,7 +122,9 @@ struct ConnectionState {
     connection_id: String,
     services: WebSocketServices,
     file_subscribed: Arc<tokio::sync::RwLock<bool>>,
+    compilation_subscribed: Arc<tokio::sync::RwLock<bool>>,
     file_event_receiver: Arc<tokio::sync::Mutex<Option<broadcast::Receiver<FileEvent>>>>,
+    compilation_event_receiver: Arc<tokio::sync::Mutex<Option<broadcast::Receiver<CompilationEvent>>>>,
     event_tx: Arc<tokio::sync::mpsc::UnboundedSender<WebSocketEvent>>,
     event_rx: Arc<tokio::sync::Mutex<Option<tokio::sync::mpsc::UnboundedReceiver<WebSocketEvent>>>>,
 }
@@ -130,6 +132,7 @@ struct ConnectionState {
 #[derive(Debug, Clone)]
 enum WebSocketEvent {
     FileEvent(FileEvent),
+    CompilationEvent(CompilationEvent),
     ConnectionStatus {
         status: String,
         timestamp: u64,
@@ -144,7 +147,9 @@ impl ConnectionState {
             connection_id,
             services,
             file_subscribed: Arc::new(tokio::sync::RwLock::new(false)),
+            compilation_subscribed: Arc::new(tokio::sync::RwLock::new(false)),
             file_event_receiver: Arc::new(tokio::sync::Mutex::new(None)),
+            compilation_event_receiver: Arc::new(tokio::sync::Mutex::new(None)),
             event_tx: Arc::new(event_tx),
             event_rx: Arc::new(tokio::sync::Mutex::new(Some(event_rx))),
         }
@@ -187,6 +192,12 @@ impl ConnectionState {
             }
             "unsubscribe_files" => {
                 self.unsubscribe_from_files().await?;
+            }
+            "subscribe_compilation" => {
+                self.subscribe_to_compilation().await?;
+            }
+            "unsubscribe_compilation" => {
+                self.unsubscribe_from_compilation().await?;
             }
             // Agent events are now handled via SSE, no longer supported via WebSocket
             "subscribe" => {
@@ -251,6 +262,56 @@ impl ConnectionState {
         Ok(())
     }
     
+    async fn subscribe_to_compilation(&mut self) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        let mut compilation_subscribed = self.compilation_subscribed.write().await;
+        
+        if *compilation_subscribed {
+            debug!("Connection {} already subscribed to compilation events", self.connection_id);
+            return Ok(());
+        }
+        
+        // Subscribe to compilation events
+        let compilation_receiver = self.services.latex_service.subscribe_to_compilation_events();
+        *self.compilation_event_receiver.lock().await = Some(compilation_receiver);
+        
+        // Start compilation event forwarding task
+        let event_tx = self.event_tx.clone();
+        let compilation_receiver_clone = self.compilation_event_receiver.clone();
+        let connection_id = self.connection_id.clone();
+        
+        tokio::spawn(async move {
+            let mut receiver_guard = compilation_receiver_clone.lock().await;
+            if let Some(ref mut receiver) = *receiver_guard {
+                while let Ok(compilation_event) = receiver.recv().await {
+                    if event_tx.send(WebSocketEvent::CompilationEvent(compilation_event)).is_err() {
+                        debug!("Compilation event receiver stopped for connection {}", connection_id);
+                        break;
+                    }
+                }
+            }
+        });
+        
+        *compilation_subscribed = true;
+        info!("Connection {} subscribed to compilation events", self.connection_id);
+        Ok(())
+    }
+    
+    async fn unsubscribe_from_compilation(&mut self) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        let mut compilation_subscribed = self.compilation_subscribed.write().await;
+        
+        if !*compilation_subscribed {
+            debug!("Connection {} not subscribed to compilation events", self.connection_id);
+            return Ok(());
+        }
+        
+        // Clear compilation event receiver
+        *self.compilation_event_receiver.lock().await = None;
+        *compilation_subscribed = false;
+        
+        info!("Connection {} unsubscribed from compilation events", self.connection_id);
+        Ok(())
+    }
+    
     // Agent subscription methods removed - agent events now handled via SSE
     
     async fn handle_outgoing_events(
@@ -283,6 +344,28 @@ impl ConnectionState {
                         }
                     })
                 }
+                WebSocketEvent::CompilationEvent(compilation_event) => {
+                    let compilation_subscribed = *self.compilation_subscribed.read().await;
+                    if !compilation_subscribed {
+                        continue; // Skip if not subscribed
+                    }
+                    
+                    serde_json::json!({
+                        "type": "compilation_event",
+                        "event": {
+                            "event_type": match compilation_event.event_type {
+                                crate::model::events::CompilationEventType::Queued => "queued",
+                                crate::model::events::CompilationEventType::Started => "started",
+                                crate::model::events::CompilationEventType::Success => "success",
+                                crate::model::events::CompilationEventType::Error => "error",
+                                crate::model::events::CompilationEventType::MainFileDetected => "main_file_detected",
+                            },
+                            "main_file": compilation_event.main_file,
+                            "timestamp": compilation_event.timestamp,
+                            "metadata": compilation_event.metadata
+                        }
+                    })
+                }
                 // AgentEvent handling removed - now using SSE
                 WebSocketEvent::ConnectionStatus { status, timestamp } => {
                     serde_json::json!({
@@ -307,7 +390,9 @@ impl ConnectionState {
     async fn cleanup(&mut self) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         // Clean up subscriptions
         *self.file_subscribed.write().await = false;
+        *self.compilation_subscribed.write().await = false;
         *self.file_event_receiver.lock().await = None;
+        *self.compilation_event_receiver.lock().await = None;
         
         info!("Cleaned up connection {}", self.connection_id);
         Ok(())

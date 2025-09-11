@@ -10,7 +10,7 @@
 	import { ResizablePaneGroup, ResizablePane, ResizableHandle } from '$lib/components/ui/resizable';
 	import { editorState } from '$lib/stores/editor.js';
 	import { fileSystemApi } from '$lib/api/adapters';
-	import { workspaceStore, orchestrator, projectStore, latexStore } from '$lib/stores';
+	import { workspaceStore, orchestrator, projectStore, latexStore, isCompiling } from '$lib/stores';
 
 	let isFileExplorerOpen = $state(false);
 	let isVersionControlOpen = $state(false);
@@ -69,19 +69,6 @@
 		}
 	}
 
-	// Auto-load main LaTeX file when new reactive stores are ready
-	$effect(() => {
-		// Wait for both orchestrator and workspace to be ready
-		if (orchestratorState.isReady && workspaceState.isReady && workspaceState.mainLatexFile) {
-			console.log('MainLayout: New reactive stores ready - main LaTeX file:', workspaceState.mainLatexFile);
-			
-			// Auto-open the main LaTeX file if no files are currently open
-			if (workspaceState.openFiles.length === 0) {
-				console.log('MainLayout: Auto-loading main LaTeX file from reactive store:', workspaceState.mainLatexFile);
-				autoLoadMainFiles(workspaceState.mainLatexFile);
-			}
-		}
-	});
 
 
 	async function autoLoadMainFiles(mainTexPath: string) {
@@ -177,7 +164,7 @@
 							hasConflict={false}
 							lastAgentUpdateTime={0}
 							isLatexFile={activeFile ? isLatexFile(activeFile.path) : false}
-							isCompiling={latexState.isCompiling}
+							isCompiling={$isCompiling}
 							compilationStatus={latexState.compilationStatus === 'success' ? 'success' : latexState.compilationStatus === 'error' ? 'error' : null}
 							showTabs={true}
 							activeTab={activeTab}

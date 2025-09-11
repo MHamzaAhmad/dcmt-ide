@@ -4,7 +4,7 @@ import { DesktopApiAdapter } from './desktop';
 import { WebApiAdapter } from './web';
 import { WebGitAdapter } from './web/git';
 import { DesktopGitAdapter } from './desktop/git';
-import type { PlatformAPI, ProjectInfo, LaTeXCompileRequest, LaTeXCompileResponse, GitOperations } from '../types';
+import type { PlatformAPI, ProjectInfo, LaTeXCompileRequest, LaTeXCompileResponse, GitOperations, CompilationEvent } from '../types';
 
 // Create singleton instances lazily
 let desktopAdapter: DesktopApiAdapter | null = null;
@@ -119,6 +119,31 @@ export class UnifiedPlatformApi implements PlatformAPI {
 			throw new Error('LaTeX main file finding not supported on this platform');
 		}
 		return await this.adapter.findMainLatexFile();
+	}
+
+	// Compilation events
+	onCompilationEvent(callback: (event: CompilationEvent) => void): () => void {
+		if (!this.adapter.onCompilationEvent) {
+			console.warn('Compilation events not supported on this platform');
+			return () => {}; // Return no-op unsubscribe function
+		}
+		return this.adapter.onCompilationEvent(callback);
+	}
+
+	async setAutoCompile(enabled: boolean): Promise<void> {
+		if (!this.adapter.setAutoCompile) {
+			console.warn('Auto-compile setting not supported on this platform');
+			return;
+		}
+		return await this.adapter.setAutoCompile(enabled);
+	}
+
+	async setMainFile(filePath: string | null): Promise<void> {
+		if (!this.adapter.setMainFile) {
+			console.warn('Main file setting not supported on this platform');
+			return;
+		}
+		return await this.adapter.setMainFile(filePath);
 	}
 
 	// Platform-specific utilities

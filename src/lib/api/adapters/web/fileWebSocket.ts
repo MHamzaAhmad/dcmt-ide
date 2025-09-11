@@ -1,5 +1,5 @@
 // Web File WebSocket Adapter for File Watching
-import type { FileWatcherOperations } from '../../types';
+import type { FileWatcherOperations, CompilationEvent } from '../../types';
 import { eventStore } from '$lib/stores/events';
 
 export interface FileEvent {
@@ -178,6 +178,7 @@ export class WebFileWatcher {
 
 export class WebSocketAdapter implements FileWatcherOperations {
 	private ws: WebSocket | null = null;
+	private compilationEventCallbacks: ((event: CompilationEvent) => void)[] = [];
 
 	// WebSocket support for file watching (web mode only)
 	connect(): WebSocket | null {
@@ -200,7 +201,12 @@ export class WebSocketAdapter implements FileWatcherOperations {
 			this.ws.onmessage = (event) => {
 				try {
 					const data = JSON.parse(event.data);
-					console.log('WebSocket file event:', data);
+					console.log('WebSocket event:', data);
+					
+					// Handle compilation events
+					if (data.type === 'compilation_event') {
+						this.handleCompilationEvent(data.event);
+					}
 					// Note: File events should be handled by agentWebSocket which emits to EventStore
 					// This WebSocket is primarily for legacy compatibility
 				} catch (error) {
@@ -257,5 +263,38 @@ export class WebSocketAdapter implements FileWatcherOperations {
 		if (this.isConnected() && this.ws) {
 			this.ws.send(JSON.stringify(data));
 		}
+	}
+
+	// Compilation event handling
+	private handleCompilationEvent(event: CompilationEvent): void {
+		console.log('Received compilation event:', event);
+		this.compilationEventCallbacks.forEach(callback => {
+			try {
+				callback(event);
+			} catch (error) {
+				console.error('Error in compilation event callback:', error);
+			}
+		});
+	}
+
+	onCompilationEvent(callback: (event: CompilationEvent) => void): () => void {
+		this.compilationEventCallbacks.push(callback);
+		
+		// Subscribe to compilation events on connect
+		if (this.isConnected()) {
+			this.send({ type: 'subscribe_compilation' });
+		}
+		
+		return () => {
+			const index = this.compilationEventCallbacks.indexOf(callback);
+			if (index > -1) {
+				this.compilationEventCallbacks.splice(index, 1);
+			}
+			
+			// Unsubscribe if no more callbacks
+			if (this.compilationEventCallbacks.length === 0 && this.isConnected()) {
+				this.send({ type: 'unsubscribe_compilation' });
+			}
+		};
 	}
 }

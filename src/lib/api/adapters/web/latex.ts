@@ -36,4 +36,22 @@ export class WebLatexAdapter implements LaTeXOperations {
 			throw error;
 		}
 	}
+
+	async setAutoCompile(enabled: boolean): Promise<void> {
+		try {
+			await apiClient.post('/api/latex/set-auto-compile', { enabled });
+		} catch (error) {
+			console.error('Failed to set auto compile:', error);
+			throw error;
+		}
+	}
+
+	async setMainFile(filePath: string | null): Promise<void> {
+		try {
+			await apiClient.post('/api/latex/set-main-file', { filePath });
+		} catch (error) {
+			console.error('Failed to set main file:', error);
+			throw error;
+		}
+	}
 }

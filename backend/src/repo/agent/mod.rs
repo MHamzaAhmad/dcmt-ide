@@ -45,7 +45,6 @@ struct StreamingContext {
 struct PartialToolCall {
     id: String,
     name: String,
-    arguments: String,
 }
 
 impl StreamingContext {
@@ -81,7 +80,6 @@ impl StreamingContext {
                                         self.current_tool = Some(PartialToolCall {
                                             id: id.to_string(),
                                             name: name.to_string(),
-                                            arguments: String::new(),
                                         });
                                         events.push(StreamingEvent::ToolCallStart {
                                             id: id.to_string(),

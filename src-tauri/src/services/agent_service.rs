@@ -156,8 +156,6 @@ struct StreamDelta {
 #[derive(Debug, serde::Deserialize)]
 struct ToolCallDelta {
     id: Option<String>,
-    #[serde(rename = "type")]
-    call_type: Option<String>,
     function: ToolFunctionDelta,
 }
 

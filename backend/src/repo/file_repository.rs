@@ -154,12 +154,15 @@ impl FileRepository {
         
         debug!("Updating file: {:?}", full_path);
         
-        if !full_path.exists() {
-            return Err(anyhow::anyhow!("File does not exist: {}", path));
+        // If file exists and it's a directory, return error
+        if full_path.exists() && full_path.is_dir() {
+            return Err(anyhow::anyhow!("Cannot update directory content: {}", path));
         }
 
-        if full_path.is_dir() {
-            return Err(anyhow::anyhow!("Cannot update directory content: {}", path));
+        // Create parent directories if they don't exist
+        if let Some(parent) = full_path.parent() {
+            fs::create_dir_all(parent).await
+                .with_context(|| format!("Failed to create parent directories for: {}", path))?;
         }
 
         fs::write(&full_path, content).await

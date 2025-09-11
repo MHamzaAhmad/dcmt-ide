@@ -1,6 +1,6 @@
-use crate::{config::Config, svc::{AgentService, FileService, LaTeXService}, repo::AgentRepo};
+use crate::{config::Config, svc::{AgentService, FileService, LaTeXService, GitService}, repo::AgentRepo};
 use crate::transport::middleware::{cors::create_cors_layer, logging::create_trace_layer};
-use crate::transport::routes::{agent_router, files_router, latex_router, sse_router, websocket_router};
+use crate::transport::routes::{agent_router, files_router, latex_router, sse_router, websocket_router, git_router};
 use crate::transport::routes::websocket::WebSocketServices;
 use anyhow::Result;
 use axum::Router;
@@ -10,6 +10,10 @@ pub async fn create_router(config: Config) -> Result<Router> {
     // Create services with config
     let file_service = Arc::new(FileService::new(config.workspace_path.clone())?);
     let latex_service = Arc::new(LaTeXService::new(config.workspace_path.clone()));
+    let git_service = Arc::new(GitService::new(
+        config.workspace_path.clone(),
+        config.agent.litellm_base_url.clone(),
+    )?);
     
     // Create agent repository and service
     let agent_repo = Arc::new(AgentRepo::new(
@@ -21,6 +25,7 @@ pub async fn create_router(config: Config) -> Result<Router> {
     // Create separate routers for different services
     let files_routes = files_router().with_state(file_service.clone());
     let latex_routes = latex_router().with_state(latex_service);
+    let git_routes = git_router().with_state(git_service);
     let agent_routes = agent_router().with_state(agent_service.clone());
     let sse_routes = sse_router().with_state(agent_service.clone());
     
@@ -28,6 +33,7 @@ pub async fn create_router(config: Config) -> Result<Router> {
     let api_routes = Router::new()
         .nest("/files", files_routes)
         .nest("/latex", latex_routes)
+        .nest("/git", git_routes)
         .nest("/agent", agent_routes);
 
     // Create combined WebSocket services state

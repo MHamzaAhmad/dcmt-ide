@@ -9,6 +9,7 @@ import { workspaceStore } from './workspace';
 import { latexStore } from './latex';
 import { pdfStore } from './pdf';
 import { agentStore } from './agent';
+import { gitStore } from './git';
 import { eventStore } from './events';
 import { projectStore } from './project';
 import { isTauri } from '$lib/utils/platform';
@@ -67,6 +68,11 @@ function createInitializationOrchestrator() {
         {
             name: 'pdf',
             description: 'Initialize PDF preview system',
+            status: 'pending'
+        },
+        {
+            name: 'git',
+            description: 'Initialize Git version control',
             status: 'pending'
         },
         {
@@ -189,7 +195,7 @@ function createInitializationOrchestrator() {
                     }
                 });
 
-                // Step 3-5: Initialize LaTeX, PDF, and Agent in parallel (independent operations)
+                // Step 3-6: Initialize LaTeX, PDF, Git, and Agent in parallel (independent operations)
                 const parallelInitPromises: Promise<void>[] = [];
                 
                 // LaTeX initialization
@@ -255,7 +261,45 @@ function createInitializationOrchestrator() {
                     })
                 );
 
-                // Agent initialization (independent of LaTeX/PDF)
+                // Git initialization (independent of LaTeX/PDF)
+                parallelInitPromises.push(
+                    orchestrator.executeStep('git', async () => {
+                        console.log('InitializationOrchestrator: Initializing Git system...');
+                        
+                        try {
+                            // Get current project path for desktop or empty string for web
+                            let workspacePath = '';
+                            if (isTauri()) {
+                                const projectState = projectStore.getCurrentState();
+                                workspacePath = projectState.currentProject?.path || '';
+                            }
+                            
+                            await gitStore.initialize(workspacePath);
+                            
+                            // Verify Git is ready
+                            const gitState = gitStore.getCurrentState();
+                            if (!gitState.isReady) {
+                                throw new Error('Git system initialization incomplete');
+                            }
+                        } catch (error) {
+                            // Don't fail the entire initialization if Git fails
+                            // User can still use the app without version control
+                            console.warn('InitializationOrchestrator: Git initialization failed, continuing without version control:', error);
+                            
+                            // Mark git as failed but don't throw
+                            update(state => ({
+                                ...state,
+                                steps: state.steps.map(step => 
+                                    step.name === 'git' 
+                                        ? { ...step, status: 'failed', error: error instanceof Error ? error.message : 'Git initialization failed' }
+                                        : step
+                                )
+                            }));
+                        }
+                    })
+                );
+
+                // Agent initialization (independent of LaTeX/PDF/Git)
                 if (!skipAgentInit) {
                     parallelInitPromises.push(
                         orchestrator.executeStep('agent', async () => {
@@ -420,6 +464,7 @@ function createInitializationOrchestrator() {
             try {
                 // Reset stores in reverse order
                 await agentStore.destroy();
+                await gitStore.cleanup();
                 await pdfStore.destroy();
                 await latexStore.destroy();
                 await workspaceStore.destroy();
@@ -496,6 +541,13 @@ function createInitializationOrchestrator() {
                     agentStore.setQueryClient(queryClient);
                 }
                 await agentStore.initialize();
+            }
+        },
+
+        async initializeGit(workspacePath: string = ''): Promise<void> {
+            const gitState = gitStore.getCurrentState();
+            if (!gitState.isReady) {
+                await gitStore.initialize(workspacePath);
             }
         },
 

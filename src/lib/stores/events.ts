@@ -75,7 +75,23 @@ export interface UIEvent {
   };
 }
 
-export type SystemEvent = FileSystemEvent | AgentEvent | CompilationEvent | ConnectionEvent | UIEvent;
+export interface GitEvent {
+  type: 'git';
+  subtype: 'status_changed' | 'diff_updated' | 'summary_generated' 
+         | 'files_staged' | 'commit_created' | 'push_completed' | 'error';
+  payload: {
+    branch?: string;
+    status?: any;
+    diff?: any;
+    summary?: any;
+    commit?: any;
+    paths?: string[];
+    error?: string;
+    timestamp: number;
+  };
+}
+
+export type SystemEvent = FileSystemEvent | AgentEvent | CompilationEvent | ConnectionEvent | UIEvent | GitEvent;
 
 // ============================================================================
 // Event Store State
@@ -223,6 +239,10 @@ function createEventStore() {
 
   const uiEvents = createEventStream((event): event is UIEvent => 
     event.type === 'ui'
+  );
+
+  const gitEvents = createEventStream((event): event is GitEvent => 
+    event.type === 'git'
   );
 
   // Session-specific agent events
@@ -621,6 +641,56 @@ function createEventStore() {
         type: 'connection', 
         subtype: 'api_error',
         payload: { error, timestamp: Date.now() }
+      }),
+
+    // Git events
+    gitStatusChanged: (branch: string, status: any) =>
+      emit({
+        type: 'git',
+        subtype: 'status_changed',
+        payload: { branch, status, timestamp: Date.now() }
+      }),
+
+    gitDiffUpdated: (diff: any) =>
+      emit({
+        type: 'git',
+        subtype: 'diff_updated',
+        payload: { diff, timestamp: Date.now() }
+      }),
+
+    gitSummaryGenerated: (summary: any) =>
+      emit({
+        type: 'git',
+        subtype: 'summary_generated',
+        payload: { summary, timestamp: Date.now() }
+      }),
+
+    gitFilesStaged: (paths: string[]) =>
+      emit({
+        type: 'git',
+        subtype: 'files_staged',
+        payload: { paths, timestamp: Date.now() }
+      }),
+
+    gitCommitCreated: (commit: any) =>
+      emit({
+        type: 'git',
+        subtype: 'commit_created',
+        payload: { commit, timestamp: Date.now() }
+      }),
+
+    gitPushCompleted: () =>
+      emit({
+        type: 'git',
+        subtype: 'push_completed',
+        payload: { timestamp: Date.now() }
+      }),
+
+    gitError: (error: string) =>
+      emit({
+        type: 'git',
+        subtype: 'error',
+        payload: { error, timestamp: Date.now() }
       })
   };
 
@@ -642,6 +712,7 @@ function createEventStore() {
     compilationEvents,
     connectionEvents,
     uiEvents,
+    gitEvents,
     createAgentSessionStream,
     createFileSystemPathStream,
     createFileSystemEventStream,

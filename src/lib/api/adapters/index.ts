@@ -2,11 +2,15 @@
 import { isTauri } from '$lib/utils/platform';
 import { DesktopApiAdapter } from './desktop';
 import { WebApiAdapter } from './web';
-import type { PlatformAPI, ProjectInfo, LaTeXCompileRequest, LaTeXCompileResponse } from '../types';
+import { WebGitAdapter } from './web/git';
+import { DesktopGitAdapter } from './desktop/git';
+import type { PlatformAPI, ProjectInfo, LaTeXCompileRequest, LaTeXCompileResponse, GitOperations } from '../types';
 
 // Create singleton instances lazily
 let desktopAdapter: DesktopApiAdapter | null = null;
 let webAdapter: WebApiAdapter | null = null;
+let desktopGitAdapter: DesktopGitAdapter | null = null;
+let webGitAdapter: WebGitAdapter | null = null;
 
 /**
  * Get the appropriate API adapter based on the current platform
@@ -135,6 +139,46 @@ export const fileSystemApi = platformApi;
 
 // Export adapters for direct access if needed
 export { DesktopApiAdapter, WebApiAdapter };
+
+/**
+ * Get the appropriate Git adapter based on the current platform
+ * @returns GitOperations adapter for current platform
+ */
+export function getGitAdapter(): GitOperations {
+	if (isTauri()) {
+		if (!desktopGitAdapter) {
+			desktopGitAdapter = new DesktopGitAdapter();
+		}
+		return desktopGitAdapter;
+	} else {
+		if (!webGitAdapter) {
+			webGitAdapter = new WebGitAdapter();
+		}
+		return webGitAdapter;
+	}
+}
+
+/**
+ * Get the desktop Git adapter (Tauri commands)
+ * @returns DesktopGitAdapter instance
+ */
+export function getDesktopGitAdapter(): DesktopGitAdapter {
+	if (!desktopGitAdapter) {
+		desktopGitAdapter = new DesktopGitAdapter();
+	}
+	return desktopGitAdapter;
+}
+
+/**
+ * Get the web Git adapter (HTTP requests)
+ * @returns WebGitAdapter instance
+ */
+export function getWebGitAdapter(): WebGitAdapter {
+	if (!webGitAdapter) {
+		webGitAdapter = new WebGitAdapter();
+	}
+	return webGitAdapter;
+}
 
 // Export platform-specific adapters
 export * from './desktop';

@@ -12,6 +12,7 @@ export { workspaceStore } from './workspace';
 export { latexStore } from './latex';
 export { pdfStore } from './pdf';
 export { agentStore } from './agent';
+export { gitStore } from './git';
 
 // Orchestrator
 export { orchestrator, initializationOrchestrator } from './orchestrator';
@@ -32,4 +33,5 @@ export type { FileContent, FileTreeNode, WorkspaceState } from './workspace';
 export type { LaTeXState, LaTeXCompilationResult } from './latex';
 export type { PDFState, PDFDocument, PDFViewerState } from './pdf';
 export type { AgentState } from './agent';
+export type { GitStoreState } from './git';
 export type { InitializationState, InitializationStep, InitializationOptions } from './orchestrator';

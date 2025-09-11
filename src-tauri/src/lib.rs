@@ -1,11 +1,13 @@
 mod commands;
 mod services;
 mod models;
+mod repo;
 
 use commands::filesystem::*;
 use commands::project::{ProjectInfo, *};
 use commands::latex::*;
 use commands::agent::*;
+use commands::git::*;
 use std::sync::Arc;
 use tauri::Manager;
 use tracing::info;
@@ -36,6 +38,10 @@ pub fn run() {
             // Initialize agent service state - will be populated when project is selected
             let agent_service_state = Arc::new(RwLock::new(None::<AgentService>));
             app.manage(agent_service_state);
+            
+            // Initialize Git service state
+            let git_service_state = commands::git::GitServiceState(Arc::new(std::sync::Mutex::new(None)));
+            app.manage(git_service_state);
             
             info!("Application initialized - waiting for project selection");
             
@@ -69,7 +75,16 @@ pub fn run() {
             list_agent_sessions,
             clear_agent_session,
             get_available_agent_tools,
-            is_agent_available
+            is_agent_available,
+            initialize_git_service,
+            get_git_status,
+            get_git_diff,
+            generate_commit_summary,
+            stage_files,
+            stage_all_files,
+            commit_changes,
+            push_changes,
+            commit_and_push_changes
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

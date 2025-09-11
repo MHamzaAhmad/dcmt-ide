@@ -122,6 +122,17 @@ export interface LaTeXOperations {
 	findMainLatexFile(): Promise<string>;
 }
 
+export interface GitOperations {
+	getStatus(): Promise<GitStatus>;
+	getDiff(staged: boolean): Promise<GitDiff>;
+	generateSummary(staged: boolean): Promise<CommitSummary>;
+	stageFiles(paths: string[]): Promise<void>;
+	stageAll(): Promise<void>;
+	commit(message: string): Promise<CommitResult>;
+	push(): Promise<void>;
+	commitAndPush(message: string): Promise<CommitResult>;
+}
+
 // File Watcher Interface
 export interface FileWatcherOperations {
 	isActive(): boolean;
@@ -276,4 +287,54 @@ export interface AgentOperations {
 	isAgentAvailable(): Promise<boolean>;
 	getCurrentSessionId(): string | null;
 	setCurrentSessionId(sessionId: string): void;
+}
+
+// Git Version Control Types
+export interface GitStatus {
+	branch: string;
+	ahead: number;
+	behind: number;
+	staged: GitFileStatus[];
+	unstaged: GitFileStatus[];
+	untracked: string[];
+}
+
+export interface GitFileStatus {
+	path: string;
+	status: 'added' | 'modified' | 'deleted' | 'renamed';
+	additions: number;
+	deletions: number;
+}
+
+export interface GitDiff {
+	files: FileDiff[];
+	stats: DiffStats;
+}
+
+export interface FileDiff {
+	path: string;
+	old_path?: string;
+	status: 'added' | 'modified' | 'deleted' | 'renamed';
+	additions: number;
+	deletions: number;
+	hunks: string[];
+}
+
+export interface DiffStats {
+	additions: number;
+	deletions: number;
+	files_changed: number;
+}
+
+export interface CommitResult {
+	sha: string;
+	message: string;
+	author: string;
+	timestamp: number;
+}
+
+export interface CommitSummary {
+	summary: string;
+	bullets: string[];
+	suggestedMessage: string;
 }

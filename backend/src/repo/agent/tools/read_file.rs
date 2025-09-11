@@ -31,7 +31,7 @@ impl AgentTool for ReadFileTool {
         }
     }
     
-    async fn execute(&self, workspace: &Path, args: Value) -> AgentResult<String> {
+    async fn execute(&self, workspace: &Path, args: Value, _repo: Option<&crate::repo::agent::AgentRepo>) -> AgentResult<String> {
         let path = args["path"]
             .as_str()
             .ok_or_else(|| AgentError::InvalidToolArguments { 

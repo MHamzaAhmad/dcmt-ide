@@ -185,6 +185,37 @@ impl FileService {
         Ok(())
     }
 
+    /// Write file content (create new file or overwrite existing)
+    /// This method handles both file creation and updating with appropriate events
+    pub async fn write_file(&self, path: &str, content: &str) -> Result<()> {
+        let file_path = self.workspace_path.join(path);
+        let file_exists = file_path.exists();
+        
+        // Use repository to write the file (handles both create and update)
+        self.repository.update_file(path, content).await?;
+
+        // Send appropriate event based on whether file existed
+        let event_type = if file_exists {
+            FileEventType::Modified
+        } else {
+            FileEventType::Created
+        };
+        
+        let mut metadata = FileEventMetadata::new(false);
+        if let Ok(file_metadata) = std::fs::metadata(&file_path) {
+            metadata = metadata.with_size(file_metadata.len());
+        }
+        
+        let event = FileEvent::new(event_type, path.to_string()).with_metadata(metadata);
+        let _ = self.event_sender.send(event);
+        
+        let action = if file_exists { "updated" } else { "created" };
+        info!("File {}, sent {} event for: {}", action, 
+              if file_exists { "Modified" } else { "Created" }, path);
+
+        Ok(())
+    }
+
     pub async fn delete_file_or_directory(&self, path: &str) -> Result<()> {
         // Get metadata before deletion
         let file_path = self.workspace_path.join(path);

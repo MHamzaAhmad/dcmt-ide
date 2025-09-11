@@ -35,7 +35,7 @@ impl AgentTool for WriteFileTool {
         }
     }
     
-    async fn execute(&self, workspace: &Path, args: Value) -> AgentResult<String> {
+    async fn execute(&self, workspace: &Path, args: Value, repo: Option<&crate::repo::agent::AgentRepo>) -> AgentResult<String> {
         let path = args["path"]
             .as_str()
             .ok_or_else(|| AgentError::InvalidToolArguments { 
@@ -69,11 +69,18 @@ impl AgentTool for WriteFileTool {
             }
         }
         
+        let repo = repo.ok_or_else(|| AgentError::InvalidToolArguments {
+            tool: self.name().to_string(),
+            error: "Repository access required for file operations".to_string(),
+        })?;
+        
+        let file_service = repo.get_file_service();
+        
         // Check if file already exists to provide appropriate feedback
         let file_exists = full_path.exists();
         
-        match fs::write(&full_path, content).await {
-            Ok(()) => {
+        match file_service.write_file(path, content).await {
+            Ok(_) => {
                 let action = if file_exists { "overwritten" } else { "created" };
                 let byte_count = content.len();
                 let line_count = content.lines().count();
@@ -83,7 +90,7 @@ impl AgentTool for WriteFileTool {
                     action, path, byte_count, line_count
                 ))
             }
-            Err(e) => Err(AgentError::IoError(e)),
+            Err(e) => Err(AgentError::IoError(std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))),
         }
     }
 }

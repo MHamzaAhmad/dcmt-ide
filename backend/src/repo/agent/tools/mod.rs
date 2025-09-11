@@ -27,8 +27,8 @@ pub trait AgentTool: Send + Sync {
     /// Returns the OpenAI tool definition for this tool
     fn definition(&self) -> ToolDefinition;
     
-    /// Executes the tool with the given arguments
-    async fn execute(&self, workspace: &Path, args: Value) -> AgentResult<String>;
+    /// Executes the tool with the given arguments and repo access
+    async fn execute(&self, workspace: &Path, args: Value, repo: Option<&crate::repo::agent::AgentRepo>) -> AgentResult<String>;
 }
 
 /// Registry that manages all available tools
@@ -57,13 +57,13 @@ impl ToolRegistry {
     }
     
     /// Executes a tool by name with the given arguments
-    pub async fn execute(&self, name: &str, workspace: &Path, args: Value) -> AgentResult<String> {
+    pub async fn execute(&self, name: &str, workspace: &Path, args: Value, repo: Option<&crate::repo::agent::AgentRepo>) -> AgentResult<String> {
         let tool = self.tools
             .iter()
             .find(|tool| tool.name() == name)
             .ok_or_else(|| AgentError::ToolNotFound { name: name.to_string() })?;
             
-        tool.execute(workspace, args).await.map_err(|e| {
+        tool.execute(workspace, args, repo).await.map_err(|e| {
             AgentError::ToolExecutionError {
                 tool: name.to_string(),
                 error: e.to_string(),

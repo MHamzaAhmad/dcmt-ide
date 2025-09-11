@@ -183,8 +183,9 @@ mod tests {
         let temp_dir = std::env::temp_dir().join("test_agent");
         std::fs::create_dir_all(&temp_dir).unwrap();
         
+        let file_service = Arc::new(crate::svc::FileService::new(temp_dir.clone()).unwrap());
         let agent_repo = Arc::new(
-            AgentRepo::new(temp_dir, "http://localhost:4000".to_string())
+            AgentRepo::new(temp_dir, "http://localhost:4000".to_string(), file_service)
                 .await
                 .unwrap()
         );

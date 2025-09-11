@@ -12,6 +12,7 @@ use crate::model::agent::{
     AgentConfig, AgentEvent, AgentResult, AgentError,
     ChatMessage, ChatRequest, ToolCall, ToolFunction, EventMetadata,
 };
+use crate::svc::FileService;
 
 pub mod events;
 pub mod session;
@@ -29,6 +30,7 @@ pub struct AgentRepo {
     session_manager: Arc<SessionManager>,
     event_broadcaster: Arc<EventBroadcaster>,
     workspace_path: PathBuf,
+    file_service: Arc<FileService>,
 }
 
 /// Streaming context for processing SSE chunks
@@ -217,6 +219,7 @@ impl AgentRepo {
     pub async fn new(
         workspace_path: PathBuf,
         litellm_base_url: String,
+        file_service: Arc<FileService>,
     ) -> AgentResult<Self> {
         // Load system prompt from file
         let system_prompt = Self::load_system_prompt(&workspace_path).await?;
@@ -243,6 +246,7 @@ impl AgentRepo {
             session_manager,
             event_broadcaster,
             workspace_path,
+            file_service,
         })
     }
     
@@ -516,7 +520,7 @@ impl AgentRepo {
             })?;
         
         self.tool_registry
-            .execute(&tool_function.name, &self.workspace_path, args)
+            .execute(&tool_function.name, &self.workspace_path, args, Some(self))
             .await
     }
     
@@ -637,5 +641,10 @@ impl AgentRepo {
     /// Gets workspace path
     pub fn get_workspace_path(&self) -> &PathBuf {
         &self.workspace_path
+    }
+    
+    /// Gets file service for agent tools
+    pub fn get_file_service(&self) -> Arc<FileService> {
+        self.file_service.clone()
     }
 }

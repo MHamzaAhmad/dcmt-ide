@@ -39,7 +39,7 @@ impl AgentTool for UpdateFileTool {
         }
     }
     
-    async fn execute(&self, workspace: &Path, args: Value) -> AgentResult<String> {
+    async fn execute(&self, workspace: &Path, args: Value, repo: Option<&crate::repo::agent::AgentRepo>) -> AgentResult<String> {
         let path = args["path"]
             .as_str()
             .ok_or_else(|| AgentError::InvalidToolArguments { 
@@ -111,9 +111,16 @@ impl AgentTool for UpdateFileTool {
         // Perform the replacement
         let updated_content = current_content.replace(old_content, new_content);
         
+        let repo = repo.ok_or_else(|| AgentError::InvalidToolArguments {
+            tool: self.name().to_string(),
+            error: "Repository access required for file operations".to_string(),
+        })?;
+        
+        let file_service = repo.get_file_service();
+        
         // Write the updated content back to the file
-        match fs::write(&full_path, &updated_content).await {
-            Ok(()) => {
+        match file_service.write_file(path, &updated_content).await {
+            Ok(_) => {
                 let old_lines = old_content.lines().count();
                 let new_lines = new_content.lines().count();
                 let total_lines = updated_content.lines().count();
@@ -123,7 +130,7 @@ impl AgentTool for UpdateFileTool {
                     path, old_lines, new_lines, total_lines
                 ))
             }
-            Err(e) => Err(AgentError::IoError(e)),
+            Err(e) => Err(AgentError::IoError(std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))),
         }
     }
 }

@@ -189,7 +189,7 @@ export class WebSocketAdapter implements FileWatcherOperations {
 			// Use relative URL to let nginx handle proxying in Docker deployment
 			// Construct WebSocket URL based on current protocol and host
 			const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-			const wsUrl = `${protocol}//${window.location.host}/ws`;
+			const wsUrl = `${protocol}//${import.meta.env.VITE_API_BASE_URL}/ws`;
 			this.ws = new WebSocket(wsUrl);
 			
 			this.ws.onopen = () => {

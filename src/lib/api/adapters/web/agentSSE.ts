@@ -30,8 +30,9 @@ export class AgentSSEAdapter {
         
         this.currentSessionId = sessionId;
         // Use relative URL to let nginx handle proxying in Docker deployment
-        const sseUrl = `/sse/agent/session/${sessionId}/events`;
-        
+        const baseUrl = import.meta.env.VITE_API_BASE_URL || '/sse';
+        const sseUrl = `${baseUrl}/agent/session/${sessionId}/events`;
+
         console.log('Connecting to agent SSE for session:', sessionId, 'URL:', sseUrl);
         
         try {

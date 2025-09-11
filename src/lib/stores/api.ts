@@ -36,30 +36,6 @@ function createAPIStore() {
 				connectionError: error
 			}));
 		},
-		
-		// Test connection to API
-		testConnection: async () => {
-			try {
-				// Try to fetch models as a connection test
-				const response = await fetch(`${initialState.baseURL}/api/llm/models`);
-				const connected = response.ok;
-				
-				update(state => ({
-					...state,
-					isConnected: connected,
-					connectionError: connected ? null : 'Failed to connect to API'
-				}));
-				
-				return connected;
-			} catch (error) {
-				update(state => ({
-					...state,
-					isConnected: false,
-					connectionError: error instanceof Error ? error.message : 'Connection failed'
-				}));
-				return false;
-			}
-		}
 	};
 }
 

@@ -31,8 +31,10 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 thiserror = "1.0"
 regex = "1.0"
 base64 = "0.21"
-reqwest = { version = "0.11", features = ["json"] }
+reqwest = { version = "0.11", features = ["json", "stream"] }
 dashmap = "5.5"
 uuid = { version = "1.0", features = ["v4"] }
 futures = "0.3"
+futures-util = "0.3"
+async-stream = "0.3"
 

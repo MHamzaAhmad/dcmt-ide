@@ -2,14 +2,15 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 use futures::future::join_all;
+use futures::StreamExt;
 use reqwest::Client;
 use tokio::fs;
 use uuid::Uuid;
 
 use crate::models::agent::{
     AgentConfig, AgentEvent, AgentResult, AgentError,
-    ChatMessage, ChatRequest, ChatResponse, LiteLLMRequest, LiteLLMResponse,
-    ResponseFormat, ToolCall, ToolFunction, EventMetadata,
+    ChatMessage, ChatRequest, ChatResponse, 
+    ToolCall, ToolFunction, EventMetadata,
 };
 
 use super::agent_session::SessionManager;
@@ -26,29 +27,147 @@ pub struct AgentService {
     workspace_path: Option<PathBuf>, // None until project is selected
 }
 
-impl AgentService {
-    /// Parses clean message from potentially JSON-formatted response
-    fn parse_clean_message(content: &str) -> String {
-        // First try to parse as JSON to extract clean message
-        if let Ok(json_value) = serde_json::from_str::<serde_json::Value>(content) {
-            // Try various common JSON fields for the actual message
-            if let Some(message) = json_value.get("message").and_then(|m| m.as_str()) {
-                return message.to_string();
-            }
-            if let Some(content_field) = json_value.get("content").and_then(|c| c.as_str()) {
-                return content_field.to_string();
-            }
-            if let Some(response) = json_value.get("response").and_then(|r| r.as_str()) {
-                return response.to_string();
-            }
-            if let Some(text) = json_value.get("text").and_then(|t| t.as_str()) {
-                return text.to_string();
+/// Context for streaming SSE chunks and building complete tool calls
+struct StreamingContext {
+    content_buffer: String,
+    tool_calls: Vec<ToolCall>,
+    current_tool: Option<PartialToolCall>,
+    args_buffer: String,
+    depth: i32,
+}
+
+#[derive(Debug)]
+struct PartialToolCall {
+    id: String,
+    name: String,
+    args: String,
+}
+
+impl StreamingContext {
+    fn new() -> Self {
+        Self {
+            content_buffer: String::new(),
+            tool_calls: Vec::new(),
+            current_tool: None,
+            args_buffer: String::new(),
+            depth: 0,
+        }
+    }
+
+    fn process_chunk(&mut self, line: &str) -> Result<Option<StreamChunk>, serde_json::Error> {
+        if let Ok(chunk) = serde_json::from_str::<StreamChunk>(line) {
+            if let Some(delta) = &chunk.choices.first().and_then(|c| c.delta.as_ref()) {
+                if let Some(content) = &delta.content {
+                    self.content_buffer.push_str(content);
+                    return Ok(Some(chunk));
+                }
+                
+                if let Some(tool_calls) = &delta.tool_calls {
+                    for tool_call_delta in tool_calls {
+                        self.process_tool_call_delta(tool_call_delta);
+                    }
+                    return Ok(Some(chunk));
+                }
             }
         }
-        
-        // If not valid JSON or no recognized fields, return content as-is
-        content.to_string()
+        Ok(None)
     }
+
+    fn process_tool_call_delta(&mut self, tool_call_delta: &ToolCallDelta) {
+        if let Some(id) = &tool_call_delta.id {
+            if let Some(_current) = &mut self.current_tool {
+                self.finalize_current_tool();
+            }
+            
+            self.current_tool = Some(PartialToolCall {
+                id: id.clone(),
+                name: tool_call_delta.function.name.clone().unwrap_or_default(),
+                args: String::new(),
+            });
+            self.args_buffer.clear();
+            self.depth = 0;
+        }
+
+        if let Some(current) = &mut self.current_tool {
+            if let Some(args) = &tool_call_delta.function.arguments {
+                self.args_buffer.push_str(args);
+                
+                for ch in args.chars() {
+                    match ch {
+                        '{' | '[' => self.depth += 1,
+                        '}' | ']' => self.depth -= 1,
+                        _ => {}
+                    }
+                }
+                
+                current.args = self.args_buffer.clone();
+                
+                if self.depth == 0 && !self.args_buffer.is_empty() {
+                    self.finalize_current_tool();
+                }
+            }
+        }
+    }
+
+    fn finalize_current_tool(&mut self) {
+        if let Some(current) = self.current_tool.take() {
+            if !current.args.is_empty() {
+                let tool_call = ToolCall {
+                    id: current.id,
+                    call_type: "function".to_string(),
+                    function: ToolFunction {
+                        name: current.name,
+                        arguments: current.args,
+                    },
+                };
+                self.tool_calls.push(tool_call);
+            }
+        }
+    }
+
+    fn into_message(mut self) -> ChatMessage {
+        self.finalize_current_tool();
+        
+        ChatMessage {
+            role: "assistant".to_string(),
+            content: if self.content_buffer.is_empty() { None } else { Some(self.content_buffer) },
+            tool_calls: if self.tool_calls.is_empty() { None } else { Some(self.tool_calls) },
+            tool_call_id: None,
+        }
+    }
+}
+
+#[derive(Debug, serde::Deserialize)]
+struct StreamChunk {
+    choices: Vec<StreamChoice>,
+}
+
+#[derive(Debug, serde::Deserialize)]
+struct StreamChoice {
+    delta: Option<StreamDelta>,
+}
+
+#[derive(Debug, serde::Deserialize)]
+struct StreamDelta {
+    content: Option<String>,
+    tool_calls: Option<Vec<ToolCallDelta>>,
+}
+
+#[derive(Debug, serde::Deserialize)]
+struct ToolCallDelta {
+    id: Option<String>,
+    #[serde(rename = "type")]
+    call_type: Option<String>,
+    function: ToolFunctionDelta,
+}
+
+#[derive(Debug, serde::Deserialize)]
+struct ToolFunctionDelta {
+    name: Option<String>,
+    arguments: Option<String>,
+}
+
+impl AgentService {
 
     /// Creates metadata for a new operation
     fn create_metadata(operation_id: &str) -> EventMetadata {
@@ -312,11 +431,9 @@ impl AgentService {
             .add_message(&session_id, response.clone())
             .await?;
         
-        // Parse clean message for UI display
-        let raw_content = response.content.unwrap_or_default();
-        let clean_response = Self::parse_clean_message(&raw_content);
-        
-        Ok(clean_response)
+        // Return content directly without additional parsing
+        let final_content = response.content.unwrap_or_default();
+        Ok(final_content)
     }
     
     /// Processes messages with tool calling loop and parallel execution
@@ -358,30 +475,18 @@ impl AgentService {
                 &config,
                 &event_broadcaster,
                 session_id,
-                false, // Don't force JSON on first calls
             ).await?;
             
             // Check for tool calls
             if let Some(tool_calls) = response.tool_calls.clone() {
                 if tool_calls.is_empty() {
-                    // No tool calls - make final call with JSON format
-                    let final_response = Self::call_litellm(
-                        &messages,
-                        &model,
-                        &tool_registry,
-                        &http_client,
-                        &config,
-                        &event_broadcaster,
-                        session_id,
-                        true, // Force JSON format for final response
-                    ).await?;
-                    
+                    // No tool calls - return response directly without additional call
                     event_broadcaster
                         .broadcast(session_id, AgentEvent::LLMCallComplete {
                             metadata: EventMetadata::new(format!("llm-complete-{}", iteration_count)),
                         })
                         .await;
-                    return Ok(final_response);
+                    return Ok(response);
                 }
                 
                 // Add assistant message with tool calls to history FIRST
@@ -569,7 +674,7 @@ impl AgentService {
         result
     }
     
-    /// Calls LiteLLM API with all tools included and handles streaming
+    /// Calls LiteLLM API with real SSE streaming and tool call buffering
     async fn call_litellm(
         messages: &[ChatMessage],
         model: &str,
@@ -578,26 +683,19 @@ impl AgentService {
         config: &AgentConfig,
         event_broadcaster: &Arc<EventBroadcaster>,
         session_id: &str,
-        use_json_format: bool,
     ) -> AgentResult<ChatMessage> {
         tracing::debug!("Calling LiteLLM for session {} with model {}", session_id, model);
         
-        // Build request with ALL tools included
-        let request = LiteLLMRequest {
-            model: model.to_string(),
-            messages: messages.to_vec(),
-            tools: tool_registry.get_definitions(),
-            tool_choice: "auto".to_string(),
-            response_format: if use_json_format {
-                Some(ResponseFormat {
-                    format_type: "json_object".to_string(),
-                })
-            } else {
-                None
-            },
-        };
+        // Build streaming request with ALL tools included
+        let request = serde_json::json!({
+            "model": model,
+            "messages": messages,
+            "tools": tool_registry.get_definitions(),
+            "tool_choice": "auto",
+            "stream": true
+        });
         
-        tracing::debug!("Making HTTP request to LiteLLM: {}/v1/chat/completions", config.litellm_base_url);
+        tracing::debug!("Making streaming HTTP request to LiteLLM: {}/v1/chat/completions", config.litellm_base_url);
         
         let response = http_client
             .post(format!("{}/v1/chat/completions", config.litellm_base_url))
@@ -614,30 +712,100 @@ impl AgentService {
             });
         }
         
-        // Parse structured JSON response
-        let litellm_response: LiteLLMResponse = response.json().await
-            .map_err(|e| AgentError::HttpError(e))?;
+        // Process streaming response
+        let mut stream = response.bytes_stream();
+        let mut context = StreamingContext::new();
+        let mut buffer = Vec::new();
         
-        // Extract the first choice
-        let choice = litellm_response.choices
-            .into_iter()
-            .next()
-            .ok_or_else(|| AgentError::LiteLLMError {
-                message: "No choices in LiteLLM response".to_string(),
-            })?;
+        while let Some(chunk) = stream.next().await {
+            let chunk_bytes = chunk.map_err(AgentError::HttpError)?;
+            buffer.extend_from_slice(&chunk_bytes);
+            
+            // Process complete lines from buffer
+            let buffer_str = String::from_utf8_lossy(&buffer);
+            let lines: Vec<&str> = buffer_str.lines().collect();
+            
+            // Keep incomplete line in buffer
+            if !buffer_str.ends_with('\n') && lines.len() > 0 {
+                let incomplete_line = lines[lines.len()-1].to_string();
+                let complete_lines = &lines[..lines.len()-1];
+                
+                for line in complete_lines {
+                    Self::process_sse_line(line, &mut context, event_broadcaster, session_id).await;
+                }
+                
+                buffer = incomplete_line.as_bytes().to_vec();
+            } else {
+                // All lines are complete
+                for line in lines {
+                    Self::process_sse_line(line, &mut context, event_broadcaster, session_id).await;
+                }
+                buffer.clear();
+            }
+        }
         
-        // Emit streaming event for response content
-        if let Some(content) = &choice.message.content {
-            let clean_content = Self::parse_clean_message(content);
+        Ok(context.into_message())
+    }
+    
+    /// Processes a single SSE line for streaming content and tool calls
+    async fn process_sse_line(
+        line: &str,
+        context: &mut StreamingContext,
+        event_broadcaster: &Arc<EventBroadcaster>,
+        session_id: &str,
+    ) {
+        if line.starts_with("data: ") {
+            let data = &line[6..]; // Remove "data: " prefix
+            
+            if data == "[DONE]" {
+                return; // End of stream
+            }
+            
+            // Try to parse as streaming chunk
+            if let Ok(Some(chunk)) = context.process_chunk(data) {
+                // Emit immediate streaming content
+                if let Some(delta) = chunk.choices.first().and_then(|c| c.delta.as_ref()) {
+                    if let Some(content) = &delta.content {
+                        if !content.is_empty() {
+                            event_broadcaster
+                                .broadcast(session_id, AgentEvent::StreamChunk {
+                                    content: content.clone(),
+                                    metadata: EventMetadata::new("stream-chunk".to_string()),
+                                })
+                                .await;
+                        }
+                    }
+                    
+                    // Handle tool call events
+                    if let Some(tool_calls) = &delta.tool_calls {
+                        for tool_call_delta in tool_calls {
+                            // Emit ToolCallStart for new tool calls
+                            if let Some(id) = &tool_call_delta.id {
+                                if let Some(name) = &tool_call_delta.function.name {
+                                    event_broadcaster
+                                        .broadcast(session_id, AgentEvent::ToolCallStart {
+                                            tool_id: id.clone(),
+                                            tool_name: name.clone(),
+                                            metadata: EventMetadata::new(format!("tool-start-{}", id)),
+                                        })
+                                        .await;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        
+        // Check if any tool calls are now complete and emit ToolCallReady events
+        for tool_call in &context.tool_calls {
             event_broadcaster
-                .broadcast(session_id, AgentEvent::LLMStreaming {
-                    content: clean_content,
-                    metadata: EventMetadata::new(format!("llm-stream")),
+                .broadcast(session_id, AgentEvent::ToolCallReady {
+                    tool_call: tool_call.clone(),
+                    metadata: EventMetadata::new(format!("tool-ready-{}", tool_call.id)),
                 })
                 .await;
         }
-        
-        Ok(choice.message)
     }
     
     /// Subscribe to events for a session

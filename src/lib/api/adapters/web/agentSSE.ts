@@ -30,7 +30,7 @@ export class AgentSSEAdapter {
         
         this.currentSessionId = sessionId;
         // Use relative URL to let nginx handle proxying in Docker deployment
-        const baseUrl = import.meta.env.VITE_API_BASE_URL || '/sse';
+        const baseUrl = `${import.meta.env.VITE_API_BASE_URL}/sse` || '/sse';
         const sseUrl = `${baseUrl}/agent/session/${sessionId}/events`;
 
         console.log('Connecting to agent SSE for session:', sessionId, 'URL:', sseUrl);
@@ -216,6 +216,9 @@ export class AgentSSEAdapter {
             'JobQueued': 'job_queued',
             'LLMCallStart': 'llm_call_start',
             'LLMStreaming': 'llm_streaming',
+            'StreamChunk': 'stream_chunk',
+            'ToolCallStart': 'tool_call_start',
+            'ToolCallReady': 'tool_call_ready',
             'ToolCallRequested': 'tool_call_requested',
             'ToolExecuting': 'tool_executing',
             'ToolCompleted': 'tool_completed',
@@ -232,7 +235,11 @@ export class AgentSSEAdapter {
         // Extract relevant data from event
         const payload: any = { sessionId };
         
+        if ('content' in event) payload.content = event.content;
         if ('tool' in event) payload.tool = event.tool;
+        if ('tool_id' in event) payload.toolId = event.tool_id;
+        if ('tool_name' in event) payload.toolName = event.tool_name;
+        if ('tool_call' in event) payload.toolCall = event.tool_call;
         if ('result' in event) payload.result = event.result;
         if ('message' in event) payload.message = event.message;
 

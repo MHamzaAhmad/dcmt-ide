@@ -436,9 +436,9 @@ function createAgentStore() {
                     });
                     break;
 
-                case 'LLMStreaming':
-                    // Update the streaming message content incrementally
-                    console.log('Processing LLMStreaming in agent store, content:', event.content);
+                case 'StreamChunk':
+                    // Process streaming chunk - create message if needed, then append content
+                    console.log('Processing StreamChunk in agent store, content:', event.content);
                     update(state => {
                         if (!state.streamingMessageId) {
                             // Create a new streaming message if we don't have one
@@ -476,6 +476,24 @@ function createAgentStore() {
                             };
                         }
                     });
+                    break;
+
+                case 'ToolCallStart':
+                    // Tool call starting - show preparation status
+                    console.log('Tool call starting:', event.tool_name);
+                    update(state => ({
+                        ...state,
+                        currentToolStatus: {
+                            toolName: event.tool_name,
+                            status: 'preparing'
+                        }
+                    }));
+                    break;
+
+                case 'ToolCallReady':
+                    // Tool call arguments complete and ready for execution
+                    console.log('Tool call ready for execution:', event.tool_call);
+                    // Tool execution will be handled by backend automatically
                     break;
 
                 case 'ToolExecuting':

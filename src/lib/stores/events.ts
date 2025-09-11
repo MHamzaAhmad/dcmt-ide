@@ -23,12 +23,17 @@ export interface FileSystemEvent {
 
 export interface AgentEvent {
   type: 'agent';
-  subtype: 'job_queued' | 'llm_call_start' | 'llm_streaming' | 'tool_call_requested' 
+  subtype: 'job_queued' | 'llm_call_start' | 'llm_streaming' | 'stream_chunk' 
+         | 'tool_call_start' | 'tool_call_ready' | 'tool_call_requested' 
          | 'tool_executing' | 'tool_completed' | 'parallel_tools_start' 
          | 'parallel_tools_complete' | 'llm_call_complete' | 'job_complete' | 'error';
   payload: {
     sessionId: string;
+    content?: string;
     tool?: string;
+    toolId?: string;
+    toolName?: string;
+    toolCall?: any;
     result?: any;
     message?: string;
     timestamp: number;

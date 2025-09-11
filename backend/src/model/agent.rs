@@ -137,6 +137,22 @@ pub enum AgentEvent {
         #[serde(flatten)]
         metadata: EventMetadata,
     },
+    StreamChunk {
+        content: String,
+        #[serde(flatten)]
+        metadata: EventMetadata,
+    },
+    ToolCallStart {
+        tool_id: String,
+        tool_name: String,
+        #[serde(flatten)]
+        metadata: EventMetadata,
+    },
+    ToolCallReady {
+        tool_call: ToolCall,
+        #[serde(flatten)]
+        metadata: EventMetadata,
+    },
     ToolCallRequested {
         tool: String,
         args: Value,

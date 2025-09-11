@@ -1,7 +1,6 @@
 <script lang="ts">
 	import { onMount, onDestroy } from 'svelte';
-	import { workspaceStore, latexStore, eventStore } from '$lib/stores';
-	import { editorState } from '$lib/stores/editor.js';
+	import { workspaceStore, eventStore } from '$lib/stores';
 	import { theme } from '$lib/stores/theme.js';
 	import { debounce } from '$lib/utils/debounce';
 	import type * as Monaco from 'monaco-editor';
@@ -21,7 +20,6 @@
 	// Get workspace state reactively
 	const workspaceState = $derived($workspaceStore);
 	const openFileContents = $derived(workspaceState.openFiles);
-	const latexState = $derived($latexStore);
 	
 	// Detect language from file extension
 	function getLanguageFromPath(path: string): string {
@@ -53,11 +51,6 @@
 		return languageMap[ext || ''] || 'plaintext';
 	}
 
-	// Check if file is a LaTeX file
-	function isLatexFile(path: string): boolean {
-		const ext = path.split('.').pop()?.toLowerCase();
-		return ext === 'tex';
-	}
 
 	$effect(() => {
 		currentTheme = $theme;
@@ -165,15 +158,28 @@
 	}
 
 	onMount(async () => {
-		if (typeof window !== 'undefined') {
-			// Configure Monaco Environment for web workers - fallback mode for dev
+		if (typeof window === 'undefined' || !editorContainer) return;
+		
+		try {
+			// Configure Monaco Environment with cdnjs workers (CORS-friendly)
 			self.MonacoEnvironment = {
-				getWorker: function () {
-					return new Worker(
-						URL.createObjectURL(
-							new Blob([''], { type: 'application/javascript' })
-						)
-					);
+				getWorkerUrl: function (_moduleId: any, label: string) {
+					const baseUrl = 'https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.52.2/min/vs';
+					
+					if (label === 'json') {
+						return `${baseUrl}/language/json/json.worker.min.js`;
+					}
+					if (label === 'css' || label === 'scss' || label === 'less') {
+						return `${baseUrl}/language/css/css.worker.min.js`;
+					}
+					if (label === 'html' || label === 'handlebars' || label === 'razor') {
+						return `${baseUrl}/language/html/html.worker.min.js`;
+					}
+					if (label === 'typescript' || label === 'javascript') {
+						return `${baseUrl}/language/typescript/ts.worker.min.js`;
+					}
+					// Default editor worker
+					return `${baseUrl}/editor/editor.worker.min.js`;
 				}
 			};
 			
@@ -264,7 +270,7 @@
 					debouncedSave(activeFilePath, content);
 				}
 			});
-			
+		
 			// Handle manual save (Cmd/Ctrl+S)
 			editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, () => {
 				if (activeFilePath) {
@@ -282,6 +288,20 @@
 			
 			// Subscribe to EventStore file system events for real-time updates
 			subscribeToFileEvents();
+			
+		} catch (error) {
+			console.error('Failed to initialize Monaco Editor:', error);
+			// Show fallback error message in the editor container
+			if (editorContainer) {
+				editorContainer.innerHTML = `
+					<div class="h-full flex items-center justify-center bg-background text-muted-foreground">
+						<div class="text-center space-y-2">
+							<p>Failed to load code editor</p>
+							<p class="text-sm">Please refresh the page to retry</p>
+						</div>
+					</div>
+				`;
+			}
 		}
 	});
 
@@ -321,19 +341,6 @@
 		console.log('MonacoEditor: Subscribed to file system events');
 	}
 	
-	// Function to manually refresh file content (for conflict resolution)
-	function refreshFileContent() {
-		if (!activeFilePath) return;
-		
-		workspaceStore.loadFile(activeFilePath, true).then(fileContent => {
-			if (fileContent && editor) {
-				updateEditorContent(fileContent.content, 'reload');
-				hasConflict = false;
-			}
-		}).catch(error => {
-			console.error('Failed to refresh file content:', error);
-		});
-	}
 
 	onDestroy(() => {
 		if (editor) {

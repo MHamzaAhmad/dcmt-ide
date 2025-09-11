@@ -25,9 +25,13 @@ export default defineConfig(() => ({
   worker: {
     format: /** @type {'es'} */ ('es')
   },
-  // Handle PDF.js dependencies properly
+  // Handle PDF.js and Monaco Editor dependencies properly
   optimizeDeps: {
-    include: ['pdfjs-dist'],
+    include: ['pdfjs-dist', 'monaco-editor/esm/vs/editor/editor.worker'],
     exclude: ['pdfjs-dist/build/pdf.worker.mjs']
+  },
+  // Define global variables for Monaco Editor
+  define: {
+    global: 'globalThis'
   }
 }));

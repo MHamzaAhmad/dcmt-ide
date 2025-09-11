@@ -184,12 +184,13 @@
 							onRefreshFile={refreshFileContent}
 						/>
 						
-						<div class="flex-1 overflow-hidden">
-							{#if activeTab === 'code'}
+						<div class="flex-1 overflow-hidden relative">
+							<div class="h-full" class:hidden={activeTab !== 'code'}>
 								<MonacoEditor />
-							{:else}
+							</div>
+							<div class="h-full" class:hidden={activeTab !== 'chat'}>
 								<ChatPanel />
-							{/if}
+							</div>
 						</div>
 						
 						<!-- Floating Chat (only visible in code view) -->

@@ -13,6 +13,14 @@ impl AgentTool for CompileLatexTool {
     fn name(&self) -> &str {
         "compile"
     }
+    
+    fn display_name(&self) -> &str {
+        "Compile LaTeX"
+    }
+    
+    fn progressive_form(&self) -> &str {
+        "Compiling LaTeX"
+    }
 
     fn definition(&self) -> ToolDefinition {
         ToolDefinition {
@@ -37,6 +45,8 @@ impl AgentTool for CompileLatexTool {
                     },
                     "additionalProperties": false
                 }),
+                display_name: Some(self.display_name().to_string()),
+                progressive_form: Some(self.progressive_form().to_string()),
             },
         }
     }

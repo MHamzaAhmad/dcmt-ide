@@ -25,6 +25,8 @@ impl AgentTool for CreateDirectoryTool {
                     },
                     "required": ["path"]
                 }),
+                display_name: Some("Create Directory".to_string()),
+                progressive_form: Some("Creating directory".to_string()),
             },
         }
     }

@@ -33,6 +33,8 @@ impl AgentTool for UpdateFileTool {
                     },
                     "required": ["path", "old_content", "new_content"]
                 }),
+                display_name: Some("Update File".to_string()),
+                progressive_form: Some("Updating file".to_string()),
             },
         }
     }

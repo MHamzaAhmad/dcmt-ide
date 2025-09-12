@@ -11,6 +11,14 @@ impl AgentTool for UpdateFileTool {
         "update_file"
     }
     
+    fn display_name(&self) -> &str {
+        "Update File"
+    }
+    
+    fn progressive_form(&self) -> &str {
+        "Updating file"
+    }
+    
     fn definition(&self) -> ToolDefinition {
         ToolDefinition {
             tool_type: "function".to_string(),
@@ -35,6 +43,8 @@ impl AgentTool for UpdateFileTool {
                     },
                     "required": ["path", "old_content", "new_content"]
                 }),
+                display_name: Some(self.display_name().to_string()),
+                progressive_form: Some(self.progressive_form().to_string()),
             },
         }
     }

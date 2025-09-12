@@ -127,7 +127,8 @@ export class AgentWebSocketAdapter {
 
     private isAgentEventType(type: string): boolean {
         const eventTypes = [
-            'JobQueued', 'LLMCallStart', 'LLMStreaming', 'ToolCallRequested',
+            'JobQueued', 'LLMCallStart', 'LLMStreaming', 'StreamChunk',
+            'ToolCallStart', 'ToolCallReady', 'ToolCallRequested',
             'ToolExecuting', 'ToolCompleted', 'ParallelToolsStart', 
             'ParallelToolsComplete', 'LLMCallComplete', 'JobComplete', 'Error'
         ];
@@ -140,6 +141,9 @@ export class AgentWebSocketAdapter {
             'JobQueued': 'job_queued',
             'LLMCallStart': 'llm_call_start', 
             'LLMStreaming': 'llm_streaming',
+            'StreamChunk': 'stream_chunk',
+            'ToolCallStart': 'tool_call_start',
+            'ToolCallReady': 'tool_call_ready',
             'ToolCallRequested': 'tool_call_requested',
             'ToolExecuting': 'tool_executing',
             'ToolCompleted': 'tool_completed',
@@ -159,6 +163,8 @@ export class AgentWebSocketAdapter {
         if ('tool' in event) payload.tool = event.tool;
         if ('result' in event) payload.result = event.result;
         if ('message' in event) payload.message = event.message;
+        if ('display_name' in event) payload.display_name = event.display_name;
+        if ('progressive_form' in event) payload.progressive_form = event.progressive_form;
 
         eventStore.emit({
             type: 'agent',

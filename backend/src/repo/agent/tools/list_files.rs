@@ -11,6 +11,14 @@ impl AgentTool for ListFilesTool {
         "list_files"
     }
     
+    fn display_name(&self) -> &str {
+        "List Files"
+    }
+    
+    fn progressive_form(&self) -> &str {
+        "Listing files"
+    }
+    
     fn definition(&self) -> ToolDefinition {
         ToolDefinition {
             tool_type: "function".to_string(),
@@ -33,6 +41,8 @@ impl AgentTool for ListFilesTool {
                     },
                     "required": ["path"]
                 }),
+                display_name: Some(self.display_name().to_string()),
+                progressive_form: Some(self.progressive_form().to_string()),
             },
         }
     }

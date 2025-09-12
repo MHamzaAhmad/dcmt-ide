@@ -397,7 +397,12 @@ function createAgentStore() {
 
                 case 'LLMCallStart':
                     console.log('Processing LLMCallStart in agent store');
-                    // Reset streaming state for new LLM call
+                    // Reset streaming state for new LLM call and clear any tool status
+                    update(state => ({
+                        ...state,
+                        currentToolStatus: null // Clear any previous tool status
+                    }));
+                    
                     update(state => {
                         const streamingMessage: AgentChatMessage = {
                             id: `msg-streaming-${Date.now()}`,
@@ -480,12 +485,24 @@ function createAgentStore() {
                     // Tool execution will be handled by backend automatically
                     break;
 
-                case 'ToolExecuting':
-                    // Update tool status for floating badge
+                case 'ToolCallRequested':
+                    // Tool call arguments are being parsed/prepared
+                    console.log('Tool call requested:', event.tool);
                     update(state => ({
                         ...state,
                         currentToolStatus: {
-                            toolName: event.tool,
+                            toolName: event.display_name || event.tool,
+                            status: 'preparing'
+                        }
+                    }));
+                    break;
+
+                case 'ToolExecuting':
+                    // Update tool status for floating badge with display name
+                    update(state => ({
+                        ...state,
+                        currentToolStatus: {
+                            toolName: event.display_name || event.tool,
                             status: 'executing'
                         }
                     }));
@@ -622,7 +639,7 @@ function createAgentStore() {
             return currentState!;
         },
 
-        // Handle job completion - simplified
+        // Handle job completion
         async handleJobCompletionUI(event: any): Promise<void> {
             console.log('AgentStore: Handling agent run completion');
             
@@ -631,7 +648,9 @@ function createAgentStore() {
                 isProcessing: false,
                 streamingContent: '',
                 streamingMessageId: null,
-                currentJobId: null
+                currentJobId: null,
+                currentToolStatus: null, // Clear any remaining tool status
+                isAgentRunning: false
             }));
             
             // Clear completed tool results after a delay

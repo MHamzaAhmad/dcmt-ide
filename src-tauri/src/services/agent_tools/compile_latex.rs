@@ -33,6 +33,8 @@ impl AgentTool for CompileLatexTool {
                     },
                     "additionalProperties": false
                 }),
+                display_name: Some("Compile LaTeX".to_string()),
+                progressive_form: Some("Compiling LaTeX".to_string()),
             },
         }
     }

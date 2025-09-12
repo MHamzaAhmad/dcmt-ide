@@ -61,7 +61,7 @@
 			toolResults = agentState.activeToolResults;
 			streamingContent = agentState.streamingContent;
 			isProcessing = agentState.isProcessing;
-			currentToolStatus = null; // agentState.currentToolStatus;
+			currentToolStatus = agentState.currentToolStatus;
 		} else {
 			// Use legacy chat store for simple chat
 			messages = $chatStore.messages as AgentChatMessage[];
@@ -196,7 +196,6 @@
 				inputValue = '';
 			} catch (error) {
 				console.error('Failed to send message:', error);
-				// TODO: Show error notification
 			}
 		} else {
 			// Legacy simple chat

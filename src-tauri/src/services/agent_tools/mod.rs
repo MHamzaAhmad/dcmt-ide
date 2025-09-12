@@ -53,6 +53,30 @@ impl Tool {
         }
     }
     
+    pub fn display_name(&self) -> &str {
+        match self {
+            Tool::ReadFile(_) => "Read File",
+            Tool::WriteFile(_) => "Write File",
+            Tool::UpdateFile(_) => "Update File",
+            Tool::ListFiles(_) => "List Files",
+            Tool::CreateDirectory(_) => "Create Directory",
+            Tool::DeleteFile(_) => "Delete File",
+            Tool::CompileLatex(_) => "Compile LaTeX",
+        }
+    }
+    
+    pub fn progressive_form(&self) -> &str {
+        match self {
+            Tool::ReadFile(_) => "Reading file",
+            Tool::WriteFile(_) => "Writing file",
+            Tool::UpdateFile(_) => "Updating file",
+            Tool::ListFiles(_) => "Listing files",
+            Tool::CreateDirectory(_) => "Creating directory",
+            Tool::DeleteFile(_) => "Deleting file",
+            Tool::CompileLatex(_) => "Compiling LaTeX",
+        }
+    }
+    
     async fn execute(&self, workspace_path: &PathBuf, args: Value, app_handle: Option<&tauri::AppHandle>) -> AgentResult<String> {
         match self {
             Tool::ReadFile(tool) => tool.execute(workspace_path, args, app_handle).await,
@@ -123,6 +147,13 @@ impl ToolRegistry {
                 error: e.to_string(),
             })
         }
+    }
+    
+    /// Gets tool UI metadata by tool name
+    pub fn get_tool_metadata(&self, tool_name: &str) -> Option<(String, String)> {
+        self.tools.iter()
+            .find(|t| t.name() == tool_name)
+            .map(|tool| (tool.display_name().to_string(), tool.progressive_form().to_string()))
     }
     
 }

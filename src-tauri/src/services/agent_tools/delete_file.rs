@@ -29,6 +29,8 @@ impl AgentTool for DeleteFileTool {
                     },
                     "required": ["path", "confirm"]
                 }),
+                display_name: Some("Delete File".to_string()),
+                progressive_form: Some("Deleting file".to_string()),
             },
         }
     }

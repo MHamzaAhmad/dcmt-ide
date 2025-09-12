@@ -11,6 +11,14 @@ impl AgentTool for CreateDirectoryTool {
         "create_directory"
     }
     
+    fn display_name(&self) -> &str {
+        "Create Directory"
+    }
+    
+    fn progressive_form(&self) -> &str {
+        "Creating directory"
+    }
+    
     fn definition(&self) -> ToolDefinition {
         ToolDefinition {
             tool_type: "function".to_string(),
@@ -27,6 +35,8 @@ impl AgentTool for CreateDirectoryTool {
                     },
                     "required": ["path"]
                 }),
+                display_name: Some(self.display_name().to_string()),
+                progressive_form: Some(self.progressive_form().to_string()),
             },
         }
     }

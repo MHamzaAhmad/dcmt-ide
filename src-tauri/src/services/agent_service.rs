@@ -599,9 +599,16 @@ impl AgentService {
         event_broadcaster: &Arc<EventBroadcaster>,
         session_id: &str,
     ) -> AgentResult<String> {
+        // Get tool metadata
+        let (display_name, progressive_form) = tool_registry
+            .get_tool_metadata(&tool_call.function.name)
+            .unwrap_or((tool_call.function.name.clone(), format!("Running {}", tool_call.function.name)));
+        
         event_broadcaster
             .broadcast(session_id, AgentEvent::ToolExecuting {
                 tool: tool_call.function.name.clone(),
+                display_name: Some(display_name),
+                progressive_form: Some(progressive_form),
                 metadata: EventMetadata::new(format!("tool-exec-{}", tool_call.id)),
             })
             .await;
@@ -646,9 +653,16 @@ impl AgentService {
         event_broadcaster: &Arc<EventBroadcaster>,
         session_id: &str,
     ) -> AgentResult<String> {
+        // Get tool metadata
+        let (display_name, progressive_form) = tool_registry
+            .get_tool_metadata(&tool_function.name)
+            .unwrap_or((tool_function.name.clone(), format!("Running {}", tool_function.name)));
+        
         event_broadcaster
             .broadcast(session_id, AgentEvent::ToolExecuting {
                 tool: tool_function.name.clone(),
+                display_name: Some(display_name),
+                progressive_form: Some(progressive_form),
                 metadata: EventMetadata::new(format!("sync-tool-exec")),
             })
             .await;

@@ -25,6 +25,8 @@ impl AgentTool for ReadFileTool {
                     },
                     "required": ["path"]
                 }),
+                display_name: Some("Read File".to_string()),
+                progressive_form: Some("Reading file".to_string()),
             },
         }
     }

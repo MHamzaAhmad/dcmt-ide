@@ -31,6 +31,8 @@ impl AgentTool for ListFilesTool {
                     },
                     "required": []
                 }),
+                display_name: Some("List Files".to_string()),
+                progressive_form: Some("Listing files".to_string()),
             },
         }
     }

@@ -443,11 +443,18 @@ impl AgentRepo {
                 } else {
                     // Single tool - execute normally
                     for tool_call in tool_calls {
+                        // Get tool metadata
+                        let (display_name, progressive_form) = self.tool_registry
+                            .get_tool_metadata(&tool_call.function.name)
+                            .unwrap_or((tool_call.function.name.clone(), format!("Running {}", tool_call.function.name)));
+                        
                         self.event_broadcaster
                             .broadcast(session_id, AgentEvent::ToolCallRequested {
                                 tool: tool_call.function.name.clone(),
                                 args: serde_json::from_str(&tool_call.function.arguments)
                                     .unwrap_or(serde_json::Value::Null),
+                                display_name: Some(display_name),
+                                progressive_form: Some(progressive_form),
                                 metadata: Self::create_metadata(&format!("tool-req-{}", tool_call.id)),
                             })
                             .await;
@@ -504,9 +511,16 @@ impl AgentRepo {
     
     /// Executes a tool asynchronously (for parallel execution)
     async fn execute_tool_async(&self, tool_call: ToolCall, session_id: &str) -> AgentResult<String> {
+        // Get tool metadata
+        let (display_name, progressive_form) = self.tool_registry
+            .get_tool_metadata(&tool_call.function.name)
+            .unwrap_or((tool_call.function.name.clone(), format!("Running {}", tool_call.function.name)));
+        
         self.event_broadcaster
             .broadcast(session_id, AgentEvent::ToolExecuting {
                 tool: tool_call.function.name.clone(),
+                display_name: Some(display_name),
+                progressive_form: Some(progressive_form),
                 metadata: Self::create_metadata(&format!("tool-exec-{}", tool_call.id)),
             })
             .await;

@@ -26,6 +26,12 @@ pub trait AgentTool: Send + Sync {
     /// Returns the name of the tool
     fn name(&self) -> &str;
     
+    /// Returns the display name for UI (e.g., "List Files")
+    fn display_name(&self) -> &str;
+    
+    /// Returns the progressive form for UI (e.g., "Listing files")
+    fn progressive_form(&self) -> &str;
+    
     /// Returns the OpenAI tool definition for this tool
     fn definition(&self) -> ToolDefinition;
     
@@ -82,6 +88,14 @@ impl ToolRegistry {
     /// Returns the number of registered tools
     pub fn tool_count(&self) -> usize {
         self.tools.len()
+    }
+    
+    /// Gets tool UI metadata by tool name
+    pub fn get_tool_metadata(&self, name: &str) -> Option<(String, String)> {
+        self.tools
+            .iter()
+            .find(|tool| tool.name() == name)
+            .map(|tool| (tool.display_name().to_string(), tool.progressive_form().to_string()))
     }
 }
 

@@ -115,6 +115,10 @@ pub struct FunctionDefinition {
     pub name: String,
     pub description: String,
     pub parameters: Value,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub display_name: Option<String>, // Human-readable name e.g. "List Files"
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub progressive_form: Option<String>, // Progressive form e.g. "Listing files"
 }
 
 // WebSocket event types for real-time progress updates
@@ -156,11 +160,19 @@ pub enum AgentEvent {
     ToolCallRequested {
         tool: String,
         args: Value,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        display_name: Option<String>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        progressive_form: Option<String>,
         #[serde(flatten)]
         metadata: EventMetadata,
     },
     ToolExecuting {
         tool: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        display_name: Option<String>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        progressive_form: Option<String>,
         #[serde(flatten)]
         metadata: EventMetadata,
     },

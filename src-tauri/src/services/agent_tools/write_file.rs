@@ -29,6 +29,8 @@ impl AgentTool for WriteFileTool {
                     },
                     "required": ["path", "content"]
                 }),
+                display_name: Some("Write File".to_string()),
+                progressive_form: Some("Writing file".to_string()),
             },
         }
     }

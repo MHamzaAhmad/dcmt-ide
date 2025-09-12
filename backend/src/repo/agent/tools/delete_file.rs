@@ -11,6 +11,14 @@ impl AgentTool for DeleteFileTool {
         "delete_file"
     }
     
+    fn display_name(&self) -> &str {
+        "Delete File"
+    }
+    
+    fn progressive_form(&self) -> &str {
+        "Deleting file"
+    }
+    
     fn definition(&self) -> ToolDefinition {
         ToolDefinition {
             tool_type: "function".to_string(),
@@ -32,6 +40,8 @@ impl AgentTool for DeleteFileTool {
                     },
                     "required": ["path", "confirm"]
                 }),
+                display_name: Some(self.display_name().to_string()),
+                progressive_form: Some(self.progressive_form().to_string()),
             },
         }
     }

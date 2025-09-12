@@ -11,6 +11,14 @@ impl AgentTool for WriteFileTool {
         "write_file"
     }
     
+    fn display_name(&self) -> &str {
+        "Write File"
+    }
+    
+    fn progressive_form(&self) -> &str {
+        "Writing file"
+    }
+    
     fn definition(&self) -> ToolDefinition {
         ToolDefinition {
             tool_type: "function".to_string(),
@@ -31,6 +39,8 @@ impl AgentTool for WriteFileTool {
                     },
                     "required": ["path", "content"]
                 }),
+                display_name: Some(self.display_name().to_string()),
+                progressive_form: Some(self.progressive_form().to_string()),
             },
         }
     }

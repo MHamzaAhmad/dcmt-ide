@@ -595,28 +595,6 @@ impl LaTeXService {
         pdf_path
     }
 
-    fn get_raw_latex_output(stderr: &str, stdout: &str) -> Vec<String> {
-        // Return raw latexmk output as-is for human and agent readability
-        // LaTeX compilation output is already detailed and informative
-        let mut output_lines = Vec::new();
-        
-        // Include both stdout and stderr as separate sections if they contain content
-        if !stdout.trim().is_empty() {
-            output_lines.push(format!("=== LaTeX Compilation Output ===\n{}", stdout.trim()));
-        }
-        
-        if !stderr.trim().is_empty() {
-            output_lines.push(format!("=== LaTeX Error Output ===\n{}", stderr.trim()));
-        }
-        
-        // If both are empty, provide a generic message
-        if output_lines.is_empty() {
-            output_lines.push("LaTeX compilation failed with no output".to_string());
-        }
-        
-        output_lines
-    }
-
     fn get_multi_engine_output(engine_attempts: &[EngineAttempt]) -> Vec<String> {
         let mut output_lines = Vec::new();
         

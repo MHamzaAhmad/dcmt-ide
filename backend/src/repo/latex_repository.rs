@@ -148,40 +148,25 @@ impl LaTeXRepository {
         pdf_path
     }
 
-    pub fn parse_latex_errors(stderr: &str, stdout: &str) -> Vec<String> {
-        let mut errors = Vec::new();
+    pub fn get_raw_latex_output(stderr: &str, stdout: &str) -> Vec<String> {
+        // Return raw latexmk output as-is for human and agent readability
+        // LaTeX compilation output is already detailed and informative
+        let mut output_lines = Vec::new();
         
-        // Combine stderr and stdout for error parsing
-        let combined_output = format!("{}\n{}", stderr, stdout);
-        
-        // Regex patterns for common LaTeX errors
-        let error_patterns = vec![
-            Regex::new(r"(?m)^.*?:(\d+):\s*(.+?)$").unwrap(),
-            Regex::new(r"(?m)^!\s*(.+?)$").unwrap(),
-            Regex::new(r"(?m)^.*?Error:\s*(.+?)$").unwrap(),
-        ];
-        
-        for pattern in error_patterns {
-            for cap in pattern.captures_iter(&combined_output) {
-                if cap.len() > 1 {
-                    let error_msg = if cap.len() > 2 {
-                        format!("Line {}: {}", &cap[1], &cap[2].trim())
-                    } else {
-                        cap[1].trim().to_string()
-                    };
-                    
-                    if !error_msg.is_empty() && !errors.contains(&error_msg) {
-                        errors.push(error_msg);
-                    }
-                }
-            }
+        // Include both stdout and stderr as separate sections if they contain content
+        if !stdout.trim().is_empty() {
+            output_lines.push(format!("=== LaTeX Compilation Output ===\n{}", stdout.trim()));
         }
         
-        // If no structured errors found, include key parts of stderr
-        if errors.is_empty() && !stderr.is_empty() {
-            errors.push(stderr.lines().take(5).collect::<Vec<_>>().join("\n"));
+        if !stderr.trim().is_empty() {
+            output_lines.push(format!("=== LaTeX Error Output ===\n{}", stderr.trim()));
         }
         
-        errors
+        // If both are empty, provide a generic message
+        if output_lines.is_empty() {
+            output_lines.push("LaTeX compilation failed with no output".to_string());
+        }
+        
+        output_lines
     }
 }

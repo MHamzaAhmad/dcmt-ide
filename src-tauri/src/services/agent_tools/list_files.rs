@@ -35,7 +35,7 @@ impl AgentTool for ListFilesTool {
         }
     }
     
-    async fn execute(&self, workspace_path: &PathBuf, args: Value) -> AgentResult<String> {
+    async fn execute(&self, workspace_path: &PathBuf, args: Value, _app_handle: Option<&tauri::AppHandle>) -> AgentResult<String> {
         let path = args["path"]
             .as_str()
             .unwrap_or(".");

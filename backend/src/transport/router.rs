@@ -34,6 +34,7 @@ pub async fn create_router(config: Config) -> Result<Router> {
         config.workspace_path.clone(),
         config.agent.litellm_base_url.clone(),
         file_service.clone(),
+        latex_service.clone(),
     ).await?);
     let agent_service = Arc::new(AgentService::new(agent_repo));
     

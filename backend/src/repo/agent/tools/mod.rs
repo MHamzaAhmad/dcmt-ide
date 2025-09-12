@@ -10,6 +10,7 @@ pub mod update_file;
 pub mod list_files;
 pub mod create_directory;
 pub mod delete_file;
+pub mod compile_latex;
 
 pub use read_file::ReadFileTool;
 pub use write_file::WriteFileTool;
@@ -17,6 +18,7 @@ pub use update_file::UpdateFileTool;
 pub use list_files::ListFilesTool;
 pub use create_directory::CreateDirectoryTool;
 pub use delete_file::DeleteFileTool;
+pub use compile_latex::CompileLatexTool;
 
 /// Base trait that all agent tools must implement
 #[async_trait]
@@ -46,6 +48,7 @@ impl ToolRegistry {
             Box::new(ListFilesTool),
             Box::new(CreateDirectoryTool),
             Box::new(DeleteFileTool),
+            Box::new(CompileLatexTool),
         ];
         
         Self { tools }

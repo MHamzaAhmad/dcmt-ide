@@ -358,10 +358,10 @@ impl LaTeXService {
                 Err(e) => {
                     warn!("Compilation failed with engine {}: {}", engine, e);
                     
-                    // Extract errors from the compilation output
+                    // Get raw LaTeX output for detailed error information
                     let error_output = e.to_string();
-                    let parsed_errors = LaTeXRepository::parse_latex_errors(&error_output, "");
-                    last_errors = parsed_errors;
+                    let raw_errors = LaTeXRepository::get_raw_latex_output(&error_output, "");
+                    last_errors = raw_errors;
                     
                     // If this was a user-specified engine (not auto), don't try others
                     if request.provider.engine_name().is_some() {

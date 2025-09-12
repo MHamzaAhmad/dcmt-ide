@@ -199,7 +199,7 @@ async fn reinitialize_services(app_handle: &AppHandle, workspace_path: PathBuf) 
     
     let event_broadcaster = Arc::new(EventBroadcaster::new(app_handle.clone()));
     
-    match AgentService::new(event_broadcaster, litellm_url).await {
+    match AgentService::new(event_broadcaster, litellm_url, app_handle.clone()).await {
         Ok(mut agent_service) => {
             agent_service.set_workspace_path(workspace_path.clone());
             

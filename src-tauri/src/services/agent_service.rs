@@ -25,6 +25,7 @@ pub struct AgentService {
     session_manager: Arc<SessionManager>,
     event_broadcaster: Arc<EventBroadcaster>,
     workspace_path: Option<PathBuf>, // None until project is selected
+    app_handle: tauri::AppHandle,
 }
 
 /// Context for streaming SSE chunks and building complete tool calls
@@ -226,6 +227,7 @@ impl AgentService {
     pub async fn new(
         event_broadcaster: Arc<EventBroadcaster>,
         litellm_base_url: String,
+        app_handle: tauri::AppHandle,
     ) -> AgentResult<Self> {
         // Load system prompt from embedded config or default
         let system_prompt = Self::load_system_prompt().await;
@@ -251,6 +253,7 @@ impl AgentService {
             session_manager,
             event_broadcaster,
             workspace_path: None,
+            app_handle,
         })
     }
     
@@ -307,6 +310,7 @@ impl AgentService {
         let http_client = self.http_client.clone();
         let config = self.config.clone();
         let workspace_path = workspace_path.clone();
+        let app_handle = self.app_handle.clone();
         
         // Process in background
         tokio::spawn(async move {
@@ -322,6 +326,7 @@ impl AgentService {
                 http_client,
                 config,
                 workspace_path,
+                app_handle,
             ).await {
                 Ok(response) => {
                     tracing::info!("Job {} completed successfully for session {} with response: {}", 
@@ -369,6 +374,7 @@ impl AgentService {
         http_client: Client,
         config: AgentConfig,
         workspace_path: PathBuf,
+        app_handle: tauri::AppHandle,
     ) -> AgentResult<String> {
         tracing::info!("Processing chat background for session {}", session_id);
         
@@ -420,6 +426,7 @@ impl AgentService {
             http_client,
             config,
             workspace_path,
+            app_handle,
         ).await?;
         
         tracing::debug!("Tool processing completed for session {}", session_id);
@@ -445,6 +452,7 @@ impl AgentService {
         http_client: Client,
         config: AgentConfig,
         workspace_path: PathBuf,
+        app_handle: tauri::AppHandle,
     ) -> AgentResult<ChatMessage> {
         let mut iteration_count = 0;
         const MAX_ITERATIONS: usize = 10; // Prevent infinite loops
@@ -500,6 +508,7 @@ impl AgentService {
                                 tool_call.clone(),
                                 &tool_registry,
                                 &workspace_path,
+                                &app_handle,
                                 &event_broadcaster,
                                 session_id,
                             )
@@ -538,6 +547,7 @@ impl AgentService {
                             &tool_call.function,
                             &tool_registry,
                             &workspace_path,
+                            &app_handle,
                             &event_broadcaster,
                             session_id,
                         ).await {
@@ -585,6 +595,7 @@ impl AgentService {
         tool_call: ToolCall,
         tool_registry: &ToolRegistry,
         workspace_path: &PathBuf,
+        app_handle: &tauri::AppHandle,
         event_broadcaster: &Arc<EventBroadcaster>,
         session_id: &str,
     ) -> AgentResult<String> {
@@ -599,6 +610,7 @@ impl AgentService {
             &tool_call.function,
             tool_registry,
             workspace_path,
+            app_handle,
             event_broadcaster,
             session_id,
         ).await;
@@ -630,6 +642,7 @@ impl AgentService {
         tool_function: &ToolFunction,
         tool_registry: &ToolRegistry,
         workspace_path: &PathBuf,
+        app_handle: &tauri::AppHandle,
         event_broadcaster: &Arc<EventBroadcaster>,
         session_id: &str,
     ) -> AgentResult<String> {
@@ -647,7 +660,7 @@ impl AgentService {
             })?;
         
         let result = tool_registry
-            .execute(&tool_function.name, workspace_path, args)
+            .execute(&tool_function.name, workspace_path, args, Some(app_handle))
             .await;
         
         match &result {

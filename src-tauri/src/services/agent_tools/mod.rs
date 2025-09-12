@@ -8,6 +8,7 @@ pub mod update_file;
 pub mod list_files;
 pub mod create_directory;
 pub mod delete_file;
+pub mod compile_latex;
 
 pub use read_file::ReadFileTool;
 pub use write_file::WriteFileTool;
@@ -15,6 +16,7 @@ pub use update_file::UpdateFileTool;
 pub use list_files::ListFilesTool;
 pub use create_directory::CreateDirectoryTool;
 pub use delete_file::DeleteFileTool;
+pub use compile_latex::CompileLatexTool;
 
 /// Trait that all agent tools must implement
 pub trait AgentTool: Send + Sync {
@@ -22,7 +24,8 @@ pub trait AgentTool: Send + Sync {
     fn definition(&self) -> ToolDefinition;
     
     /// Executes the tool with given workspace path and arguments
-    async fn execute(&self, workspace_path: &PathBuf, args: Value) -> AgentResult<String>;
+    /// app_handle is optional and used for tools that need access to Tauri services
+    async fn execute(&self, workspace_path: &PathBuf, args: Value, app_handle: Option<&tauri::AppHandle>) -> AgentResult<String>;
 }
 
 /// Enum containing all available tools
@@ -34,6 +37,7 @@ pub enum Tool {
     ListFiles(ListFilesTool),
     CreateDirectory(CreateDirectoryTool),
     DeleteFile(DeleteFileTool),
+    CompileLatex(CompileLatexTool),
 }
 
 impl Tool {
@@ -45,17 +49,19 @@ impl Tool {
             Tool::ListFiles(tool) => tool.definition(),
             Tool::CreateDirectory(tool) => tool.definition(),
             Tool::DeleteFile(tool) => tool.definition(),
+            Tool::CompileLatex(tool) => tool.definition(),
         }
     }
     
-    async fn execute(&self, workspace_path: &PathBuf, args: Value) -> AgentResult<String> {
+    async fn execute(&self, workspace_path: &PathBuf, args: Value, app_handle: Option<&tauri::AppHandle>) -> AgentResult<String> {
         match self {
-            Tool::ReadFile(tool) => tool.execute(workspace_path, args).await,
-            Tool::WriteFile(tool) => tool.execute(workspace_path, args).await,
-            Tool::UpdateFile(tool) => tool.execute(workspace_path, args).await,
-            Tool::ListFiles(tool) => tool.execute(workspace_path, args).await,
-            Tool::CreateDirectory(tool) => tool.execute(workspace_path, args).await,
-            Tool::DeleteFile(tool) => tool.execute(workspace_path, args).await,
+            Tool::ReadFile(tool) => tool.execute(workspace_path, args, app_handle).await,
+            Tool::WriteFile(tool) => tool.execute(workspace_path, args, app_handle).await,
+            Tool::UpdateFile(tool) => tool.execute(workspace_path, args, app_handle).await,
+            Tool::ListFiles(tool) => tool.execute(workspace_path, args, app_handle).await,
+            Tool::CreateDirectory(tool) => tool.execute(workspace_path, args, app_handle).await,
+            Tool::DeleteFile(tool) => tool.execute(workspace_path, args, app_handle).await,
+            Tool::CompileLatex(tool) => tool.execute(workspace_path, args, app_handle).await,
         }
     }
     
@@ -67,6 +73,7 @@ impl Tool {
             Tool::ListFiles(_) => "list_files",
             Tool::CreateDirectory(_) => "create_directory",
             Tool::DeleteFile(_) => "delete_file",
+            Tool::CompileLatex(_) => "compile",
         }
     }
 }
@@ -87,6 +94,7 @@ impl ToolRegistry {
             Tool::ListFiles(ListFilesTool),
             Tool::CreateDirectory(CreateDirectoryTool),
             Tool::DeleteFile(DeleteFileTool),
+            Tool::CompileLatex(CompileLatexTool),
         ];
         
         Self { tools }
@@ -98,7 +106,7 @@ impl ToolRegistry {
     }
     
     /// Executes a tool by name with given workspace and arguments
-    pub async fn execute(&self, tool_name: &str, workspace_path: &PathBuf, args: Value) -> AgentResult<String> {
+    pub async fn execute(&self, tool_name: &str, workspace_path: &PathBuf, args: Value, app_handle: Option<&tauri::AppHandle>) -> AgentResult<String> {
         // Find the tool by name
         let tool = self.tools.iter()
             .find(|t| t.name() == tool_name)
@@ -108,7 +116,7 @@ impl ToolRegistry {
             })?;
         
         // Execute the tool
-        match tool.execute(workspace_path, args).await {
+        match tool.execute(workspace_path, args, app_handle).await {
             Ok(result) => Ok(result),
             Err(e) => Err(AgentError::ToolExecutionError {
                 tool: tool_name.to_string(),
@@ -177,7 +185,7 @@ mod tests {
     #[test]
     fn test_tool_registry_creation() {
         let registry = ToolRegistry::new();
-        assert_eq!(registry.tools.len(), 6);
+        assert_eq!(registry.tools.len(), 7);
         
         let tool_names: Vec<String> = registry.tools.iter()
             .map(|tool| tool.name().to_string())
@@ -188,6 +196,7 @@ mod tests {
         assert!(tool_names.contains(&"list_files".to_string()));
         assert!(tool_names.contains(&"create_directory".to_string()));
         assert!(tool_names.contains(&"delete_file".to_string()));
+        assert!(tool_names.contains(&"compile".to_string()));
     }
     
     #[test]

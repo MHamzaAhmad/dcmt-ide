@@ -36,6 +36,9 @@ export interface LaTeXState {
     
     // Errors
     error: string | null;
+    
+    // Error Panel UI State
+    showErrorPanel: boolean;
 }
 
 function createLatexStore() {
@@ -46,7 +49,8 @@ function createLatexStore() {
         autoCompile: true,
         lastCompilation: null,
         currentPdfPath: null,
-        error: null
+        error: null,
+        showErrorPanel: true
     };
 
     const { subscribe, set, update } = writable<LaTeXState>(initialState);
@@ -255,6 +259,33 @@ function createLatexStore() {
         getLastErrors(): string[] {
             const state = store.getCurrentState();
             return state.lastCompilation?.errors || [];
+        },
+
+        // Error Panel Methods
+        showErrorPanel(): void {
+            update(state => ({
+                ...state,
+                showErrorPanel: true
+            }));
+        },
+
+        hideErrorPanel(): void {
+            update(state => ({
+                ...state,
+                showErrorPanel: false
+            }));
+        },
+
+        toggleErrorPanel(): void {
+            update(state => ({
+                ...state,
+                showErrorPanel: !state.showErrorPanel
+            }));
+        },
+
+        getRawErrors(): string {
+            const state = store.getCurrentState();
+            return state.lastCompilation?.errors?.join('\n') || '';
         },
 
         // Startup compilation

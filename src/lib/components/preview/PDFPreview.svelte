@@ -3,6 +3,7 @@
 	import { Button } from '$lib/components/ui/button';
 	import { Play, Download, FileText } from '@lucide/svelte';
 	import { pdfStore, latexStore, isCompiling } from '$lib/stores';
+	import LaTeXErrorPanel from '$lib/components/errors/LaTeXErrorPanel.svelte';
 
 	// Props
 	interface Props {
@@ -184,16 +185,6 @@
 					<FileText size={48} class="mx-auto mb-4 opacity-50" />
 					<p class="text-sm mb-4">{pdfState.error}</p>
 					
-					{#if (latexState.lastCompilation?.errors?.length || 0) > 0}
-						<div class="text-left bg-red-50 border border-red-200 rounded-lg p-3 mt-4">
-							<h4 class="font-semibold text-red-800 mb-2">Compilation Errors:</h4>
-							<ul class="text-xs text-red-700 space-y-1">
-								{#each (latexState.lastCompilation?.errors || []) as err}
-									<li class="font-mono">{err}</li>
-								{/each}
-							</ul>
-						</div>
-					{/if}
 				</div>
 			</div>
 		{:else if !hasValidPdf}
@@ -207,4 +198,7 @@
 			</div>
 		{/if}
 	</div>
+
+	<!-- LaTeX Error Panel - Always at bottom when errors exist -->
+	<LaTeXErrorPanel />
 </div>

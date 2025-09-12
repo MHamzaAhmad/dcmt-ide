@@ -384,10 +384,10 @@ impl LaTeXService {
                 Err(e) => {
                     warn!("Compilation failed with engine {}: {}", engine, e);
                     
-                    // Extract errors from the compilation output
+                    // Get raw LaTeX output for detailed error information
                     let error_output = e.to_string();
-                    let parsed_errors = Self::parse_latex_errors(&error_output, "");
-                    last_errors = parsed_errors;
+                    let raw_errors = Self::get_raw_latex_output(&error_output, "");
+                    last_errors = raw_errors;
                     
                     // If this was a user-specified engine (not auto), don't try others
                     if request.provider.engine_name().is_some() {
@@ -564,34 +564,26 @@ impl LaTeXService {
         pdf_path
     }
 
-    fn parse_latex_errors(stderr: &str, stdout: &str) -> Vec<String> {
-        let mut errors = Vec::new();
+    fn get_raw_latex_output(stderr: &str, stdout: &str) -> Vec<String> {
+        // Return raw latexmk output as-is for human and agent readability
+        // LaTeX compilation output is already detailed and informative
+        let mut output_lines = Vec::new();
         
-        // Combine stderr and stdout for error parsing
-        let combined_output = format!("{}\n{}", stderr, stdout);
-        
-        // Simple error patterns for LaTeX compilation errors
-        let lines: Vec<&str> = combined_output.lines().collect();
-        
-        for line in lines {
-            let line = line.trim();
-            
-            // Look for common LaTeX error patterns
-            if (line.starts_with("!") || 
-               line.contains("Error:") || 
-               line.contains("error:") ||
-               (line.contains(":") && line.contains("undefined"))) 
-               && !errors.contains(&line.to_string()) {
-                errors.push(line.to_string());
-            }
+        // Include both stdout and stderr as separate sections if they contain content
+        if !stdout.trim().is_empty() {
+            output_lines.push(format!("=== LaTeX Compilation Output ===\n{}", stdout.trim()));
         }
         
-        // If no structured errors found, include key parts of stderr
-        if errors.is_empty() && !stderr.is_empty() {
-            errors.push(stderr.lines().take(5).collect::<Vec<_>>().join("\n"));
+        if !stderr.trim().is_empty() {
+            output_lines.push(format!("=== LaTeX Error Output ===\n{}", stderr.trim()));
         }
         
-        errors
+        // If both are empty, provide a generic message
+        if output_lines.is_empty() {
+            output_lines.push("LaTeX compilation failed with no output".to_string());
+        }
+        
+        output_lines
     }
 
     async fn detect_available_engines(&self) -> Vec<String> {

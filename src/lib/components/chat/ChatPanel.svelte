@@ -3,9 +3,7 @@
 	import { Input } from '$lib/components/ui/input';
 	import { Button } from '$lib/components/ui/button';
 	import * as Select from '$lib/components/ui/select';
-	import { Badge } from '$lib/components/ui/badge';
 	import ChatMessage from './ChatMessage.svelte';
-	import ToolExecution from './ToolExecution.svelte';
 	import FloatingBadge from '../ui/floating-badge.svelte';
 	import { chatStore } from '$lib/stores/chat';
 	import { agentStore } from '$lib/stores/agent';
@@ -39,7 +37,7 @@
 	let toolResults = $state(new Map());
 	let streamingContent = $state('');
 	let isProcessing = $state(false);
-	let currentToolStatus = $state<{ toolName: string; status: string } | null>(null);
+	let currentToolStatus = $state<{ toolName: string; status: string; progressiveForm?: string } | null>(null);
 	
 	// Query for fetching models from LiteLLM
 	const modelsQuery = createQuery({
@@ -239,21 +237,7 @@
 		isMinimized = !isMinimized;
 	}
 	
-	function getToolStatusText(toolName: string): string {
-		const toolStatusMap: Record<string, string> = {
-			'read_file': 'Reading file',
-			'write_file': 'Writing file',
-			'update_file': 'Updating file',
-			'create_file': 'Creating file',
-			'create_directory': 'Creating directory',
-			'list_files': 'Listing files',
-			'delete_file': 'Deleting file',
-			'search_files': 'Searching files',
-			'execute_command': 'Executing command'
-		};
-		
-		return toolStatusMap[toolName] || 'Processing';
-	}
+	
 </script>
 
 <div class="{mode === 'floating' ? 
@@ -341,12 +325,6 @@
 						<ChatMessage {message} />
 					{/each}
 					
-					<!-- Tool Execution Display -->
-					{#if isAgentMode && toolResults.size > 0}
-						<div class="px-4">
-							<ToolExecution {toolResults} />
-						</div>
-					{/if}
 				</div>
 			{/if}
 		</div>
@@ -355,7 +333,7 @@
 		{#if currentToolStatus && isAgentMode}
 			<div class="absolute bottom-4 left-1/2 -translate-x-1/2 z-20 pointer-events-none">
 				<FloatingBadge 
-					text={getToolStatusText(currentToolStatus.toolName)}
+					text={currentToolStatus.progressiveForm || 'Processing'}
 					visible={true}
 				/>
 			</div>

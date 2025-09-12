@@ -33,7 +33,7 @@ export interface AgentState {
     messages: AgentChatMessage[];
     activeToolResults: Map<string, AgentToolResult>;
     availableTools: AgentToolDefinition[];
-    currentToolStatus: { toolName: string; status: string } | null;
+    currentToolStatus: { toolName: string; status: string; progressiveForm?: string } | null;
     
     // UI State
     isProcessing: boolean;
@@ -492,18 +492,20 @@ function createAgentStore() {
                         ...state,
                         currentToolStatus: {
                             toolName: event.display_name || event.tool,
-                            status: 'preparing'
+                            status: 'preparing',
+                            progressiveForm: event.progressive_form
                         }
                     }));
                     break;
 
                 case 'ToolExecuting':
-                    // Update tool status for floating badge with display name
+                    // Update tool status for floating badge with progressive form
                     update(state => ({
                         ...state,
                         currentToolStatus: {
                             toolName: event.display_name || event.tool,
-                            status: 'executing'
+                            status: 'executing',
+                            progressiveForm: event.progressive_form
                         }
                     }));
                     

@@ -4,6 +4,15 @@ use std::path::{Path, PathBuf};
 use tokio::process::Command;
 use tracing::{debug, info, warn};
 
+#[derive(Debug, Clone)]
+pub struct EngineAttempt {
+    pub engine: String,
+    pub stdout: String,
+    pub stderr: String,
+    pub success: bool,
+    pub error_message: Option<String>,
+}
+
 pub struct LaTeXRepository {
     pub workspace_path: PathBuf,
 }
@@ -71,7 +80,7 @@ impl LaTeXRepository {
         Ok(documentclass_regex.is_match(&content))
     }
 
-    pub async fn execute_latexmk(&self, tex_file: &Path, engine: &str) -> Result<(String, String)> {
+    pub async fn execute_latexmk(&self, tex_file: &Path, engine: &str) -> Result<EngineAttempt> {
         let tex_file_dir = tex_file.parent()
             .ok_or_else(|| anyhow!("Cannot get parent directory of tex file"))?;
         
@@ -111,11 +120,20 @@ impl LaTeXRepository {
         debug!("latexmk stdout: {}", stdout);
         debug!("latexmk stderr: {}", stderr);
 
-        if !output.status.success() {
-            return Err(anyhow!("LaTeX compilation failed with engine {}: {}", engine, stderr));
-        }
+        let success = output.status.success();
+        let error_message = if !success {
+            Some(format!("LaTeX compilation failed with engine {}", engine))
+        } else {
+            None
+        };
 
-        Ok((stdout, stderr))
+        Ok(EngineAttempt {
+            engine: engine.to_string(),
+            stdout,
+            stderr,
+            success,
+            error_message,
+        })
     }
 
     pub async fn check_engine_available(&self, engine: &str) -> bool {
@@ -163,6 +181,55 @@ impl LaTeXRepository {
         }
         
         // If both are empty, provide a generic message
+        if output_lines.is_empty() {
+            output_lines.push("LaTeX compilation failed with no output".to_string());
+        }
+        
+        output_lines
+    }
+
+    pub fn get_multi_engine_output(engine_attempts: &[EngineAttempt]) -> Vec<String> {
+        let mut output_lines = Vec::new();
+        
+        // Process each engine attempt
+        for attempt in engine_attempts {
+            output_lines.push(format!("=== Engine: {} ===", attempt.engine));
+            
+            if !attempt.stdout.trim().is_empty() {
+                output_lines.push(format!("Compilation Output:\n{}", attempt.stdout.trim()));
+            }
+            
+            if !attempt.stderr.trim().is_empty() {
+                output_lines.push(format!("Error Output:\n{}", attempt.stderr.trim()));
+            }
+            
+            if let Some(ref error_msg) = attempt.error_message {
+                output_lines.push(format!("Result: {}", error_msg));
+            } else {
+                output_lines.push("Result: Success".to_string());
+            }
+            
+            output_lines.push("".to_string()); // Empty line between engines
+        }
+        
+        // Add summary
+        if engine_attempts.len() > 1 {
+            let failed_engines: Vec<String> = engine_attempts.iter()
+                .filter(|attempt| !attempt.success)
+                .map(|attempt| attempt.engine.clone())
+                .collect();
+                
+            if !failed_engines.is_empty() {
+                output_lines.push(format!("=== Summary ==="));
+                if failed_engines.len() == engine_attempts.len() {
+                    output_lines.push(format!("All engines failed: {}", failed_engines.join(", ")));
+                } else {
+                    output_lines.push(format!("Failed engines: {}", failed_engines.join(", ")));
+                }
+            }
+        }
+        
+        // If no output at all, provide a generic message
         if output_lines.is_empty() {
             output_lines.push("LaTeX compilation failed with no output".to_string());
         }

@@ -8,6 +8,15 @@ use tokio::time::{Duration, Instant};
 use tracing::{debug, error, info, warn};
 use tauri::{AppHandle, Emitter, Listener};
 
+#[derive(Debug, Clone)]
+pub struct EngineAttempt {
+    pub engine: String,
+    pub stdout: String,
+    pub stderr: String,
+    pub success: bool,
+    pub error_message: Option<String>,
+}
+
 #[derive(Clone)]
 pub struct LaTeXService {
     workspace_path: PathBuf,
@@ -344,8 +353,8 @@ impl LaTeXService {
             ));
         }
 
-        // Try each engine until one succeeds
-        let mut last_errors = Vec::new();
+        // Try each engine and accumulate all results
+        let mut engine_attempts = Vec::new();
         
         for engine in &engines_to_try {
             info!("Attempting compilation with engine: {}", engine);
@@ -355,39 +364,53 @@ impl LaTeXService {
             self.emit_compilation_event(started_event).await;
             
             match self.execute_latexmk(&main_tex_file, engine).await {
-                Ok((_stdout, _stderr)) => {
-                    // Compilation succeeded
-                    let pdf_path = self.extract_pdf_path(&main_tex_file);
-                    let relative_pdf_path = pdf_path.strip_prefix(&self.workspace_path)
-                        .unwrap_or(&pdf_path)
-                        .to_string_lossy()
-                        .to_string();
+                Ok(attempt) => {
+                    if attempt.success {
+                        // Compilation succeeded
+                        let pdf_path = self.extract_pdf_path(&main_tex_file);
+                        let relative_pdf_path = pdf_path.strip_prefix(&self.workspace_path)
+                            .unwrap_or(&pdf_path)
+                            .to_string_lossy()
+                            .to_string();
 
-                    let duration_ms = start_time.elapsed().as_millis() as u64;
+                        let duration_ms = start_time.elapsed().as_millis() as u64;
 
-                    info!("LaTeX compilation successful with engine: {}", engine);
-                    
-                    // Emit success event
-                    let success_event = CompilationEvent::success(
-                        main_file_str.clone(),
-                        relative_pdf_path.clone(),
-                        engine.clone(),
-                        duration_ms
-                    );
-                    self.emit_compilation_event(success_event).await;
-                    
-                    return Ok(LaTeXCompileResponse::success(
-                        format!("Compilation successful with {}", engine),
-                        Some(relative_pdf_path),
-                    ));
+                        info!("LaTeX compilation successful with engine: {}", engine);
+                        
+                        // Emit success event
+                        let success_event = CompilationEvent::success(
+                            main_file_str.clone(),
+                            relative_pdf_path.clone(),
+                            engine.clone(),
+                            duration_ms
+                        );
+                        self.emit_compilation_event(success_event).await;
+                        
+                        return Ok(LaTeXCompileResponse::success(
+                            format!("Compilation successful with {}", engine),
+                            Some(relative_pdf_path),
+                        ));
+                    } else {
+                        // Compilation failed, store the attempt
+                        warn!("Compilation failed with engine {}: {:?}", engine, attempt.error_message);
+                        engine_attempts.push(attempt);
+                        
+                        // If this was a user-specified engine (not auto), don't try others
+                        if request.provider.engine_name().is_some() {
+                            break;
+                        }
+                    }
                 }
                 Err(e) => {
-                    warn!("Compilation failed with engine {}: {}", engine, e);
-                    
-                    // Get raw LaTeX output for detailed error information
-                    let error_output = e.to_string();
-                    let raw_errors = Self::get_raw_latex_output(&error_output, "");
-                    last_errors = raw_errors;
+                    // System error (not compilation failure)
+                    warn!("System error when executing engine {}: {}", engine, e);
+                    engine_attempts.push(EngineAttempt {
+                        engine: engine.clone(),
+                        stdout: String::new(),
+                        stderr: e.clone(),
+                        success: false,
+                        error_message: Some(format!("System error: {}", e)),
+                    });
                     
                     // If this was a user-specified engine (not auto), don't try others
                     if request.provider.engine_name().is_some() {
@@ -397,7 +420,7 @@ impl LaTeXService {
             }
         }
 
-        // All engines failed
+        // All engines failed - use detailed multi-engine output
         let engines_tried = engines_to_try.join(", ");
         let error_message = if engines_to_try.len() == 1 {
             format!("Compilation failed with engine: {}", engines_tried)
@@ -407,25 +430,24 @@ impl LaTeXService {
 
         error!("LaTeX compilation failed after trying engines: {}", engines_tried);
         
-        // Emit error event
+        // Get detailed multi-engine error output
+        let detailed_errors = if engine_attempts.is_empty() {
+            vec!["No engine attempts recorded".to_string()]
+        } else {
+            Self::get_multi_engine_output(&engine_attempts)
+        };
+        
+        // Emit error event with detailed information
         let error_event = CompilationEvent::error(
             main_file_str,
-            if last_errors.is_empty() {
-                vec!["Unknown compilation error occurred".to_string()]
-            } else {
-                last_errors.clone()
-            },
+            detailed_errors.clone(),
             engines_to_try.first().cloned()
         );
         self.emit_compilation_event(error_event).await;
         
         Ok(LaTeXCompileResponse::error(
             error_message,
-            if last_errors.is_empty() {
-                vec!["Unknown compilation error occurred".to_string()]
-            } else {
-                last_errors
-            },
+            detailed_errors,
         ))
     }
 
@@ -486,7 +508,7 @@ impl LaTeXService {
         Ok(content.contains("\\documentclass"))
     }
 
-    async fn execute_latexmk(&self, tex_file: &Path, engine: &str) -> Result<(String, String), String> {
+    async fn execute_latexmk(&self, tex_file: &Path, engine: &str) -> Result<EngineAttempt, String> {
         let tex_file_dir = tex_file.parent()
             .ok_or_else(|| "Cannot get parent directory of tex file".to_string())?;
         
@@ -527,11 +549,20 @@ impl LaTeXService {
         debug!("latexmk stdout: {}", stdout);
         debug!("latexmk stderr: {}", stderr);
 
-        if !output.status.success() {
-            return Err(format!("LaTeX compilation failed with engine {}: {}", engine, stderr));
-        }
+        let success = output.status.success();
+        let error_message = if !success {
+            Some(format!("LaTeX compilation failed with engine {}", engine))
+        } else {
+            None
+        };
 
-        Ok((stdout, stderr))
+        Ok(EngineAttempt {
+            engine: engine.to_string(),
+            stdout,
+            stderr,
+            success,
+            error_message,
+        })
     }
 
     async fn check_engine_available(&self, engine: &str) -> bool {
@@ -579,6 +610,55 @@ impl LaTeXService {
         }
         
         // If both are empty, provide a generic message
+        if output_lines.is_empty() {
+            output_lines.push("LaTeX compilation failed with no output".to_string());
+        }
+        
+        output_lines
+    }
+
+    fn get_multi_engine_output(engine_attempts: &[EngineAttempt]) -> Vec<String> {
+        let mut output_lines = Vec::new();
+        
+        // Process each engine attempt
+        for attempt in engine_attempts {
+            output_lines.push(format!("=== Engine: {} ===", attempt.engine));
+            
+            if !attempt.stdout.trim().is_empty() {
+                output_lines.push(format!("Compilation Output:\n{}", attempt.stdout.trim()));
+            }
+            
+            if !attempt.stderr.trim().is_empty() {
+                output_lines.push(format!("Error Output:\n{}", attempt.stderr.trim()));
+            }
+            
+            if let Some(ref error_msg) = attempt.error_message {
+                output_lines.push(format!("Result: {}", error_msg));
+            } else {
+                output_lines.push("Result: Success".to_string());
+            }
+            
+            output_lines.push("".to_string()); // Empty line between engines
+        }
+        
+        // Add summary
+        if engine_attempts.len() > 1 {
+            let failed_engines: Vec<String> = engine_attempts.iter()
+                .filter(|attempt| !attempt.success)
+                .map(|attempt| attempt.engine.clone())
+                .collect();
+                
+            if !failed_engines.is_empty() {
+                output_lines.push(format!("=== Summary ==="));
+                if failed_engines.len() == engine_attempts.len() {
+                    output_lines.push(format!("All engines failed: {}", failed_engines.join(", ")));
+                } else {
+                    output_lines.push(format!("Failed engines: {}", failed_engines.join(", ")));
+                }
+            }
+        }
+        
+        // If no output at all, provide a generic message
         if output_lines.is_empty() {
             output_lines.push("LaTeX compilation failed with no output".to_string());
         }

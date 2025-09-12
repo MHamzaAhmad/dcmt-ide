@@ -11,5 +11,5 @@ pub mod tavily_service;
 pub use file_service::*;
 pub use watcher::*;
 pub use latex_service::*;
-pub use tavily_service::TavilyService;
+// pub use tavily_service::TavilyService;
 // pub use git_service::GitService;

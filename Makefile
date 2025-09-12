@@ -1,4 +1,4 @@
-.PHONY: litellm docker-build docker-run ssl-setup
+.PHONY: litellm docker-build docker-run ssl-setup tavily-proxy
 litellm:
 	docker run \
 		--env-file .env \
@@ -32,3 +32,15 @@ ssl-setup:
 		exit 1; \
 	fi
 	@./docker/generate-ssl.sh
+
+tavily-proxy:
+	@echo "🚀 Building and running Tavily proxy with Docker..."
+	@echo "🔨 Building Docker image..."
+	@docker build -t tavily-proxy:latest lib/tavily/ --progress=plain
+	@echo "✅ Build complete. Starting proxy container..."
+	@docker run \
+		--env-file .env \
+		-p 8082:8082 \
+		--name tavily-proxy \
+		--rm \
+		tavily-proxy:latest

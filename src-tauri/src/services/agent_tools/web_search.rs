@@ -99,14 +99,8 @@ impl AgentTool for WebSearchTool {
             request = request.with_depth(search_depth);
         }
         
-        // Get Tavily API key from environment
-        let api_key = std::env::var("TAVILY_API_KEY")
-            .map_err(|_| AgentError::Generic(anyhow::anyhow!(
-                "TAVILY_API_KEY environment variable not set"
-            )))?;
-            
         // Create Tavily service and perform search
-        let tavily_service = TavilyService::new(api_key)
+        let tavily_service = TavilyService::new()
             .map_err(|e| AgentError::ToolExecutionError {
                 tool: "web_search".to_string(),
                 error: format!("Failed to create Tavily service: {}", e),

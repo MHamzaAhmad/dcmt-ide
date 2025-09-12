@@ -12,7 +12,6 @@ pub use extract::{ExtractRequest, ExtractResponse, ExtractResult};
 /// Main Tavily repository for web search and content extraction
 pub struct TavilyRepository {
     client: Client,
-    api_key: String,
     base_url: String,
 }
 
@@ -38,18 +37,21 @@ pub enum TavilyError {
 }
 
 impl TavilyRepository {
-    /// Creates a new Tavily repository instance
-    pub fn new(api_key: String) -> Result<Self> {
+    /// Creates a new Tavily repository instance using proxy
+    pub fn new() -> Result<Self> {
         let client = Client::builder()
             .timeout(Duration::from_secs(30))
             .pool_max_idle_per_host(10)
             .pool_idle_timeout(Duration::from_secs(60))
             .build()?;
+        
+        // Get base URL from environment, default to proxy URL
+        let base_url = std::env::var("TAVILY_BASE_URL")
+            .unwrap_or_else(|_| "http://127.0.0.1:8082".to_string());
             
         Ok(Self {
             client,
-            api_key,
-            base_url: "https://api.tavily.com".to_string(),
+            base_url,
         })
     }
     
@@ -61,7 +63,7 @@ impl TavilyRepository {
         
         let response = self.client
             .post(&url)
-            .header("Authorization", format!("Bearer {}", self.api_key))
+            .header("Authorization", "Bearer ")
             .header("Content-Type", "application/json")
             .json(&request)
             .send()
@@ -86,7 +88,7 @@ impl TavilyRepository {
         
         let response = self.client
             .post(&url)
-            .header("Authorization", format!("Bearer {}", self.api_key))
+            .header("Authorization", "Bearer ")
             .header("Content-Type", "application/json")
             .json(&request)
             .send()

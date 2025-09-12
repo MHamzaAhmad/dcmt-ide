@@ -136,14 +136,8 @@ impl AgentTool for WebExtractTool {
             request = request.with_timeout(timeout as f32);
         }
         
-        // Get Tavily API key from environment
-        let api_key = std::env::var("TAVILY_API_KEY")
-            .map_err(|_| AgentError::Generic(anyhow::anyhow!(
-                "TAVILY_API_KEY environment variable not set"
-            )))?;
-            
         // Create Tavily service and perform extraction
-        let tavily_service = TavilyService::new(api_key)
+        let tavily_service = TavilyService::new()
             .map_err(|e| AgentError::ToolExecutionError {
                 tool: "web_extract".to_string(),
                 error: format!("Failed to create Tavily service: {}", e),

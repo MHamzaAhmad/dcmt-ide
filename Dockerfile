@@ -47,6 +47,30 @@ COPY backend/src ./src
 # Build the actual application
 RUN touch src/cmd/main.rs && cargo build --release
 
+# Tavily proxy build stage
+FROM golang:1.24-alpine AS tavily-builder
+
+# Install build dependencies
+RUN apk add --no-cache git ca-certificates
+
+WORKDIR /app
+
+# Copy go mod files for dependency caching
+COPY lib/tavily/go.mod lib/tavily/go.sum ./
+
+# Download dependencies
+RUN go mod download && go mod verify
+
+# Copy source code
+COPY lib/tavily/proxy.go ./
+
+# Build the proxy with optimizations
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build \
+    -ldflags='-w -s -extldflags "-static"' \
+    -a -installsuffix cgo \
+    -o tavily-proxy \
+    proxy.go
+
 # Production stage
 FROM texlive/texlive:latest
 
@@ -73,6 +97,7 @@ RUN groupadd -g 1001 appgroup && \
 # Create necessary directories
 RUN mkdir -p /app/frontend \
     /app/backend \
+    /app/tavily \
     /app/logs \
     /var/log/supervisor \
     /run/nginx \
@@ -91,6 +116,9 @@ COPY --from=frontend-builder --chown=appuser:appgroup /app/build /app/frontend
 
 # Copy built backend
 COPY --from=backend-builder --chown=appuser:appgroup /app/backend/target/release/dcmt-backend /app/backend/dcmt-backend
+
+# Copy built Tavily proxy
+COPY --from=tavily-builder --chown=appuser:appgroup /app/tavily-proxy /app/tavily/tavily-proxy
 
 # Copy configuration files
 COPY --chown=appuser:appgroup docker/nginx-internal.conf /etc/nginx/nginx.conf

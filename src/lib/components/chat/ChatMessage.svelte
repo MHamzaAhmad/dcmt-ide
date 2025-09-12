@@ -59,17 +59,6 @@
 	
 	<div class="flex-1">
 		
-		<!-- Tool Calls Display - Minimal -->
-		{#if agentMessage?.tool_calls && agentMessage.tool_calls.length > 0}
-			<div class="mb-1">
-				{#each agentMessage.tool_calls as toolCall}
-					<div class="text-xs opacity-50 italic">
-						using {formatToolName(toolCall.function.name)}
-					</div>
-				{/each}
-			</div>
-		{/if}
-		
 		<!-- Message Content -->
 		{#if message.content}
 			<div class="text-sm whitespace-pre-wrap leading-relaxed">

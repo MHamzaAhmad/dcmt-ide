@@ -100,6 +100,9 @@ COPY --chown=appuser:appgroup docker/docker-entrypoint.sh /app/docker-entrypoint
 # Copy LiteLLM configuration
 COPY --chown=appuser:appgroup litellm/config.yaml /app/litellm/config.yaml
 
+# Copy prompts directory
+COPY --chown=appuser:appgroup prompts/ /app/prompts/
+
 # Make scripts executable
 RUN chmod +x /app/docker-entrypoint.sh
 

@@ -263,14 +263,14 @@ impl AgentService {
     }
     
     
-    /// Loads the system prompt from config file or uses default
+    /// Loads the system prompt from consolidated prompts file or uses default
     async fn load_system_prompt() -> String {
-        // Try to load from config file first
-        let config_path = PathBuf::from("config/systemprompt.md");
+        // Try to load from consolidated prompts file first
+        let config_path = PathBuf::from("prompts/latex-agent-systemprompt.md");
         
         match fs::read_to_string(&config_path).await {
             Ok(content) => {
-                tracing::info!("Loaded system prompt from config/systemprompt.md");
+                tracing::info!("Loaded system prompt from prompts/latex-agent-systemprompt.md");
                 content
             }
             Err(_) => {

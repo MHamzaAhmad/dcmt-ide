@@ -253,12 +253,12 @@ impl AgentRepo {
         })
     }
     
-    /// Loads the system prompt from the config file
+    /// Loads the system prompt from the consolidated prompts file
     async fn load_system_prompt(workspace_path: &PathBuf) -> AgentResult<String> {
         let prompt_path = workspace_path.parent()
             .unwrap_or(workspace_path)
-            .join("config")
-            .join("systemprompt.md");
+            .join("prompts")
+            .join("latex-agent-systemprompt.md");
         
         match fs::read_to_string(&prompt_path).await {
             Ok(content) => Ok(content),

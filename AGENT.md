@@ -226,7 +226,7 @@ The existing WebSocket handler has been enhanced to support agent events. Client
 
 ## System Prompt
 
-The system uses a specialized LaTeX-focused prompt loaded from `config/systemprompt.md`. The prompt emphasizes:
+The system uses a specialized LaTeX-focused prompt loaded from `prompts/latex-agent-systemprompt.md`. The prompt emphasizes:
 
 - LaTeX best practices and conventions
 - Academic writing standards

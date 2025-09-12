@@ -16,9 +16,12 @@ export class WebApiAdapter implements PlatformAPI {
 	private agentSSE = new AgentSSEAdapter();
 
 	constructor() {
-		// Auto-connect WebSocket for file watching
+		// Auto-connect WebSocket and initialize file watcher for proper event flow
 		if (typeof window !== 'undefined') {
 			this.websocket.connect();
+			// File watcher is automatically initialized when created, 
+			// and will subscribe to WebSocket events
+			console.log('WebApiAdapter: Initialized with WebSocket and file watcher');
 		}
 	}
 

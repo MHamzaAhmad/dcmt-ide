@@ -342,7 +342,7 @@ impl AgentRepo {
         session_id: &str,
     ) -> AgentResult<ChatMessage> {
         let mut iteration_count = 0;
-        const MAX_ITERATIONS: usize = 10; // Prevent infinite loops
+        const MAX_ITERATIONS: usize = 25; // Prevent infinite loops
         
         loop {
             iteration_count += 1;

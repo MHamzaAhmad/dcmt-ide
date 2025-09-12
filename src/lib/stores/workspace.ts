@@ -534,6 +534,12 @@ function createWorkspaceStore() {
 
         // Subscribe to EventStore for agent file operations
         subscribeToAgentEvents(): void {
+            // Prevent duplicate subscriptions
+            if (eventUnsubscribe) {
+                console.log('WorkspaceStore: Already subscribed to events, skipping duplicate subscription');
+                return;
+            }
+            
             // Create event stream for file system events from agents
             const agentFileEvents = eventStore.createFileSystemEventStream();
             
@@ -561,19 +567,19 @@ function createWorkspaceStore() {
                         
                         console.log(`WorkspaceStore: Reacting to ${source} ${subtype} on ${latestEvent.payload.path}`);
                         
-                        // Force reload the file if it exists in our store and was actually modified
                         const filePath = latestEvent.payload.path;
                         
-                        if ((currentState.files.has(filePath) || filePath.endsWith('.pdf')) && 
+                        // Only reload files that are actually in our store (opened for editing)
+                        // Don't try to load files that aren't currently open - this prevents feedback loops
+                        if (currentState.files.has(filePath) && 
                             (subtype === 'file_modified' || subtype === 'file_created')) {
                             console.log(`WorkspaceStore: Reloading ${filePath} after ${source} ${subtype}`);
                             // Force reload the file to get updated content
                             store.loadFile(filePath, true).catch(error => {
-                                // PDF files might not be readable as text, that's ok
-                                if (!filePath.endsWith('.pdf')) {
-                                    console.warn(`Failed to reload ${filePath} after ${source} operation:`, error);
-                                }
+                                console.warn(`Failed to reload ${filePath} after ${source} operation:`, error);
                             });
+                        } else {
+                            console.log(`WorkspaceStore: File ${filePath} not in store or not a text modification - skipping reload`);
                         }
                     }
                 }

@@ -20,11 +20,13 @@ pub struct CompilationEvent {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
 pub enum CompilationEventType {
     Queued,
     Started,
     Success,
     Error,
+    #[serde(rename = "main_file_detected")]
     MainFileDetected,
 }
 

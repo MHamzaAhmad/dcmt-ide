@@ -27,16 +27,23 @@ export class WebFileWatcher {
 	}
 
 	private initializeWebSocketListeners() {
-		// Listen to browser events emitted by WebSocket adapter
-		const eventHandler = (e: CustomEvent) => {
-			const { type, event } = e.detail;
-			if (event && typeof type === 'string') {
-				this.handleFileEvent(type, event);
-			}
-		};
-
-		window.addEventListener('file-event', eventHandler as EventListener);
-		console.log('WebFileWatcher initialized - listening to WebSocket events');
+		console.log('WebFileWatcher: Initializing WebSocket listeners');
+		
+		// Subscribe to file events directly via WebSocket
+		this.websocket.onFileEvents((type, event) => {
+			console.log('WebFileWatcher: Received event from WebSocket:', type, event);
+			this.handleFileEvent(type, event);
+		});
+		
+		// Connect WebSocket if not already connected
+		if (!this.websocket.isConnected()) {
+			console.log('WebFileWatcher: WebSocket not connected, initiating connection...');
+			this.websocket.connect();
+		} else {
+			console.log('WebFileWatcher: WebSocket already connected');
+		}
+		
+		console.log('WebFileWatcher: Initialization complete - subscribed to WebSocket file events');
 	}
 
 	private handleFileEvent(type: string, event: FileEvent) {
@@ -179,6 +186,7 @@ export class WebFileWatcher {
 export class WebSocketAdapter implements FileWatcherOperations {
 	private ws: WebSocket | null = null;
 	private compilationEventCallbacks: ((event: CompilationEvent) => void)[] = [];
+	private fileEventCallbacks: ((type: string, event: FileEvent) => void)[] = [];
 
 	// WebSocket support for file watching (web mode only)
 	connect(): WebSocket | null {
@@ -196,6 +204,18 @@ export class WebSocketAdapter implements FileWatcherOperations {
 			
 			this.ws.onopen = () => {
 				console.log('WebSocket connected for file watching');
+				
+				// Auto-subscribe to file events if we have callbacks
+				if (this.fileEventCallbacks.length > 0) {
+					this.send({ type: 'subscribe_files' });
+					console.log('WebSocket: Auto-subscribed to file events on connection');
+				}
+				
+				// Auto-subscribe to compilation events if we have callbacks
+				if (this.compilationEventCallbacks.length > 0) {
+					this.send({ type: 'subscribe_compilation' });
+					console.log('WebSocket: Auto-subscribed to compilation events on connection');
+				}
 			};
 			
 			this.ws.onmessage = (event) => {
@@ -207,8 +227,11 @@ export class WebSocketAdapter implements FileWatcherOperations {
 					if (data.type === 'compilation_event') {
 						this.handleCompilationEvent(data.event);
 					}
-					// Note: File events should be handled by agentWebSocket which emits to EventStore
-					// This WebSocket is primarily for legacy compatibility
+					
+					// Handle file events
+					if (data.type === 'file_event' && data.event) {
+						this.handleFileEvent(data.event.event_type, data.event);
+					}
 				} catch (error) {
 					console.error('Failed to parse WebSocket message:', error);
 				}
@@ -265,6 +288,20 @@ export class WebSocketAdapter implements FileWatcherOperations {
 		}
 	}
 
+	// File event handling
+	private handleFileEvent(type: string, event: FileEvent): void {
+		console.log('WebSocket: Received file event:', type, event);
+		console.log('WebSocket: File event callbacks count:', this.fileEventCallbacks.length);
+		this.fileEventCallbacks.forEach((callback, index) => {
+			try {
+				console.log(`WebSocket: Calling file event callback ${index + 1}/${this.fileEventCallbacks.length}`);
+				callback(type, event);
+			} catch (error) {
+				console.error('Error in file event callback:', error);
+			}
+		});
+	}
+
 	// Compilation event handling
 	private handleCompilationEvent(event: CompilationEvent): void {
 		console.log('Received compilation event:', event);
@@ -275,6 +312,35 @@ export class WebSocketAdapter implements FileWatcherOperations {
 				console.error('Error in compilation event callback:', error);
 			}
 		});
+	}
+
+	onFileEvents(callback: (type: string, event: FileEvent) => void): () => void {
+		this.fileEventCallbacks.push(callback);
+		
+		console.log('WebSocket: Added file event callback, total callbacks:', this.fileEventCallbacks.length);
+		
+		// Subscribe to file events if connected, or it will auto-subscribe on connection
+		if (this.isConnected()) {
+			this.send({ type: 'subscribe_files' });
+			console.log('WebSocket: Subscribed to file events (already connected)');
+		} else {
+			console.log('WebSocket: Will subscribe to file events when connected');
+		}
+		
+		return () => {
+			const index = this.fileEventCallbacks.indexOf(callback);
+			if (index > -1) {
+				this.fileEventCallbacks.splice(index, 1);
+			}
+			
+			console.log('WebSocket: Removed file event callback, remaining callbacks:', this.fileEventCallbacks.length);
+			
+			// Unsubscribe if no more callbacks
+			if (this.fileEventCallbacks.length === 0 && this.isConnected()) {
+				this.send({ type: 'unsubscribe_files' });
+				console.log('WebSocket: Unsubscribed from file events (no more callbacks)');
+			}
+		};
 	}
 
 	onCompilationEvent(callback: (event: CompilationEvent) => void): () => void {

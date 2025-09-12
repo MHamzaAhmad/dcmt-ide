@@ -3,6 +3,7 @@ import { browser } from '$app/environment';
 import { getGitAdapter, getDesktopGitAdapter } from '$lib/api/adapters';
 import { isTauri } from '$lib/utils/platform';
 import { eventStore } from './index';
+import { shouldSkipGitRefresh } from '$lib/utils/filePatterns';
 import type {
 	GitStatus,
 	GitDiff,
@@ -68,7 +69,7 @@ function createGitStore() {
 		enableAutoRefresh: true,
 	};
 
-	const { subscribe, set, update } = writable<GitStoreState>(initialState);
+	const { subscribe, update } = writable<GitStoreState>(initialState);
 
 	// Git adapter instance
 	let gitAdapter: GitOperations | null = null;
@@ -436,6 +437,16 @@ function createGitStore() {
 		eventStore.fileSystemEvents.subscribe(events => {
 			const latestEvent = events[events.length - 1];
 			if (latestEvent && get({ subscribe }).enableAutoRefresh) {
+				const filePath = latestEvent.payload.path;
+				
+				// Only refresh git for meaningful file changes, not generated/temporary files
+				// This prevents infinite loops with files like .synctex.gz, .aux, .xdv, etc.
+				if (shouldSkipGitRefresh(filePath)) {
+					console.log(`GitStore: Skipping auto-refresh for generated/temporary file: ${filePath}`);
+					return;
+				}
+				
+				console.log(`GitStore: Auto-refreshing due to file change: ${filePath}`);
 				// Debounce refresh calls
 				if (autoRefreshTimer) {
 					clearTimeout(autoRefreshTimer);

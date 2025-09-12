@@ -3,6 +3,7 @@ import { writable, derived, get } from 'svelte/store';
 import { browser } from '$app/environment';
 import type { QueryClient } from '@tanstack/svelte-query';
 import { fileSystemKeys } from '$lib/api/hooks/useFileSystem';
+import { shouldSkipQueryInvalidation, getFilterReason } from '$lib/utils/filePatterns';
 
 // ============================================================================
 // Event Type Definitions
@@ -283,6 +284,13 @@ function createEventStore() {
     if (event.type === 'filesystem') {
       const { path, oldPath, isDirectory } = event.payload;
       
+      // Skip query invalidation for generated/temporary files to prevent infinite loops
+      if (shouldSkipQueryInvalidation(path)) {
+        const reason = getFilterReason(path);
+        console.log(`[EventStore] Skipping query invalidation for ${reason}: ${path}`);
+        return;
+      }
+      
       // Clear any existing debounce timer for this path
       const existingTimer = debounceTimers.get(path);
       if (existingTimer) {
@@ -297,7 +305,7 @@ function createEventStore() {
 
       debounceTimers.set(path, timer);
       
-      // Update invalidation queue for debugging
+      // Update invalidation queue for debugging (only for files we actually process)
       update(state => ({
         ...state,
         queryInvalidationQueue: [

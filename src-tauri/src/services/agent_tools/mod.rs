@@ -9,6 +9,8 @@ pub mod list_files;
 pub mod create_directory;
 pub mod delete_file;
 pub mod compile_latex;
+pub mod web_search;
+pub mod web_extract;
 
 pub use read_file::ReadFileTool;
 pub use write_file::WriteFileTool;
@@ -17,6 +19,8 @@ pub use list_files::ListFilesTool;
 pub use create_directory::CreateDirectoryTool;
 pub use delete_file::DeleteFileTool;
 pub use compile_latex::CompileLatexTool;
+pub use web_search::WebSearchTool;
+pub use web_extract::WebExtractTool;
 
 /// Trait that all agent tools must implement
 pub trait AgentTool: Send + Sync {
@@ -38,6 +42,8 @@ pub enum Tool {
     CreateDirectory(CreateDirectoryTool),
     DeleteFile(DeleteFileTool),
     CompileLatex(CompileLatexTool),
+    WebSearch(WebSearchTool),
+    WebExtract(WebExtractTool),
 }
 
 impl Tool {
@@ -50,6 +56,8 @@ impl Tool {
             Tool::CreateDirectory(tool) => tool.definition(),
             Tool::DeleteFile(tool) => tool.definition(),
             Tool::CompileLatex(tool) => tool.definition(),
+            Tool::WebSearch(tool) => tool.definition(),
+            Tool::WebExtract(tool) => tool.definition(),
         }
     }
     
@@ -62,6 +70,8 @@ impl Tool {
             Tool::CreateDirectory(_) => "Create Directory",
             Tool::DeleteFile(_) => "Delete File",
             Tool::CompileLatex(_) => "Compile LaTeX",
+            Tool::WebSearch(_) => "Web Search",
+            Tool::WebExtract(_) => "Extract Web Content",
         }
     }
     
@@ -74,6 +84,8 @@ impl Tool {
             Tool::CreateDirectory(_) => "Creating directory",
             Tool::DeleteFile(_) => "Deleting file",
             Tool::CompileLatex(_) => "Compiling LaTeX",
+            Tool::WebSearch(_) => "Searching the web",
+            Tool::WebExtract(_) => "Extracting web content",
         }
     }
     
@@ -86,6 +98,8 @@ impl Tool {
             Tool::CreateDirectory(tool) => tool.execute(workspace_path, args, app_handle).await,
             Tool::DeleteFile(tool) => tool.execute(workspace_path, args, app_handle).await,
             Tool::CompileLatex(tool) => tool.execute(workspace_path, args, app_handle).await,
+            Tool::WebSearch(tool) => tool.execute(workspace_path, args, app_handle).await,
+            Tool::WebExtract(tool) => tool.execute(workspace_path, args, app_handle).await,
         }
     }
     
@@ -98,6 +112,8 @@ impl Tool {
             Tool::CreateDirectory(_) => "create_directory",
             Tool::DeleteFile(_) => "delete_file",
             Tool::CompileLatex(_) => "compile",
+            Tool::WebSearch(_) => "web_search",
+            Tool::WebExtract(_) => "web_extract",
         }
     }
 }
@@ -119,6 +135,8 @@ impl ToolRegistry {
             Tool::CreateDirectory(CreateDirectoryTool),
             Tool::DeleteFile(DeleteFileTool),
             Tool::CompileLatex(CompileLatexTool),
+            Tool::WebSearch(WebSearchTool),
+            Tool::WebExtract(WebExtractTool),
         ];
         
         Self { tools }

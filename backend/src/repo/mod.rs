@@ -2,8 +2,10 @@ pub mod agent;
 pub mod file_repository;
 pub mod latex_repository;
 pub mod git_repository;
+pub mod tavily;
 
 pub use agent::AgentRepo;
 pub use file_repository::FileRepository;
 pub use latex_repository::LaTeXRepository;
 pub use git_repository::GitRepository;
+pub use tavily::TavilyRepository;

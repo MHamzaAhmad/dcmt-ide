@@ -59,8 +59,6 @@ export interface PDFState {
     }>;
     maxOperationHistory: number;
     
-    // Agent run awareness
-    isAgentRunning: boolean;
     
     // Error handling
     error: string | null;
@@ -92,7 +90,6 @@ function createPdfStore() {
         lastOperationId: null,
         operationHistory: [],
         maxOperationHistory: 50,
-        isAgentRunning: false,
         error: null,
         retryCount: 0,
         maxRetries: 3,
@@ -741,36 +738,6 @@ function createPdfStore() {
         subscribeToCompilationEvents(): void {
             // Create event streams
             const compilationEvents = eventStore.compilationEvents;
-            const agentEvents = eventStore.agentEvents;
-            
-            // Subscribe to agent events to track agent run state
-            const agentUnsubscribe = agentEvents.subscribe(events => {
-                const latestEvent = events[events.length - 1];
-                if (latestEvent) {
-                    if (latestEvent.subtype === 'job_queued') {
-                        update(state => ({
-                            ...state,
-                            isAgentRunning: true
-                        }));
-                        console.log('PDFStore: Agent run started - compilation events will be ignored');
-                    } else if (latestEvent.subtype === 'job_complete') {
-                        const agentOperationId = store.createOperationId(
-                            'agent', 
-                            'job_complete'
-                        );
-                        
-                        update(state => ({
-                            ...state,
-                            isAgentRunning: false
-                        }));
-                        
-                        // Add the agent completion operation to history (no specific PDF path)
-                        store.addOperation('agent', 'job_complete', agentOperationId, 'agent_completion');
-                        
-                        console.log(`PDFStore: Agent run completed - compilation events will be processed (operation: ${agentOperationId})`);
-                    }
-                }
-            });
             
             // React to compilation completion
             const compilationUnsubscribe = compilationEvents.subscribe(events => {
@@ -797,12 +764,6 @@ function createPdfStore() {
                     if (pdfPath) {
                         const currentState = get({ subscribe });
                         
-                        // Don't reload PDF during agent runs
-                        if (currentState.isAgentRunning) {
-                            console.log(`PDFStore: Ignoring compilation during agent run for PDF: ${pdfPath}`);
-                            return;
-                        }
-                        
                         if (currentState.autoRefresh) {
                             // Create operation-specific ID for compilation events
                             const compilationOperationId = store.createOperationId(
@@ -818,24 +779,11 @@ function createPdfStore() {
             });
             
             eventUnsubscribe = () => {
-                agentUnsubscribe();
                 compilationUnsubscribe();
             };
-            console.log('PDFStore: Subscribed to compilation and agent events');
+            console.log('PDFStore: Subscribed to compilation events');
         },
 
-        // Agent integration - handle external PDF updates
-        handleAgentFileOperation(tool: string, path: string): void {
-            if (path.endsWith('.pdf')) {
-                console.log(`PDFStore: Agent ${tool} on PDF file ${path}`);
-                
-                const currentState = get({ subscribe });
-                if (currentState.autoRefresh && (tool === 'write_file' || tool === 'create_file')) {
-                    const agentFileOperationId = store.createOperationId('agent', tool);
-                    store.loadPdf(path, agentFileOperationId, 'agent', tool);
-                }
-            }
-        },
 
         // Cleanup
         async destroy(): Promise<void> {

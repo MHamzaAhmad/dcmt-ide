@@ -367,12 +367,6 @@ impl GitRepository {
         Ok(())
     }
 
-    pub fn get_remote_url(&self) -> Result<String> {
-        let repo = self.repo.lock().unwrap();
-        let remote = repo.find_remote("origin")?;
-        Ok(remote.url().unwrap_or("").to_string())
-    }
-
     fn get_ahead_behind_internal(&self, repo: &Repository, branch_name: &str) -> Result<(usize, usize)> {
         let local_branch = repo.find_branch(branch_name, BranchType::Local)?;
         

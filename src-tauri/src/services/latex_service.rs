@@ -2,7 +2,7 @@ use crate::models::{LaTeXCompileRequest, LaTeXCompileResponse, LaTeXProvider, Co
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::collections::HashMap;
-use tokio::sync::{Mutex, RwLock};
+use tokio::sync::{Mutex, RwLock, mpsc};
 use tokio::process::Command;
 use tokio::time::{Duration, Instant};
 use tracing::{debug, error, info, warn};
@@ -16,10 +16,14 @@ pub struct LaTeXService {
     main_tex_file: Arc<RwLock<Option<PathBuf>>>,
     debounce_timers: Arc<RwLock<HashMap<String, Instant>>>,
     is_auto_compile_enabled: Arc<RwLock<bool>>,
+    file_event_sender: mpsc::Sender<String>,
 }
 
 impl LaTeXService {
     pub fn new(workspace_path: PathBuf, app_handle: AppHandle) -> Self {
+        // Create channel for file events
+        let (tx, mut rx) = mpsc::channel::<String>(100);
+        
         let service = Self {
             workspace_path,
             compilation_lock: Arc::new(Mutex::new(())),
@@ -27,7 +31,16 @@ impl LaTeXService {
             main_tex_file: Arc::new(RwLock::new(None)),
             debounce_timers: Arc::new(RwLock::new(HashMap::new())),
             is_auto_compile_enabled: Arc::new(RwLock::new(true)),
+            file_event_sender: tx,
         };
+        
+        // Spawn task to process file events (in Tokio runtime context)
+        let service_clone = service.clone();
+        tokio::spawn(async move {
+            while let Some(file_path) = rx.recv().await {
+                service_clone.handle_file_change(&file_path).await;
+            }
+        });
         
         // Set up file change event listener
         service.setup_file_change_listener();
@@ -37,7 +50,7 @@ impl LaTeXService {
     
     /// Set up listener for file change events from the file watcher
     fn setup_file_change_listener(&self) {
-        let service_clone = self.clone();
+        let sender = self.file_event_sender.clone();
         let app_handle = self.app_handle.clone();
         
         // Listen to file modification events
@@ -45,10 +58,11 @@ impl LaTeXService {
             if let Ok(file_event) = serde_json::from_str::<crate::models::FileEvent>(
                 &event.payload().to_string()
             ) {
-                let service_clone = service_clone.clone();
-                tokio::spawn(async move {
-                    service_clone.handle_file_change(&file_event.path).await;
-                });
+                // Send file path through channel instead of spawning task
+                // This doesn't require Tokio runtime context
+                if let Err(e) = sender.try_send(file_event.path) {
+                    warn!("Failed to send file event through channel: {}", e);
+                }
             }
         });
         
@@ -58,10 +72,6 @@ impl LaTeXService {
     pub async fn set_auto_compile(&self, enabled: bool) {
         *self.is_auto_compile_enabled.write().await = enabled;
         info!("Auto-compilation {}", if enabled { "enabled" } else { "disabled" });
-    }
-
-    pub async fn get_auto_compile(&self) -> bool {
-        *self.is_auto_compile_enabled.read().await
     }
 
     /// Smart file filtering - determines if a file change should trigger compilation
@@ -217,11 +227,6 @@ impl LaTeXService {
                 Err(e)
             }
         }
-    }
-
-    /// Get the current main file
-    pub async fn get_main_file(&self) -> Option<PathBuf> {
-        self.main_tex_file.read().await.clone()
     }
 
     /// Manually set the main file
@@ -422,98 +427,6 @@ impl LaTeXService {
                 last_errors
             },
         ))
-    }
-
-    /// Handle startup compilation
-    pub async fn handle_startup_compilation(&self) -> Result<(), String> {
-        info!("Handling startup compilation");
-        
-        // Detect main file first
-        if let Err(e) = self.detect_and_set_main_file().await {
-            warn!("Could not detect main LaTeX file on startup: {}", e);
-            return Ok(()); // Don't fail startup if no main file
-        }
-
-        // Trigger compilation if main file exists
-        if self.main_tex_file.read().await.is_some() {
-            let request = LaTeXCompileRequest {
-                provider: LaTeXProvider::Auto,
-            };
-            
-            match self.compile_workspace_internal(request, Some("startup".to_string())).await {
-                Ok(response) => {
-                    if response.success {
-                        info!("Startup compilation successful");
-                    } else {
-                        warn!("Startup compilation failed: {}", response.message);
-                    }
-                }
-                Err(e) => {
-                    error!("Startup compilation error: {}", e);
-                }
-            }
-        }
-        
-        Ok(())
-    }
-
-    /// Handle agent completion - trigger immediate compilation
-    pub async fn handle_agent_completion(&self) -> Result<(), String> {
-        info!("Handling agent completion compilation");
-        
-        if let Some(main_file) = self.main_tex_file.read().await.clone() {
-            let main_file_str = main_file.to_string_lossy().to_string();
-            
-            // Clear any pending debounce timers for immediate compilation
-            {
-                let mut timers = self.debounce_timers.write().await;
-                timers.clear();
-            }
-            
-            // Emit queued event
-            let queued_event = CompilationEvent::queued(
-                main_file_str.clone(),
-                "agent_completion".to_string()
-            );
-            self.emit_compilation_event(queued_event).await;
-
-            // Execute compilation immediately (no debouncing)
-            let request = LaTeXCompileRequest {
-                provider: LaTeXProvider::Auto,
-            };
-            
-            match self.compile_workspace_internal(request, Some("agent_completion".to_string())).await {
-                Ok(response) => {
-                    if response.success {
-                        info!("Agent completion compilation successful");
-                    } else {
-                        warn!("Agent completion compilation failed: {}", response.message);
-                    }
-                }
-                Err(e) => {
-                    error!("Agent completion compilation error: {}", e);
-                }
-            }
-        } else {
-            debug!("No main LaTeX file available for agent completion compilation");
-        }
-        
-        Ok(())
-    }
-
-    /// Force immediate compilation (manual trigger)
-    pub async fn force_compile(&self) -> Result<LaTeXCompileResponse, String> {
-        // Clear any pending debounce timers
-        {
-            let mut timers = self.debounce_timers.write().await;
-            timers.clear();
-        }
-        
-        let request = LaTeXCompileRequest {
-            provider: LaTeXProvider::Auto,
-        };
-        
-        self.compile_workspace_internal(request, Some("manual".to_string())).await
     }
 
     pub async fn find_main_tex_file(&self) -> Result<PathBuf, String> {

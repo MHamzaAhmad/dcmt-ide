@@ -76,6 +76,24 @@ export class DesktopFileSystemAdapter implements FileSystemOperations {
 
 	async readFileRaw(path: string): Promise<string> {
 		try {
+			// Try native Tauri asset protocol first for PDFs
+			if (path.endsWith('.pdf')) {
+				try {
+					const { convertFileSrc } = await import('@tauri-apps/api/core');
+					const absolutePath = await invoke<string>('get_absolute_path', { 
+						relativePath: path 
+					});
+					const assetUrl = convertFileSrc(absolutePath);
+					console.log(`DesktopFileSystem: Using native asset URL for PDF: ${assetUrl}`);
+					// Add cache busting for PDFs to ensure fresh loads
+					return `${assetUrl}?t=${Date.now()}`;
+				} catch (error) {
+					console.warn('DesktopFileSystem: convertFileSrc failed, falling back to data URL:', error);
+					// Fall through to existing implementation
+				}
+			}
+			
+			// Existing implementation as fallback
 			interface FileContentRaw {
 				path: string;
 				content: string; // base64 encoded

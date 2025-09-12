@@ -60,6 +60,7 @@ pub fn run() {
             delete_file,
             rename_file,
             file_exists,
+            get_absolute_path,
             get_workspace_info,
             batch_file_operations,
             select_project_folder,

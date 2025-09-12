@@ -159,6 +159,17 @@ pub async fn file_exists(
 }
 
 #[tauri::command]
+pub async fn get_absolute_path(
+    relative_path: String,
+    service: State<'_, FileServiceState>,
+) -> Result<String, String> {
+    debug!("Command: get_absolute_path({})", relative_path);
+    
+    let absolute = service.get_workspace_path().join(&relative_path);
+    Ok(absolute.to_string_lossy().to_string())
+}
+
+#[tauri::command]
 pub async fn get_workspace_info(
     service: State<'_, FileServiceState>,
 ) -> Result<HashMap<String, String>, String> {

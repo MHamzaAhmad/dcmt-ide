@@ -76,21 +76,11 @@ export class DesktopFileSystemAdapter implements FileSystemOperations {
 
 	async readFileRaw(path: string): Promise<string> {
 		try {
-			// Try native Tauri asset protocol first for PDFs
+			// For PDFs in Tauri, directly use base64 data URL approach
+			// The asset:// protocol has CORS issues with PDF.js
 			if (path.endsWith('.pdf')) {
-				try {
-					const { convertFileSrc } = await import('@tauri-apps/api/core');
-					const absolutePath = await invoke<string>('get_absolute_path', { 
-						relativePath: path 
-					});
-					const assetUrl = convertFileSrc(absolutePath);
-					console.log(`DesktopFileSystem: Using native asset URL for PDF: ${assetUrl}`);
-					// Add cache busting for PDFs to ensure fresh loads
-					return `${assetUrl}?t=${Date.now()}`;
-				} catch (error) {
-					console.warn('DesktopFileSystem: convertFileSrc failed, falling back to data URL:', error);
-					// Fall through to existing implementation
-				}
+				console.log(`DesktopFileSystem: Loading PDF via base64 for reliable access: ${path}`);
+				// Fall through to base64 implementation below
 			}
 			
 			// Existing implementation as fallback
@@ -101,9 +91,9 @@ export class DesktopFileSystemAdapter implements FileSystemOperations {
 				modified: number;
 			}
 
-			console.log(`DesktopFileSystem: Reading raw file: ${path}`);
+			console.log(`DesktopFileSystem: Reading file via Tauri command: ${path}`);
 			const result = await invoke<FileContentRaw>('read_file_raw', { path });
-			console.log(`DesktopFileSystem: Got file data - size: ${result.size}, content length: ${result.content.length}`);
+			console.log(`DesktopFileSystem: Received base64 data - size: ${result.size} bytes, base64 length: ${result.content.length} chars`);
 			
 			// Validate result
 			if (!result.content || result.content.length === 0) {
@@ -130,9 +120,11 @@ export class DesktopFileSystemAdapter implements FileSystemOperations {
 			console.log(`DesktopFileSystem: Creating data URL - size: ${bytes.length}, mime: ${mimeType}`);
 			
 			if (path.endsWith('.pdf')) {
-				// Use data URL for PDFs - more reliable in Tauri WebKit
+				// Use data URL for PDFs - this is the most reliable method in Tauri
+				// PDF.js can directly load from data URLs without CORS issues
 				const dataUrl = `data:${mimeType};base64,${result.content}`;
-				console.log(`DesktopFileSystem: Created data URL for PDF (${dataUrl.length} chars)`);
+				console.log(`DesktopFileSystem: Created base64 data URL for PDF (${dataUrl.length} chars)`);
+				console.log(`DesktopFileSystem: Data URL preview: ${dataUrl.substring(0, 100)}...`);
 				return dataUrl;
 			} else {
 				// Use blob URL for other files

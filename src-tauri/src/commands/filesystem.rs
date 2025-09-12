@@ -58,6 +58,8 @@ pub async fn read_file_raw(
     // Encode as base64 for JavaScript compatibility
     let base64_content = base64::Engine::encode(&base64::engine::general_purpose::STANDARD, &content);
     
+    debug!("File raw read successful: {} bytes -> {} base64 chars", content.len(), base64_content.len());
+    
     Ok(FileContentRaw {
         path,
         content: base64_content,

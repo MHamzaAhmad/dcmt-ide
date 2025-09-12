@@ -396,11 +396,14 @@ function createPdfStore() {
                 // For desktop URLs, handle different types appropriately
                 if (isTauri()) {
                     if (cacheBustedUrl.startsWith('data:')) {
-                        console.log('PDFStore: Desktop data URL detected, proceeding directly');
-                        // Data URLs are immediately available, no delay needed
+                        console.log('PDFStore: Desktop data URL detected - this is the expected format for PDFs');
+                        console.log('PDFStore: Data URL is immediately available for PDF.js');
+                        // Data URLs work perfectly with PDF.js, no delay needed
                     } else if (cacheBustedUrl.startsWith('blob:')) {
                         console.log('PDFStore: Desktop blob URL detected, adding readiness delay...');
                         await new Promise(resolve => setTimeout(resolve, 100));
+                    } else if (cacheBustedUrl.startsWith('asset:')) {
+                        console.warn('PDFStore: Asset URL detected - this may have CORS issues with PDF.js');
                     }
                 }
                 

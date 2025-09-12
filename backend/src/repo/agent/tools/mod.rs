@@ -11,6 +11,8 @@ pub mod list_files;
 pub mod create_directory;
 pub mod delete_file;
 pub mod compile_latex;
+pub mod web_search;
+pub mod web_extract;
 
 pub use read_file::ReadFileTool;
 pub use write_file::WriteFileTool;
@@ -19,6 +21,8 @@ pub use list_files::ListFilesTool;
 pub use create_directory::CreateDirectoryTool;
 pub use delete_file::DeleteFileTool;
 pub use compile_latex::CompileLatexTool;
+pub use web_search::WebSearchTool;
+pub use web_extract::WebExtractTool;
 
 /// Base trait that all agent tools must implement
 #[async_trait]
@@ -55,6 +59,8 @@ impl ToolRegistry {
             Box::new(CreateDirectoryTool),
             Box::new(DeleteFileTool),
             Box::new(CompileLatexTool),
+            Box::new(WebSearchTool),
+            Box::new(WebExtractTool),
         ];
         
         Self { tools }

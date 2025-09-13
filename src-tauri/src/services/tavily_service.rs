@@ -41,7 +41,6 @@ pub struct TavilyExtractRequest {
 /// Tavily search response structure
 #[derive(Debug, Clone, Deserialize)]
 pub struct TavilySearchResponse {
-    pub query: String,
     #[serde(default)]
     pub answer: Option<String>,
     #[serde(default)]
@@ -50,8 +49,6 @@ pub struct TavilySearchResponse {
     pub images: Vec<String>,
     #[serde(default)]
     pub response_time: Option<f64>,
-    #[serde(default)]
-    pub request_id: Option<String>,
 }
 
 /// Individual search result
@@ -75,8 +72,6 @@ pub struct TavilyExtractResponse {
     pub failed_results: Vec<TavilyFailedResult>,
     #[serde(default)]
     pub response_time: Option<f64>,
-    #[serde(default)]
-    pub request_id: Option<String>,
 }
 
 /// Individual extraction result
@@ -123,9 +118,6 @@ pub enum TavilyServiceError {
     
     #[error("Invalid response format: {0}")]
     InvalidResponse(String),
-    
-    #[error("Configuration error: {0}")]
-    Config(String),
 }
 
 /// Main Tavily service for desktop application
@@ -273,17 +265,6 @@ impl TavilySearchRequest {
 }
 
 impl TavilyExtractRequest {
-    pub fn new(url: impl Into<String>) -> Self {
-        Self {
-            urls: vec![url.into()],
-            include_images: Some(false),
-            include_favicon: Some(false),
-            extract_depth: Some("basic".to_string()),
-            format: Some("markdown".to_string()),
-            timeout: Some(15.0),
-        }
-    }
-    
     pub fn new_batch(urls: Vec<String>) -> Self {
         Self {
             urls,
@@ -293,11 +274,6 @@ impl TavilyExtractRequest {
             format: Some("markdown".to_string()),
             timeout: Some(15.0),
         }
-    }
-    
-    pub fn add_url(mut self, url: impl Into<String>) -> Self {
-        self.urls.push(url.into());
-        self
     }
     
     pub fn with_images(mut self, include: bool) -> Self {
@@ -327,22 +303,6 @@ impl TavilyExtractRequest {
 }
 
 // Utility methods for responses
-impl TavilySearchResponse {
-    pub fn result_count(&self) -> usize {
-        self.results.len()
-    }
-    
-    pub fn summary(&self) -> String {
-        if let Some(answer) = &self.answer {
-            answer.clone()
-        } else if !self.results.is_empty() {
-            format!("Found {} results for query: {}", self.results.len(), self.query)
-        } else {
-            format!("No results found for query: {}", self.query)
-        }
-    }
-}
-
 impl TavilyExtractResponse {
     pub fn success_count(&self) -> usize {
         self.results.len()

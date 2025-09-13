@@ -1,3 +1,4 @@
+import { apiClient } from '../../client';
 import type {
 	GitStatus,
 	GitDiff,
@@ -7,141 +8,83 @@ import type {
 } from '../../types';
 
 export class WebGitAdapter implements GitOperations {
-	private baseUrl: string;
-
-	constructor(baseUrl: string = 'http://localhost:3001') {
-		this.baseUrl = baseUrl;
-	}
 
 	async getStatus(): Promise<GitStatus> {
-		const response = await fetch(`${this.baseUrl}/api/git/status`, {
-			method: 'GET',
-			headers: {
-				'Content-Type': 'application/json',
-			},
-		});
-
-		if (!response.ok) {
-			const error = await response.json();
-			throw new Error(error.error || 'Failed to get git status');
+		try {
+			const response = await apiClient.get<{ status: GitStatus }>('/api/git/status');
+			return response.status;
+		} catch (error) {
+			console.error('Failed to get git status:', error);
+			throw error;
 		}
-
-		const data = await response.json();
-		return data.status;
 	}
 
 	async getDiff(staged: boolean): Promise<GitDiff> {
-		const params = new URLSearchParams({ staged: staged.toString() });
-		const response = await fetch(`${this.baseUrl}/api/git/diff?${params}`, {
-			method: 'GET',
-			headers: {
-				'Content-Type': 'application/json',
-			},
-		});
-
-		if (!response.ok) {
-			const error = await response.json();
-			throw new Error(error.error || 'Failed to get git diff');
+		try {
+			const params = new URLSearchParams({ staged: staged.toString() });
+			const response = await apiClient.get<{ diff: GitDiff }>(`/api/git/diff?${params}`);
+			return response.diff;
+		} catch (error) {
+			console.error('Failed to get git diff:', error);
+			throw error;
 		}
-
-		const data = await response.json();
-		return data.diff;
 	}
 
 	async generateSummary(staged: boolean): Promise<CommitSummary> {
-		const params = new URLSearchParams({ staged: staged.toString() });
-		const response = await fetch(`${this.baseUrl}/api/git/summary?${params}`, {
-			method: 'POST',
-			headers: {
-				'Content-Type': 'application/json',
-			},
-		});
-
-		if (!response.ok) {
-			const error = await response.json();
-			throw new Error(error.error || 'Failed to generate commit summary');
+		try {
+			const params = new URLSearchParams({ staged: staged.toString() });
+			const response = await apiClient.post<{ summary: CommitSummary }>(`/api/git/summary?${params}`, {});
+			return response.summary;
+		} catch (error) {
+			console.error('Failed to generate commit summary:', error);
+			throw error;
 		}
-
-		const data = await response.json();
-		return data.summary;
 	}
 
 	async stageFiles(paths: string[]): Promise<void> {
-		const response = await fetch(`${this.baseUrl}/api/git/stage`, {
-			method: 'POST',
-			headers: {
-				'Content-Type': 'application/json',
-			},
-			body: JSON.stringify({ paths }),
-		});
-
-		if (!response.ok) {
-			const error = await response.json();
-			throw new Error(error.error || 'Failed to stage files');
+		try {
+			await apiClient.post('/api/git/stage', { paths });
+		} catch (error) {
+			console.error('Failed to stage files:', error);
+			throw error;
 		}
 	}
 
 	async stageAll(): Promise<void> {
-		const response = await fetch(`${this.baseUrl}/api/git/stage-all`, {
-			method: 'POST',
-			headers: {
-				'Content-Type': 'application/json',
-			},
-		});
-
-		if (!response.ok) {
-			const error = await response.json();
-			throw new Error(error.error || 'Failed to stage all files');
+		try {
+			await apiClient.post('/api/git/stage-all', {});
+		} catch (error) {
+			console.error('Failed to stage all files:', error);
+			throw error;
 		}
 	}
 
 	async commit(message: string): Promise<CommitResult> {
-		const response = await fetch(`${this.baseUrl}/api/git/commit`, {
-			method: 'POST',
-			headers: {
-				'Content-Type': 'application/json',
-			},
-			body: JSON.stringify({ message }),
-		});
-
-		if (!response.ok) {
-			const error = await response.json();
-			throw new Error(error.error || 'Failed to commit changes');
+		try {
+			const response = await apiClient.post<{ commit: CommitResult }>('/api/git/commit', { message });
+			return response.commit;
+		} catch (error) {
+			console.error('Failed to commit changes:', error);
+			throw error;
 		}
-
-		const data = await response.json();
-		return data.commit;
 	}
 
 	async push(): Promise<void> {
-		const response = await fetch(`${this.baseUrl}/api/git/push`, {
-			method: 'POST',
-			headers: {
-				'Content-Type': 'application/json',
-			},
-		});
-
-		if (!response.ok) {
-			const error = await response.json();
-			throw new Error(error.error || 'Failed to push changes');
+		try {
+			await apiClient.post('/api/git/push', {});
+		} catch (error) {
+			console.error('Failed to push changes:', error);
+			throw error;
 		}
 	}
 
 	async commitAndPush(message: string): Promise<CommitResult> {
-		const response = await fetch(`${this.baseUrl}/api/git/commit-and-push`, {
-			method: 'POST',
-			headers: {
-				'Content-Type': 'application/json',
-			},
-			body: JSON.stringify({ message }),
-		});
-
-		if (!response.ok) {
-			const error = await response.json();
-			throw new Error(error.error || 'Failed to commit and push changes');
+		try {
+			const response = await apiClient.post<{ commit: CommitResult }>('/api/git/commit-and-push', { message });
+			return response.commit;
+		} catch (error) {
+			console.error('Failed to commit and push changes:', error);
+			throw error;
 		}
-
-		const data = await response.json();
-		return data.commit;
 	}
 }

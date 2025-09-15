@@ -17,5 +17,5 @@ pub fn agent_router() -> Router<Arc<AgentService>> {
         // Tool information endpoints
         .route("/tools", get(list_tools_handler))
         // Session management endpoints
-        .route("/session/:session_id", get(session_info_handler))
+        .route("/session/{session_id}", get(session_info_handler))
 }

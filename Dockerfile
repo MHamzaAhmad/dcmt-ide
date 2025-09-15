@@ -66,14 +66,14 @@ COPY lib/tavily/go.mod lib/tavily/go.sum ./
 RUN go mod download && go mod verify
 
 # Copy source code
-COPY lib/tavily/proxy.go ./
+COPY lib/tavily/*.go ./
 
 # Build the proxy with optimizations
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build \
     -ldflags='-w -s -extldflags "-static"' \
     -a -installsuffix cgo \
     -o tavily-proxy \
-    proxy.go
+    .
 
 # Production stage
 FROM texlive/texlive:latest

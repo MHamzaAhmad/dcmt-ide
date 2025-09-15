@@ -89,10 +89,10 @@ RUN apt-get update && apt-get install -y \
     python3-venv \
     && rm -rf /var/lib/apt/lists/*
 
-# Install LiteLLM
+# Install LiteLLM and Clerk Python SDK
 RUN python3 -m venv /app/litellm-venv && \
     /app/litellm-venv/bin/pip install --upgrade pip && \
-    /app/litellm-venv/bin/pip install 'litellm[proxy]'
+    /app/litellm-venv/bin/pip install 'litellm[proxy]' clerk-backend-api
 
 # Create app user
 RUN groupadd -g 1001 appgroup && \
@@ -129,8 +129,9 @@ COPY --chown=appuser:appgroup docker/nginx-internal.conf /etc/nginx/nginx.conf
 COPY --chown=appuser:appgroup docker/supervisord.conf /etc/supervisord.conf
 COPY --chown=appuser:appgroup docker/docker-entrypoint.sh /app/docker-entrypoint.sh
 
-# Copy LiteLLM configuration
+# Copy LiteLLM configuration and auth module
 COPY --chown=appuser:appgroup litellm/config.yaml /app/litellm/config.yaml
+COPY --chown=appuser:appgroup litellm/auth.py /app/litellm/auth.py
 
 # Copy prompts directory
 COPY --chown=appuser:appgroup prompts/ /app/prompts/

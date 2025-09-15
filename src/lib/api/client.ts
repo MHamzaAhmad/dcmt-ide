@@ -1,12 +1,12 @@
 // API Client Configuration
 
+import { authStore } from '$lib/stores/auth';
+
 export class APIClient {
 	public baseURL: string;
-	private token: string;
 
 	constructor(baseURL: string = '') {
 		this.baseURL = baseURL || import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001';
-		this.token = ''; // Authentication token placeholder
 	}
 
 	private async request<T>(
@@ -14,15 +14,16 @@ export class APIClient {
 		options: RequestInit = {}
 	): Promise<T> {
 		const url = `${this.baseURL}${endpoint}`;
-		
+
 		const headers: Record<string, string> = {
 			'Content-Type': 'application/json',
 			...(options.headers as Record<string, string> || {}),
 		};
 
-		// Add authentication header when token is available
-		if (this.token) {
-			headers['Authorization'] = `Bearer ${this.token}`;
+		// Get fresh token from authStore for each request
+		const token = await authStore.getToken();
+		if (token) {
+			headers['Authorization'] = `Bearer ${token}`;
 		}
 
 		const config: RequestInit = {
@@ -71,10 +72,6 @@ export class APIClient {
 
 	async delete<T>(endpoint: string): Promise<T> {
 		return this.request<T>(endpoint, { method: 'DELETE' });
-	}
-
-	setToken(token: string) {
-		this.token = token;
 	}
 
 	setBaseURL(url: string) {

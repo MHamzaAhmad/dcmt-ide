@@ -198,6 +198,39 @@ function createAuthStore() {
         },
 
         /**
+         * Get authentication token for API calls
+         * For desktop: returns mock token
+         * For web: returns JWT from Clerk session
+         */
+        async getToken(): Promise<string | null> {
+            // Desktop always returns mock token
+            if (isTauri()) {
+                return 'desktop-mock-token';
+            }
+
+            // Web - get token from Clerk session
+            if (!clerkInstance) {
+                console.warn('AuthStore: Clerk not initialized, cannot get token');
+                return null;
+            }
+
+            const state = get({ subscribe });
+            if (!state.isAuthenticated || !state.session) {
+                console.warn('AuthStore: User not authenticated, cannot get token');
+                return null;
+            }
+
+            try {
+                // Get JWT token from Clerk session
+                const token = await clerkInstance.session?.getToken();
+                return token || null;
+            } catch (error) {
+                console.error('AuthStore: Failed to get token:', error);
+                return null;
+            }
+        },
+
+        /**
          * Get current state
          */
         getCurrentState(): AuthState {

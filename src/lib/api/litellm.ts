@@ -1,6 +1,7 @@
 // Centralized LiteLLM API Client
 // Following STATE.md principles: Single Source of Truth for LiteLLM operations
 
+import { authStore } from '$lib/stores/auth';
 import type { LiteLLMModelsResponse } from './types';
 
 /**
@@ -9,7 +10,6 @@ import type { LiteLLMModelsResponse } from './types';
  */
 class LiteLLMClient {
     private baseURL: string;
-    private token: string = ''; // Empty for now, will implement auth tokens later
 
     constructor() {
         // Use relative path for production, fall back to localhost for development
@@ -21,10 +21,16 @@ class LiteLLMClient {
      */
     async fetchModels(): Promise<LiteLLMModelsResponse> {
         try {
+            // Get fresh token from authStore
+            const token = await authStore.getToken();
+            const headers: Record<string, string> = {};
+
+            if (token) {
+                headers['Authorization'] = `Bearer ${token}`;
+            }
+
             const response = await fetch(`${this.baseURL}/v1/models`, {
-                headers: {
-                    'Authorization': `Bearer ${this.token}` // Empty bearer for now
-                }
+                headers
             });
 
             if (!response.ok) {
@@ -44,12 +50,19 @@ class LiteLLMClient {
      * @param request - The completion request
      */
     async createCompletion(request: any): Promise<any> {
+        // Get fresh token from authStore
+        const token = await authStore.getToken();
+        const headers: Record<string, string> = {
+            'Content-Type': 'application/json'
+        };
+
+        if (token) {
+            headers['Authorization'] = `Bearer ${token}`;
+        }
+
         const response = await fetch(`${this.baseURL}/v1/chat/completions`, {
             method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${this.token}`
-            },
+            headers,
             body: JSON.stringify(request)
         });
 
@@ -58,13 +71,6 @@ class LiteLLMClient {
         }
 
         return await response.json();
-    }
-
-    /**
-     * Set authentication token (for future implementation)
-     */
-    setToken(token: string): void {
-        this.token = token;
     }
 
     /**

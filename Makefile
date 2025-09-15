@@ -26,6 +26,12 @@ docker-run:
 		-d \
 		dcmt-editor:latest
 
+docker-rebuild:
+	@git pull origin ft/local-no-proxy
+	@docker rm -f dcmt-editor
+	docker-build
+	docker-run
+
 ssl-setup:
 	@if [ "$$(id -u)" -ne 0 ]; then \
 		echo "❌ This target must be run as root. Use: sudo make ssl-setup"; \

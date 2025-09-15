@@ -44,7 +44,8 @@ async fn handle_websocket(socket: WebSocket, services: WebSocketServices) {
                     .unwrap()
                     .as_millis()
             })
-            .to_string(),
+            .to_string()
+            .into(),
         ))
         .await
     {
@@ -71,7 +72,7 @@ async fn handle_websocket(socket: WebSocket, services: WebSocketServices) {
             while let Some(msg) = receiver.next().await {
                 match msg {
                     Ok(Message::Text(text)) => {
-                        if let Err(e) = state.handle_incoming_message(text).await {
+                        if let Err(e) = state.handle_incoming_message(text.to_string()).await {
                             error!("Failed to handle incoming message for connection {}: {}", conn_id, e);
                         }
                     }
@@ -377,7 +378,7 @@ impl ConnectionState {
             };
             
             let message_text = message.to_string();
-            if let Err(e) = sender.send(Message::Text(message_text)).await {
+            if let Err(e) = sender.send(Message::Text(message_text.into())).await {
                 error!("Failed to send message to connection {}: {}", self.connection_id, e);
                 return Err(e.into());
             }

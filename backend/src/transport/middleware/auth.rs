@@ -3,7 +3,7 @@ use clerk_rs::{
     validators::{axum::ClerkLayer, jwks::MemoryCacheJwksProvider},
     ClerkConfiguration,
 };
-use tracing::{debug, error};
+use tracing::debug;
 
 /// Creates Clerk authentication layer for protecting API endpoints
 ///
@@ -29,7 +29,7 @@ pub fn create_clerk_auth_layer(clerk_secret_key: Option<String>) -> ClerkLayer<M
 
     // Create the authentication layer with:
     // - MemoryCacheJwksProvider for JWT validation
-    // - None for custom claims validation (use default)
+    // - None to protect all routes (no specific route filtering)
     // - true to validate session tokens
     ClerkLayer::new(
         MemoryCacheJwksProvider::new(clerk),

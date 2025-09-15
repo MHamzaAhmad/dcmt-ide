@@ -39,10 +39,22 @@
 	let isProcessing = $state(false);
 	let currentToolStatus = $state<{ toolName: string; status: string; progressiveForm?: string } | null>(null);
 	
-	// Query for fetching models from LiteLLM
+	// Query for fetching models
 	const modelsQuery = createQuery({
-		queryKey: ['litellm-models'],
-		queryFn: () => modelsAPI.listLiteLLMModels(),
+		queryKey: ['models'],
+		queryFn: async () => {
+			const response = await modelsAPI.listModels();
+			// Transform to LiteLLM format for agent compatibility
+			return {
+				object: "list",
+				data: response.models.map(model => ({
+					id: model.id,
+					object: "model",
+					created: Math.floor(Date.now() / 1000),
+					owned_by: model.description?.split(" ")[0] || "unknown"
+				}))
+			};
+		},
 		staleTime: 5 * 60 * 1000, // 5 minutes
 		retry: 2,
 		enabled: () => isAgentMode

@@ -31,7 +31,7 @@ export class DesktopAgentAdapter implements AgentOperations {
                 id: model.id,
                 object: "model",
                 created: Math.floor(Date.now() / 1000),
-                owned_by: model.description.split(" ")[0] || "unknown"
+                owned_by: model.description?.split(" ")[0] || "unknown"
             }))
         };
     }

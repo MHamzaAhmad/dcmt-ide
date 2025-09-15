@@ -1,7 +1,7 @@
 use crate::repo::litellm::*;
 use axum::{
     extract::State,
-    http::{header::AUTHORIZATION, StatusCode},
+    http::{StatusCode},
     response::Json,
 };
 use tracing::{debug, error, info, warn};
@@ -9,20 +9,8 @@ use tracing::{debug, error, info, warn};
 /// List available models handler for /api/llm/models
 pub async fn list_models_handler(
     State(repo): State<LiteLLMRepository>,
-    headers: axum::http::HeaderMap,
 ) -> Result<Json<ModelsResponse>, (StatusCode, String)> {
     debug!("Handling list models request");
-
-    // Validate authentication
-    let auth_header = headers.get(AUTHORIZATION)
-        .ok_or_else(|| (StatusCode::UNAUTHORIZED, "Missing Authorization header".to_string()))?;
-
-    let token = auth_header.to_str()
-        .map_err(|_| (StatusCode::UNAUTHORIZED, "Invalid Authorization header".to_string()))?;
-
-    if !token.starts_with("Bearer ") {
-        return Err((StatusCode::UNAUTHORIZED, "Invalid Bearer token format".to_string()));
-    }
 
     // Process request
     match repo.list_models().await {
@@ -41,21 +29,9 @@ pub async fn list_models_handler(
 /// Chat completion handler for /api/llm/chat
 pub async fn chat_handler(
     State(repo): State<LiteLLMRepository>,
-    headers: axum::http::HeaderMap,
     Json(request): Json<ChatRequest>,
 ) -> Result<Json<ChatResponse>, (StatusCode, String)> {
     debug!("Handling chat request for model: {}", request.model);
-
-    // Validate authentication
-    let auth_header = headers.get(AUTHORIZATION)
-        .ok_or_else(|| (StatusCode::UNAUTHORIZED, "Missing Authorization header".to_string()))?;
-
-    let token = auth_header.to_str()
-        .map_err(|_| (StatusCode::UNAUTHORIZED, "Invalid Authorization header".to_string()))?;
-
-    if !token.starts_with("Bearer ") {
-        return Err((StatusCode::UNAUTHORIZED, "Invalid Bearer token format".to_string()));
-    }
 
     // Process request
     let litellm_request = repo.convert_chat_request(request);

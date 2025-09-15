@@ -32,5 +32,6 @@ export const modelsAPI = {
 	 */
 	async sendChatMessage(request: ChatRequest): Promise<ChatResponse> {
 		return apiClient.post<ChatResponse>('/api/llm/chat', request);
-	}
+	},
+
 };

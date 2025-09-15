@@ -1,5 +1,6 @@
 use std::path::PathBuf;
 use anyhow::Result;
+use crate::model::agent::AgentConfig;
 
 #[derive(Debug, Clone)]
 pub struct Config {
@@ -7,11 +8,6 @@ pub struct Config {
     pub server: ServerConfig,
     pub agent: AgentConfig,
     pub clerk_secret_key: Option<String>,
-}
-
-#[derive(Debug, Clone)]
-pub struct AgentConfig {
-    pub litellm_base_url: String,
 }
 
 #[derive(Debug, Clone)]
@@ -37,15 +33,22 @@ impl Config {
             .parse::<u16>()
             .map_err(|e| anyhow::anyhow!("Invalid DCMT_PORT value: {}", e))?;
         
-        let litellm_base_url = std::env::var("LITELLM_BASE_URL")
-            .unwrap_or_else(|_| "http://127.0.0.1:4000".to_string());
-
+  
+        let tavily_api_key = std::env::var("TAVILY_API_KEY").ok();
         let clerk_secret_key = std::env::var("CLERK_SECRET_KEY").ok();
+
+        // Load system prompt (placeholder for now)
+        let system_prompt = std::env::var("SYSTEM_PROMPT")
+            .unwrap_or_else(|_| "You are a helpful AI assistant.".to_string());
 
         Ok(Config {
             workspace_path,
             server: ServerConfig { host, port },
-            agent: AgentConfig { litellm_base_url },
+            agent: AgentConfig {
+                system_prompt,
+                max_session_age: std::time::Duration::from_secs(3600),
+                tavily_api_key: tavily_api_key.clone(),
+            },
             clerk_secret_key,
         })
     }

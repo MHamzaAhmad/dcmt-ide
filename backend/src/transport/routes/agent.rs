@@ -5,9 +5,7 @@ use axum::{
 use std::sync::Arc;
 
 use crate::svc::AgentService;
-use crate::transport::{
-    handlers::agent::{chat_handler, list_tools_handler, session_info_handler},
-};
+use crate::transport::handlers::agent::{chat_handler, list_tools_handler, session_info_handler};
 
 /// Creates the agent router with all endpoints
 pub fn agent_router() -> Router<Arc<AgentService>> {

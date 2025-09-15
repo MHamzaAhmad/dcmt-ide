@@ -69,7 +69,7 @@ impl AgentTool for WebSearchTool {
         }
     }
     
-    async fn execute(&self, _workspace: &Path, args: Value, _repo: Option<&crate::repo::agent::AgentRepo>) -> AgentResult<String> {
+    async fn execute(&self, _workspace: &Path, args: Value, repo: Option<&crate::repo::agent::AgentRepo>) -> AgentResult<String> {
         // Extract required parameters
         let query = args["query"]
             .as_str()
@@ -110,7 +110,18 @@ impl AgentTool for WebSearchTool {
         }
         
         // Create Tavily repository and perform search
-        let tavily_repo = TavilyRepository::new()
+        let repo = repo.ok_or_else(|| AgentError::ToolExecutionError {
+            tool: self.name().to_string(),
+            error: "AgentRepo is required for web search".to_string(),
+        })?;
+
+        let tavily_api_key = repo.config.tavily_api_key.as_ref()
+            .ok_or_else(|| AgentError::ToolExecutionError {
+                tool: self.name().to_string(),
+                error: "Tavily API key is not configured".to_string(),
+            })?;
+
+        let tavily_repo = TavilyRepository::new(tavily_api_key.clone())
             .map_err(|e| AgentError::ToolExecutionError {
                 tool: self.name().to_string(),
                 error: format!("Failed to create Tavily client: {}", e),

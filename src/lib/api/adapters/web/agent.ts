@@ -1,21 +1,31 @@
 // Web Agent Operations via HTTP API
 import { apiClient } from '../../client';
-import { liteLLMClient } from '../../litellm';
-import type { 
-    AgentOperations, 
-    AgentChatRequest, 
-    AgentChatResponse, 
+import { modelsAPI } from '../../models';
+import type {
+    AgentOperations,
+    AgentChatRequest,
+    AgentChatResponse,
     AgentSessionInfo,
     AgentToolDefinition,
-    LiteLLMModelsResponse 
+    LiteLLMModelsResponse
 } from '../../types';
 
 export class WebAgentAdapter implements AgentOperations {
     private currentSessionId: string | null = null;
 
     async listModels(): Promise<LiteLLMModelsResponse> {
-        // Use centralized LiteLLM client
-        return await liteLLMClient.fetchModels();
+        // Use backend API via modelsAPI
+        const modelsResponse = await modelsAPI.listModels();
+        // Transform to LiteLLM format for compatibility
+        return {
+            object: "list",
+            data: modelsResponse.models.map(model => ({
+                id: model.id,
+                object: "model",
+                created: Math.floor(Date.now() / 1000),
+                owned_by: model.description.split(" ")[0] || "unknown"
+            }))
+        };
     }
 
     async sendMessage(request: AgentChatRequest): Promise<AgentChatResponse> {

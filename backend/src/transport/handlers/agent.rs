@@ -13,8 +13,8 @@ use crate::svc::AgentService;
 /// Main chat handler - queues agent requests for processing
 pub async fn chat_handler(
     State(service): State<Arc<AgentService>>,
-    Json(mut request): Json<ChatRequest>,
     headers: axum::http::HeaderMap,
+    Json(mut request): Json<ChatRequest>,
 ) -> Result<Json<ChatResponse>, (StatusCode, String)> {
     info!(
         "Received chat request for session: {}, model: {}, message length: {}", 

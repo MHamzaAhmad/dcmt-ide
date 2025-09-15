@@ -3,9 +3,11 @@ pub mod files;
 pub mod latex;
 pub mod sse;
 pub mod websocket;
+pub mod llm;
 
 pub use agent::*;
 pub use files::*;
 pub use latex::*;
 pub use sse::*;
 pub use websocket::*;
+pub use llm::{list_models_handler, chat_handler as llm_chat_handler, health_check_handler};

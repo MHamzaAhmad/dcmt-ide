@@ -1,6 +1,5 @@
 use std::path::PathBuf;
 use std::sync::Arc;
-use std::time::Duration;
 use futures::future::join_all;
 use futures::StreamExt;
 use reqwest::Client;
@@ -13,6 +12,7 @@ use crate::model::agent::{
     ChatMessage, ChatRequest, ToolCall, ToolFunction, EventMetadata,
 };
 use crate::svc::{FileService, LaTeXService};
+use crate::repo::LiteLLMRepository;
 
 pub mod events;
 pub mod session;
@@ -24,8 +24,9 @@ pub use tools::{ToolRegistry, AgentTool};
 
 /// Main repository for agent operations
 pub struct AgentRepo {
-    config: AgentConfig,
+    pub config: AgentConfig,
     http_client: Client,
+    litellm_repo: Arc<LiteLLMRepository>,
     tool_registry: ToolRegistry,
     session_manager: Arc<SessionManager>,
     event_broadcaster: Arc<EventBroadcaster>,
@@ -219,20 +220,13 @@ impl AgentRepo {
     /// Creates a new agent repository
     pub async fn new(
         workspace_path: PathBuf,
-        litellm_base_url: String,
+        config: AgentConfig,
         file_service: Arc<FileService>,
         latex_service: Arc<LaTeXService>,
     ) -> AgentResult<Self> {
-        // Load system prompt from file
-        let system_prompt = Self::load_system_prompt(&workspace_path).await?;
-        
-        let config = AgentConfig {
-            litellm_base_url,
-            system_prompt,
-            max_session_age: Duration::from_secs(3600), // 1 hour
-        };
-        
+
         let http_client = Client::new();
+        let litellm_repo = Arc::new(LiteLLMRepository::new()?);
         let tool_registry = ToolRegistry::new();
         let session_manager = Arc::new(SessionManager::new(config.max_session_age));
         let event_broadcaster = Arc::new(EventBroadcaster::new());
@@ -244,6 +238,7 @@ impl AgentRepo {
         Ok(Self {
             config,
             http_client,
+            litellm_repo,
             tool_registry,
             session_manager,
             event_broadcaster,
@@ -360,7 +355,7 @@ impl AgentRepo {
                 })
                 .await;
 
-            let response = self.call_litellm(&messages, &model, session_id, &request.auth_token.as_deref().unwrap_or("")).await?;
+            let response = self.call_litellm(&messages, &model, session_id, "").await?;
             
             // Check for tool calls
             if let Some(tool_calls) = response.tool_calls.clone() {
@@ -543,102 +538,11 @@ impl AgentRepo {
     
     /// Calls LiteLLM API with streaming support
     async fn call_litellm(&self, messages: &[ChatMessage], model: &str, session_id: &str, auth_token: &str) -> AgentResult<ChatMessage> {
-        // Build request with streaming enabled
-        let request = serde_json::json!({
-            "model": model,
-            "messages": messages,
-            "tools": self.tool_registry.get_definitions(),
-            "tool_choice": "auto",
-            "stream": true
-        });
-        
-        let response = self.http_client
-            .post(format!("{}/v1/chat/completions", self.config.litellm_base_url))
-            .header("Accept", "text/event-stream")
-            .header("Authorization", format!("Bearer {}", auth_token))
-            .json(&request)
-            .send()
-            .await
-            .map_err(AgentError::HttpError)?;
-        
-        if !response.status().is_success() {
-            let status = response.status();
-            let error_text = response.text().await.unwrap_or_default();
-            return Err(AgentError::LiteLLMError {
-                message: format!("HTTP {}: {}", status, error_text),
-            });
-        }
-        
-        // Process SSE stream
-        let mut stream = response.bytes_stream();
-        let mut context = StreamingContext::new();
-        let mut buffer = String::new();
-        
-        while let Some(chunk_result) = stream.next().await {
-            let chunk_bytes = chunk_result.map_err(AgentError::HttpError)?;
-            let chunk_str = String::from_utf8_lossy(&chunk_bytes);
-            buffer.push_str(&chunk_str);
-            
-            // Process complete lines
-            while let Some(line_end) = buffer.find('\n') {
-                let line = buffer.drain(..=line_end).collect::<String>();
-                let line = line.trim();
-                
-                // Skip empty lines and comments
-                if line.is_empty() || line.starts_with(':') {
-                    continue;
-                }
-                
-                // Parse SSE data
-                if line.starts_with("data: ") {
-                    let data_str = &line[6..];
-                    
-                    // Check for stream end
-                    if data_str == "[DONE]" {
-                        break;
-                    }
-                    
-                    // Parse JSON chunk
-                    if let Ok(data) = serde_json::from_str::<Value>(data_str) {
-                        let events = context.process_chunk(&data);
-                        
-                        // Emit events
-                        for event in events {
-                            match event {
-                                StreamingEvent::Content(content) => {
-                                    self.event_broadcaster
-                                        .broadcast(session_id, AgentEvent::StreamChunk {
-                                            content,
-                                            metadata: Self::create_metadata("stream-chunk"),
-                                        })
-                                        .await;
-                                }
-                                StreamingEvent::ToolCallStart { id, name } => {
-                                    self.event_broadcaster
-                                        .broadcast(session_id, AgentEvent::ToolCallStart {
-                                            tool_id: id,
-                                            tool_name: name,
-                                            metadata: Self::create_metadata("tool-start"),
-                                        })
-                                        .await;
-                                }
-                                StreamingEvent::ToolCallReady(tool_call) => {
-                                    self.event_broadcaster
-                                        .broadcast(session_id, AgentEvent::ToolCallReady {
-                                            tool_call,
-                                            metadata: Self::create_metadata("tool-ready"),
-                                        })
-                                        .await;
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-        
-        // Return the finalized message
-        Ok(context.finalize())
+        // TODO: Update this method to use LiteLLM repository with streaming support
+        // The current implementation uses HTTP streaming, but we need to adapt it for UDS streaming
+        Err(AgentError::LiteLLMError {
+            message: "Agent streaming not yet implemented with UDS".to_string(),
+        })
     }
     
     /// Gets the event broadcaster for WebSocket integration

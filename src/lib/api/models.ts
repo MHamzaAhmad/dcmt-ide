@@ -1,30 +1,21 @@
 // Models API Endpoints
 
 import { apiClient } from './client';
-import { liteLLMClient } from './litellm';
-import type { ModelsResponse, ChatRequest, ChatResponse, LiteLLMModelsResponse, LiteLLMModel, LLMModel } from './types';
+import type { ModelsResponse, ChatRequest, ChatResponse } from './types';
 
 export const modelsAPI = {
 	/**
-	 * List all available LLM models from LiteLLM
+	 * List all available LLM models from backend API
 	 */
 	async listModels(): Promise<ModelsResponse> {
 		try {
-			// Use centralized LiteLLM client
-			const liteLLMResponse = await liteLLMClient.fetchModels();
-			
-			// Transform LiteLLM response to our format
-			const models: LLMModel[] = liteLLMResponse.data.map((model: LiteLLMModel) => ({
-				id: model.id,
-				name: model.id.replace(/^gpt-/, 'GPT-').replace(/^claude-/, 'Claude ').replace(/^gemini-/, 'Gemini '),
-				description: `${model.owned_by} model`
-			}));
-			
-			return { models };
+			// Use backend API endpoint instead of direct LiteLLM call
+			const response = await apiClient.get<ModelsResponse>('/api/llm/models');
+			return response;
 		} catch (error) {
-			console.error('Failed to fetch models from LiteLLM:', error);
-			
-			// Fallback to static models if LiteLLM is not available
+			console.error('Failed to fetch models from backend API:', error);
+
+			// Fallback to static models if backend API is not available
 			return {
 				models: [
 					{ id: 'gpt-4-turbo', name: 'GPT-4 Turbo', description: 'Most capable GPT-4 model' },
@@ -37,17 +28,9 @@ export const modelsAPI = {
 	},
 
 	/**
-	 * List models with raw LiteLLM format
-	 */
-	async listLiteLLMModels(): Promise<LiteLLMModelsResponse> {
-		// Use centralized LiteLLM client
-		return await liteLLMClient.fetchModels();
-	},
-
-	/**
-	 * Send a chat request to the selected model
+	 * Send a chat request to the selected model via backend API
 	 */
 	async sendChatMessage(request: ChatRequest): Promise<ChatResponse> {
-		return apiClient.post<ChatResponse>('/llm/chat', request);
+		return apiClient.post<ChatResponse>('/api/llm/chat', request);
 	}
 };

@@ -11,7 +11,6 @@ docker-build:
 	export $$(grep -v '^#' .env | xargs) && \
 	docker build \
 		--build-arg VITE_API_BASE_URL=$$VITE_API_BASE_URL \
-		--build-arg VITE_LITELLM_BASE_URL=$$VITE_LITELLM_BASE_URL \
 		--build-arg VITE_CLERK_PUBLISHABLE_KEY=$$VITE_CLERK_PUBLISHABLE_KEY \
 		--build-arg VITE_CLERK_SIGN_IN_URL=$$VITE_CLERK_SIGN_IN_URL \
 		-t dcmt-editor:latest .

@@ -1,5 +1,4 @@
 use anyhow::{Context, Result};
-use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -8,6 +7,8 @@ use std::fs;
 use crate::repo::git_repository::{
     CommitResult, GitDiff, GitRepository, GitStatus,
 };
+use crate::repo::litellm::types::{ChatCompletionRequest, ChatMessage};
+use crate::repo::LiteLLMRepository;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CommitSummary {
@@ -17,51 +18,19 @@ pub struct CommitSummary {
     pub suggested_message: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-struct LiteLLMRequest {
-    model: String,
-    messages: Vec<LiteLLMMessage>,
-    temperature: f32,
-    response_format: ResponseFormat,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-struct ResponseFormat {
-    #[serde(rename = "type")]
-    format_type: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-struct LiteLLMMessage {
-    role: String,
-    content: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-struct LiteLLMResponse {
-    choices: Vec<Choice>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-struct Choice {
-    message: LiteLLMMessage,
-}
 
 pub struct GitService {
     repo: Arc<GitRepository>,
-    http_client: Client,
-    litellm_base_url: String,
+    litellm_repo: LiteLLMRepository,
 }
 
 impl GitService {
-    pub fn new(workspace_path: PathBuf, litellm_base_url: String) -> Result<Self> {
+    pub fn new(workspace_path: PathBuf, litellm_repo: LiteLLMRepository) -> Result<Self> {
         let repo = Arc::new(GitRepository::new(workspace_path)?);
-        let http_client = Client::new();
 
         Ok(Self {
             repo,
-            http_client,
-            litellm_base_url,
+            litellm_repo,
         })
     }
 
@@ -87,48 +56,29 @@ impl GitService {
         let prompt = self.load_prompt_template()?;
         let formatted_prompt = prompt.replace("{diff_content}", &diff_string);
         
-        let request = LiteLLMRequest {
+        let request = ChatCompletionRequest {
             model: "gpt-4o-mini".to_string(),
             messages: vec![
-                LiteLLMMessage {
+                ChatMessage {
                     role: "system".to_string(),
                     content: "You are a helpful assistant that generates git commit summaries. Always respond with valid JSON.".to_string(),
                 },
-                LiteLLMMessage {
+                ChatMessage {
                     role: "user".to_string(),
                     content: formatted_prompt,
                 },
             ],
-            temperature: 0.3,
-            response_format: ResponseFormat {
-                format_type: "json_object".to_string(),
-            },
+            temperature: Some(0.3),
+            max_tokens: None,
+            stream: Some(false),
+            tools: None,
+            tool_choice: None,
         };
 
-        let response = self
-            .http_client
-            .post(format!("{}/chat/completions", self.litellm_base_url))
-            .json(&request)
-            .send()
-            .await
+        let response = self.litellm_repo.create_chat_completion(request).await
             .context("Failed to send request to LiteLLM")?;
 
-        if !response.status().is_success() {
-            let status = response.status();
-            let error_text = response.text().await.unwrap_or_default();
-            return Err(anyhow::anyhow!(
-                "LiteLLM request failed with status {}: {}",
-                status,
-                error_text
-            ));
-        }
-
-        let litellm_response: LiteLLMResponse = response
-            .json()
-            .await
-            .context("Failed to parse LiteLLM response")?;
-
-        let ai_content = litellm_response
+        let ai_content = response
             .choices
             .first()
             .ok_or_else(|| anyhow::anyhow!("No choices in LiteLLM response"))?
@@ -245,10 +195,10 @@ mod tests {
 
     #[test]
     fn test_parse_ai_response() {
+        let litellm_repo = LiteLLMRepository::new().unwrap();
         let service = GitService {
             repo: Arc::new(GitRepository::new(PathBuf::from(".")).unwrap()),
-            http_client: Client::new(),
-            litellm_base_url: "http://localhost:4000".to_string(),
+            litellm_repo,
         };
 
         let valid_response = r#"{

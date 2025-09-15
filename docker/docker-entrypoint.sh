@@ -24,15 +24,10 @@ if [ -z "$DCMT_WORKSPACE_PATH" ]; then
     export DCMT_WORKSPACE_PATH="/app/workspace"
 fi
 
-if [ -z "$LITELLM_BASE_URL" ]; then
-    export LITELLM_BASE_URL="http://127.0.0.1:4000"
-fi
-
 echo "📊 Configuration:"
 echo "  - Host: $DCMT_HOST"
 echo "  - Port: $DCMT_PORT"
 echo "  - Workspace: $DCMT_WORKSPACE_PATH"
-echo "  - LiteLLM URL: $LITELLM_BASE_URL"
 
 # Create workspace if it doesn't exist and set permissions
 mkdir -p "$DCMT_WORKSPACE_PATH"

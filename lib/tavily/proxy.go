@@ -18,6 +18,11 @@ import (
 	"github.com/google/uuid"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
+	"net/url"
+	"path/filepath"
+	"syscall"
+	"log"
+	"bufio"
 )
 
 // Request/Response structures matching the Rust implementations
@@ -93,44 +98,23 @@ type TavilyProxy struct {
 	apiKey    string
 	baseURL   string
 	logger    *zap.Logger
+	socketPath string
+	unixConn  *net.UnixConn
 }
 
 func NewTavilyProxy(apiKey string, logger *zap.Logger) *TavilyProxy {
-	// High-performance HTTP client with connection pooling
-	transport := &http.Transport{
-		// Connection pooling settings for maximum performance
-		MaxIdleConns:        100,
-		MaxIdleConnsPerHost: 20,
-		IdleConnTimeout:     90 * time.Second,
-		
-		// TCP connection settings for low latency
-		DialContext: (&net.Dialer{
-			Timeout:   5 * time.Second,
-			KeepAlive: 30 * time.Second,
-		}).DialContext,
-		
-		// HTTP/2 and Keep-Alive settings
-		ForceAttemptHTTP2:     true,
-		DisableKeepAlives:     false,
-		DisableCompression:    false,
-		MaxConnsPerHost:       20,
-		ResponseHeaderTimeout: 10 * time.Second,
-		ExpectContinueTimeout: 1 * time.Second,
-		
-		// TLS settings for HTTPS performance
-		TLSHandshakeTimeout: 5 * time.Second,
-	}
+	// For UDS mode, we don't need HTTP transport settings
+	// The proxy will be accessed directly via UDS
+	return NewTavilyProxyWithUDS(apiKey, logger, "")
+}
 
-	client := &http.Client{
-		Transport: transport,
-		Timeout:   30 * time.Second,
-	}
-
+func NewTavilyProxyWithUDS(apiKey string, logger *zap.Logger, socketPath string) *TavilyProxy {
 	return &TavilyProxy{
-		client:  client,
-		apiKey:  apiKey,
-		baseURL: "https://api.tavily.com",
-		logger:  logger,
+		client:     &http.Client{Timeout: 30 * time.Second},
+		apiKey:     apiKey,
+		baseURL:    "https://api.tavily.com",
+		logger:     logger,
+		socketPath: socketPath,
 	}
 }
 
@@ -432,7 +416,64 @@ func (tp *TavilyProxy) handleHealth(c *gin.Context) {
 		"service":   "tavily-proxy",
 		"version":   "1.0.0",
 		"timestamp": time.Now().UTC().Format(time.RFC3339),
+		"socket":    tp.socketPath,
 	})
+}
+
+// ServeHTTPOverUDS serves HTTP requests over Unix Domain Socket
+func (tp *TavilyProxy) ServeHTTPOverUDS() error {
+	// Remove existing socket file if it exists
+	if _, err := os.Stat(tp.socketPath); err == nil {
+		if err := os.Remove(tp.socketPath); err != nil {
+			return fmt.Errorf("failed to remove existing socket file: %w", err)
+		}
+	}
+
+	// Create Unix Domain Socket listener
+	listener, err := net.Listen("unix", tp.socketPath)
+	if err != nil {
+		return fmt.Errorf("failed to create UDS listener: %w", err)
+	}
+
+	// Set socket permissions to 700 (owner only)
+	if err := os.Chmod(tp.socketPath, 0700); err != nil {
+		return fmt.Errorf("failed to set socket permissions: %w", err)
+	}
+
+	tp.logger.Info("Starting Tavily proxy server over UDS",
+		zap.String("socket_path", tp.socketPath),
+		zap.String("base_url", tp.baseURL),
+	)
+
+	// Setup Gin router
+	gin.SetMode(gin.ReleaseMode)
+	router := gin.New()
+
+	// Add middleware
+	router.Use(gin.LoggerWithConfig(gin.LoggerConfig{
+		SkipPaths: []string{"/health"},
+	}))
+	router.Use(gin.Recovery())
+
+	// Routes
+	router.GET("/health", tp.handleHealth)
+	router.POST("/search", tp.handleSearch)
+	router.POST("/extract", tp.handleExtract)
+
+	// Create HTTP server
+	server := &http.Server{
+		Handler:      router,
+		ReadTimeout:  15 * time.Second,
+		WriteTimeout: 30 * time.Second,
+		IdleTimeout:  60 * time.Second,
+	}
+
+	// Serve over UDS
+	if err := server.Serve(listener); err != nil && err != http.ErrServerClosed {
+		return fmt.Errorf("failed to serve over UDS: %w", err)
+	}
+
+	return nil
 }
 
 func setupLogger() *zap.Logger {
@@ -458,9 +499,10 @@ func main() {
 		logger.Fatal("TAVILY_API_KEY environment variable is required")
 	}
 
+	// TCP mode (requires authentication)
 	clerkSecretKey := os.Getenv("CLERK_SECRET_KEY")
 	if clerkSecretKey == "" {
-		logger.Fatal("CLERK_SECRET_KEY environment variable is required")
+		logger.Fatal("CLERK_SECRET_KEY environment variable is required for TCP mode")
 	}
 
 	port := os.Getenv("TAVILY_PROXY_PORT")
@@ -521,7 +563,7 @@ func main() {
 
 	// Graceful shutdown handling
 	go func() {
-		logger.Info("Starting Tavily proxy server", 
+		logger.Info("Starting Tavily proxy server in TCP mode",
 			zap.String("port", port),
 			zap.String("base_url", proxy.baseURL),
 		)

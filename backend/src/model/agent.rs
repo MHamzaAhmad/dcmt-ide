@@ -284,17 +284,17 @@ impl ChatSession {
 // Agent configuration
 #[derive(Debug, Clone)]
 pub struct AgentConfig {
-    pub litellm_base_url: String,
     pub system_prompt: String,
     pub max_session_age: std::time::Duration,
+    pub tavily_api_key: Option<String>,
 }
 
 impl Default for AgentConfig {
     fn default() -> Self {
         Self {
-            litellm_base_url: "http://0.0.0.0:4000".to_string(),
             system_prompt: String::new(),
             max_session_age: std::time::Duration::from_secs(3600), // 1 hour
+            tavily_api_key: None,
         }
     }
 }

@@ -21,7 +21,6 @@ docker-run:
 		--env-file .env \
 		-p 8080:80 \
 		-v /tmp/workspace:/app/workspace \
-		-v dcmt-logs:/app/logs \
 		--name dcmt-editor \
 		--rm \
 		-d \

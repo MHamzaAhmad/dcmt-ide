@@ -77,7 +77,7 @@ function createAuthStore() {
                 await clerkInstance.load();
 
                 // Check authentication status
-                const isSignedIn = clerkInstance.user !== null;
+                const isSignedIn = clerkInstance.isSignedIn
 
                 if (isSignedIn) {
                     // User is authenticated

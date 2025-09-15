@@ -8,6 +8,7 @@ pub struct ChatRequest {
     pub session_id: String,
     pub message: String,
     pub model: String, // e.g., "gpt-4-turbo"
+    pub auth_token: Option<String>, // JWT token for LiteLLM authentication
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

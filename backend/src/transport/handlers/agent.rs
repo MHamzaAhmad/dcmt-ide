@@ -1,6 +1,6 @@
 use axum::{
     extract::{Path, State},
-    http::StatusCode,
+    http::{header::AUTHORIZATION, StatusCode},
     response::Json,
 };
 use std::sync::Arc;
@@ -13,7 +13,8 @@ use crate::svc::AgentService;
 /// Main chat handler - queues agent requests for processing
 pub async fn chat_handler(
     State(service): State<Arc<AgentService>>,
-    Json(request): Json<ChatRequest>,
+    Json(mut request): Json<ChatRequest>,
+    headers: axum::http::HeaderMap,
 ) -> Result<Json<ChatResponse>, (StatusCode, String)> {
     info!(
         "Received chat request for session: {}, model: {}, message length: {}", 
@@ -25,22 +26,40 @@ pub async fn chat_handler(
     // Validate request
     if request.session_id.is_empty() {
         return Err((
-            StatusCode::BAD_REQUEST, 
+            StatusCode::BAD_REQUEST,
             "session_id is required".to_string()
         ));
     }
-    
+
     if request.message.is_empty() {
         return Err((
-            StatusCode::BAD_REQUEST, 
+            StatusCode::BAD_REQUEST,
             "message cannot be empty".to_string()
         ));
     }
-    
+
     if request.model.is_empty() {
         return Err((
-            StatusCode::BAD_REQUEST, 
+            StatusCode::BAD_REQUEST,
             "model is required".to_string()
+        ));
+    }
+
+    // Extract auth token from headers
+    request.auth_token = headers.get(AUTHORIZATION)
+        .and_then(|header| header.to_str().ok())
+        .and_then(|auth_header| {
+            if auth_header.starts_with("Bearer ") {
+                Some(auth_header["Bearer ".len()..].to_string())
+            } else {
+                None
+            }
+        });
+
+    if request.auth_token.is_none() {
+        return Err((
+            StatusCode::UNAUTHORIZED,
+            "Authorization token is required".to_string()
         ));
     }
     

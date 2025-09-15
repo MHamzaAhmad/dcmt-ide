@@ -354,13 +354,13 @@ impl AgentRepo {
             
             // Call LiteLLM
             self.event_broadcaster
-                .broadcast(session_id, AgentEvent::LLMCallStart { 
+                .broadcast(session_id, AgentEvent::LLMCallStart {
                     model: model.clone(),
                     metadata: Self::create_metadata(&format!("llm-{}", iteration_count)),
                 })
                 .await;
-            
-            let response = self.call_litellm(&messages, &model, session_id).await?;
+
+            let response = self.call_litellm(&messages, &model, session_id, &request.auth_token.as_deref().unwrap_or("")).await?;
             
             // Check for tool calls
             if let Some(tool_calls) = response.tool_calls.clone() {
@@ -542,7 +542,7 @@ impl AgentRepo {
     }
     
     /// Calls LiteLLM API with streaming support
-    async fn call_litellm(&self, messages: &[ChatMessage], model: &str, session_id: &str) -> AgentResult<ChatMessage> {
+    async fn call_litellm(&self, messages: &[ChatMessage], model: &str, session_id: &str, auth_token: &str) -> AgentResult<ChatMessage> {
         // Build request with streaming enabled
         let request = serde_json::json!({
             "model": model,
@@ -555,6 +555,7 @@ impl AgentRepo {
         let response = self.http_client
             .post(format!("{}/v1/chat/completions", self.config.litellm_base_url))
             .header("Accept", "text/event-stream")
+            .header("Authorization", format!("Bearer {}", auth_token))
             .json(&request)
             .send()
             .await

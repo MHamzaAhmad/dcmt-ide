@@ -458,6 +458,11 @@ func main() {
 		logger.Fatal("TAVILY_API_KEY environment variable is required")
 	}
 
+	clerkSecretKey := os.Getenv("CLERK_SECRET_KEY")
+	if clerkSecretKey == "" {
+		logger.Fatal("CLERK_SECRET_KEY environment variable is required")
+	}
+
 	port := os.Getenv("TAVILY_PROXY_PORT")
 	if port == "" {
 		port = "8082"
@@ -495,10 +500,13 @@ func main() {
 		c.Next()
 	})
 
-	// API routes
-	router.POST("/search", proxy.handleSearch)
-	router.POST("/extract", proxy.handleExtract)
+	// Health route (unprotected for monitoring)
 	router.GET("/health", proxy.handleHealth)
+
+	// Protected API routes (require authentication)
+	authMiddleware := ClerkAuthMiddleware(clerkSecretKey, logger)
+	router.POST("/search", authMiddleware, proxy.handleSearch)
+	router.POST("/extract", authMiddleware, proxy.handleExtract)
 
 	// Setup HTTP server with optimized settings
 	server := &http.Server{

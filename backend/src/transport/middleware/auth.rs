@@ -1,57 +1,39 @@
-use axum::{
-    extract::Request,
-    http::{header, StatusCode},
-    middleware::Next,
-    response::Response,
+use clerk_rs::{
+    clerk::Clerk,
+    validators::{axum::ClerkLayer, jwks::MemoryCacheJwksProvider},
+    ClerkConfiguration,
 };
-use tracing::{debug, warn};
+use tracing::{debug, error};
 
-/// Authentication middleware for agent API endpoints
-/// 
-/// This middleware validates Bearer tokens from the Authorization header.
-/// Currently configured to allow requests without authentication for development.
-/// In production, set REQUIRE_AUTH=true to enforce authentication.
-pub async fn auth_middleware(request: Request, next: Next) -> Result<Response, StatusCode> {
-    // Check if authentication is required (default: false for development)
-    let require_auth = std::env::var("REQUIRE_AUTH")
-        .unwrap_or_else(|_| "false".to_string())
-        .parse::<bool>()
-        .unwrap_or(false);
-    
-    if !require_auth {
-        debug!("Authentication disabled - allowing request");
-        return Ok(next.run(request).await);
-    }
-    
-    // Extract Authorization header
-    let auth_header = request
-        .headers()
-        .get(header::AUTHORIZATION)
-        .and_then(|header| header.to_str().ok());
-    
-    if let Some(auth_header) = auth_header {
-        if let Some(token) = auth_header.strip_prefix("Bearer ") {
-            // Validate the token format (basic validation)
-            if is_valid_token_format(token) {
-                debug!("Valid token format provided");
-                return Ok(next.run(request).await);
-            } else {
-                warn!("Invalid token format provided");
-                return Err(StatusCode::UNAUTHORIZED);
-            }
-        } else {
-            warn!("Authorization header missing Bearer prefix");
-            return Err(StatusCode::UNAUTHORIZED);
-        }
-    }
-    
-    warn!("No authorization header provided");
-    Err(StatusCode::UNAUTHORIZED)
-}
+/// Creates Clerk authentication layer for protecting API endpoints
+///
+/// This function creates a Clerk authentication middleware that validates JWT tokens
+/// from the Authorization header. Returns 403 Forbidden for invalid/missing tokens.
+pub fn create_clerk_auth_layer(clerk_secret_key: Option<String>) -> ClerkLayer<MemoryCacheJwksProvider> {
+    // Get the secret key, panic if not provided since auth is required
+    let secret_key = clerk_secret_key
+        .expect("CLERK_SECRET_KEY is required for authentication");
 
-/// Validates basic token format
-/// In production, this should be replaced with proper JWT validation
-fn is_valid_token_format(token: &str) -> bool {
-    // Basic validation - token should be non-empty and reasonable length
-    !token.is_empty() && token.len() >= 10 && token.len() <= 2048
+    debug!("Creating Clerk authentication layer");
+
+    // Create Clerk configuration with the secret key
+    let config = ClerkConfiguration::new(
+        None,                           // publishable_key (not needed for backend validation)
+        None,                           // jwt_key (not needed when using secret key)
+        Some(secret_key),              // secret_key
+        None,                          // api_url (use default)
+    );
+
+    // Initialize Clerk client
+    let clerk = Clerk::new(config);
+
+    // Create the authentication layer with:
+    // - MemoryCacheJwksProvider for JWT validation
+    // - None for custom claims validation (use default)
+    // - true to validate session tokens
+    ClerkLayer::new(
+        MemoryCacheJwksProvider::new(clerk),
+        None,
+        true,
+    )
 }

@@ -1,5 +1,5 @@
 use crate::{config::Config, svc::{AgentService, FileService, LaTeXService, GitService}, repo::AgentRepo};
-use crate::transport::middleware::{cors::create_cors_layer, logging::create_trace_layer};
+use crate::transport::middleware::{cors::create_cors_layer, logging::create_trace_layer, create_clerk_auth_layer};
 use crate::transport::routes::{agent_router, files_router, latex_router, sse_router, websocket_router, git_router};
 use crate::transport::routes::websocket::WebSocketServices;
 use anyhow::Result;
@@ -45,12 +45,13 @@ pub async fn create_router(config: Config) -> Result<Router> {
     let agent_routes = agent_router().with_state(agent_service.clone());
     let sse_routes = sse_router().with_state(agent_service.clone());
     
-    // Create API routes by nesting sub-routers
+    // Create API routes by nesting sub-routers with Clerk authentication
     let api_routes = Router::new()
         .nest("/files", files_routes)
         .nest("/latex", latex_routes)
         .nest("/git", git_routes)
-        .nest("/agent", agent_routes);
+        .nest("/agent", agent_routes)
+        .layer(create_clerk_auth_layer(config.clerk_secret_key.clone()));
 
     // Create combined WebSocket services state
     let websocket_services = WebSocketServices {

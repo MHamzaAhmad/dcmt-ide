@@ -28,6 +28,7 @@ tokio-stream = "0.1"
 dashmap = "5.5"
 futures = "0.3"
 git2 = "0.18"
+clerk-rs = { version = "0.1", features = ["axum"] }
 
 [[bin]]
 name = "dcmt-backend"

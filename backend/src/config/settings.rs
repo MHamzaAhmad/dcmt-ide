@@ -6,6 +6,7 @@ pub struct Config {
     pub workspace_path: PathBuf,
     pub server: ServerConfig,
     pub agent: AgentConfig,
+    pub clerk_secret_key: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -38,11 +39,14 @@ impl Config {
         
         let litellm_base_url = std::env::var("LITELLM_BASE_URL")
             .unwrap_or_else(|_| "http://127.0.0.1:4000".to_string());
-        
+
+        let clerk_secret_key = std::env::var("CLERK_SECRET_KEY").ok();
+
         Ok(Config {
             workspace_path,
             server: ServerConfig { host, port },
             agent: AgentConfig { litellm_base_url },
+            clerk_secret_key,
         })
     }
 }

@@ -7,6 +7,7 @@
 export { eventStore } from './events';
 
 // Core stores
+export { authStore, isAuthenticated, currentUser, isAuthLoading } from './auth';
 export { projectStore } from './project';
 export { workspaceStore } from './workspace';
 export { latexStore, isCompiling } from './latex';
@@ -24,10 +25,11 @@ export { chatStore } from './chat';
 // export { apiStore } from './api';
 
 // Types
-export type { 
-    SystemEvent, FileSystemEvent, AgentEvent, CompilationEvent, 
-    ConnectionEvent, UIEvent 
+export type {
+    SystemEvent, FileSystemEvent, AgentEvent, CompilationEvent,
+    ConnectionEvent, UIEvent, AuthEvent
 } from './events';
+export type { AuthState } from './auth';
 export type { ProjectState } from './project';
 export type { FileContent, FileTreeNode, WorkspaceState } from './workspace';
 export type { LaTeXState, LaTeXCompilationResult } from './latex';

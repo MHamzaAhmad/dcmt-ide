@@ -78,7 +78,7 @@ export interface UIEvent {
 
 export interface GitEvent {
   type: 'git';
-  subtype: 'status_changed' | 'diff_updated' | 'summary_generated' 
+  subtype: 'status_changed' | 'diff_updated' | 'summary_generated'
          | 'files_staged' | 'commit_created' | 'push_completed' | 'error';
   payload: {
     branch?: string;
@@ -92,7 +92,18 @@ export interface GitEvent {
   };
 }
 
-export type SystemEvent = FileSystemEvent | AgentEvent | CompilationEvent | ConnectionEvent | UIEvent | GitEvent;
+export interface AuthEvent {
+  type: 'auth';
+  subtype: 'initialized' | 'authenticated' | 'unauthenticated' | 'signed_out' | 'session_refreshed' | 'error';
+  payload: {
+    userId?: string;
+    email?: string;
+    error?: string;
+    timestamp: number;
+  };
+}
+
+export type SystemEvent = FileSystemEvent | AgentEvent | CompilationEvent | ConnectionEvent | UIEvent | GitEvent | AuthEvent;
 
 // ============================================================================
 // Event Store State
@@ -242,8 +253,12 @@ function createEventStore() {
     event.type === 'ui'
   );
 
-  const gitEvents = createEventStream((event): event is GitEvent => 
+  const gitEvents = createEventStream((event): event is GitEvent =>
     event.type === 'git'
+  );
+
+  const authEvents = createEventStream((event): event is AuthEvent =>
+    event.type === 'auth'
   );
 
   // Session-specific agent events
@@ -687,6 +702,49 @@ function createEventStore() {
         payload: { commit, timestamp: Date.now() }
       }),
 
+    // Auth events
+    authInitialized: () =>
+      emit({
+        type: 'auth',
+        subtype: 'initialized',
+        payload: { timestamp: Date.now() }
+      }),
+
+    authAuthenticated: (userId: string, email?: string) =>
+      emit({
+        type: 'auth',
+        subtype: 'authenticated',
+        payload: { userId, email, timestamp: Date.now() }
+      }),
+
+    authUnauthenticated: () =>
+      emit({
+        type: 'auth',
+        subtype: 'unauthenticated',
+        payload: { timestamp: Date.now() }
+      }),
+
+    authSignedOut: () =>
+      emit({
+        type: 'auth',
+        subtype: 'signed_out',
+        payload: { timestamp: Date.now() }
+      }),
+
+    authSessionRefreshed: (userId: string) =>
+      emit({
+        type: 'auth',
+        subtype: 'session_refreshed',
+        payload: { userId, timestamp: Date.now() }
+      }),
+
+    authError: (error: string) =>
+      emit({
+        type: 'auth',
+        subtype: 'error',
+        payload: { error, timestamp: Date.now() }
+      }),
+
     gitPushCompleted: () =>
       emit({
         type: 'git',
@@ -721,6 +779,7 @@ function createEventStore() {
     connectionEvents,
     uiEvents,
     gitEvents,
+    authEvents,
     createAgentSessionStream,
     createFileSystemPathStream,
     createFileSystemEventStream,

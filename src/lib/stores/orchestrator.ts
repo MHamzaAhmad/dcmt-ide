@@ -12,6 +12,7 @@ import { agentStore } from './agent';
 import { gitStore } from './git';
 import { eventStore } from './events';
 import { projectStore } from './project';
+import { authStore } from './auth';
 import { isTauri } from '$lib/utils/platform';
 import type { QueryClient } from '@tanstack/svelte-query';
 
@@ -45,6 +46,11 @@ export interface InitializationOptions {
 
 function createInitializationOrchestrator() {
     const initialSteps: InitializationStep[] = [
+        {
+            name: 'auth',
+            description: 'Check authentication',
+            status: 'pending'
+        },
         {
             name: 'project',
             description: 'Check project selection',
@@ -125,16 +131,51 @@ function createInitializationOrchestrator() {
 
             // Reset state
             startTime = Date.now();
+
+            // Filter steps based on platform and options
+            let steps = [...initialSteps];
+
+            // Remove auth step for desktop
+            if (isTauri()) {
+                steps = steps.filter(step => step.name !== 'auth');
+            }
+
+            // Remove agent step if requested
+            if (skipAgentInit) {
+                steps = steps.filter(step => step.name !== 'agent');
+            }
+
             update(state => ({
                 ...initialState,
                 isInitializing: true,
-                steps: skipAgentInit ? 
-                    initialSteps.filter(step => step.name !== 'agent') : 
-                    [...initialSteps]
+                steps
             }));
 
             try {
-                // Step 0: Check project selection (desktop only)
+                // Step 0: Check authentication (web only)
+                if (!isTauri()) {
+                    await orchestrator.executeStep('auth', async () => {
+                        console.log('InitializationOrchestrator: Checking authentication...');
+                        await authStore.initialize();
+
+                        // Check if authenticated
+                        const authState = authStore.getCurrentState();
+                        if (!authState.isAuthenticated) {
+                            console.log('InitializationOrchestrator: User not authenticated, redirecting...');
+                            // Auth store will handle redirect, just stop initialization
+                            throw new Error('Authentication required');
+                        }
+
+                        console.log('InitializationOrchestrator: User authenticated');
+
+                        // Emit auth event
+                        if (authState.user) {
+                            eventStore.events.authAuthenticated(authState.user.id || 'unknown', authState.user.email);
+                        }
+                    });
+                }
+
+                // Step 1: Check project selection (desktop only)
                 if (isTauri()) {
                     await orchestrator.executeStep('project', async () => {
                         console.log('InitializationOrchestrator: Checking project selection...');
@@ -166,7 +207,7 @@ function createInitializationOrchestrator() {
                     }
                 }
 
-                // Step 1: Initialize EventStore (quick, synchronous setup)
+                // Step 2: Initialize EventStore (quick, synchronous setup)
                 await orchestrator.executeStep('eventStore', async () => {
                     console.log('InitializationOrchestrator: Initializing EventStore...');
                     
@@ -183,7 +224,7 @@ function createInitializationOrchestrator() {
                     console.log('InitializationOrchestrator: EventStore initialized');
                 });
 
-                // Step 2: Initialize Workspace (required for other steps)
+                // Step 3: Initialize Workspace (required for other steps)
                 await orchestrator.executeStep('workspace', async () => {
                     console.log('InitializationOrchestrator: Initializing workspace...');
                     await workspaceStore.initialize(rootPath, queryClient);
@@ -195,7 +236,7 @@ function createInitializationOrchestrator() {
                     }
                 });
 
-                // Step 3-6: Initialize LaTeX, PDF, Git, and Agent in parallel (independent operations)
+                // Step 4-7: Initialize LaTeX, PDF, Git, and Agent in parallel (independent operations)
                 const parallelInitPromises: Promise<void>[] = [];
                 
                 // LaTeX initialization

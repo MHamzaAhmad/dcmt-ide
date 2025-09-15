@@ -67,7 +67,7 @@ RUN apt-get update && apt-get install -y \
 # Install LiteLLM and Clerk Python SDK
 RUN python3 -m venv /app/litellm-venv && \
     /app/litellm-venv/bin/pip install --upgrade pip && \
-    /app/litellm-venv/bin/pip install 'litellm[proxy]' clerk-backend-api
+    /app/litellm-venv/bin/pip install 'litellm[proxy]' clerk-backend-api gunicorn
 
 # Create app user
 RUN groupadd -g 1001 appgroup && \

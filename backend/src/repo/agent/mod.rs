@@ -559,7 +559,7 @@ impl AgentRepo {
             model: model.to_string(),
             messages: litellm_messages,
             stream: Some(true),
-            temperature: Some(0.7),
+            temperature: if model.starts_with("gpt-5") { Some(1.0) } else { Some(0.7) },
             max_tokens: None,
             tools,
             tool_choice: Some(serde_json::json!("auto")),

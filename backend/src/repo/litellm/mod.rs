@@ -6,6 +6,7 @@ use tracing::{debug, info, warn};
 pub mod types;
 pub mod models;
 pub mod chat;
+pub mod uds_http;
 
 pub use types::*;
 pub use models::ModelsClient;
@@ -51,7 +52,7 @@ impl LiteLLMRepository {
     }
 
     /// Creates a streaming chat completion request
-    pub async fn create_streaming_chat_completion(&self, request: ChatCompletionRequest) -> Result<std::os::unix::net::UnixStream> {
+    pub async fn create_streaming_chat_completion(&self, request: ChatCompletionRequest) -> Result<hyper::Response<hyper::Body>> {
         debug!("Creating streaming chat completion with model: {}", request.model);
         self.chat_client.create_streaming_chat_completion(request).await
     }

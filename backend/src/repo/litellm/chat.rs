@@ -1,8 +1,10 @@
 use super::types::*;
+use super::uds_http::{make_uds_request, create_uds_uri};
 use anyhow::Result;
-use std::os::unix::net::UnixStream;
-use std::io::{Read, Write};
-use std::time::Duration;
+use hyper::Body;
+use hyper::Request;
+use hyper::http::header;
+use hyper::Method;
 use serde_json;
 use tracing::{debug, error};
 
@@ -19,18 +21,39 @@ impl ChatClient {
     pub async fn create_chat_completion(&self, request: ChatCompletionRequest) -> Result<ChatCompletionResponse> {
         debug!("Creating chat completion with model: {}", request.model);
 
-        // Connect to UDS socket
-        let mut socket = self.connect_with_retry().await?;
+        // Create request body
+        let request_body = serde_json::to_vec(&request)
+            .map_err(|e| {
+                error!("Failed to serialize chat request: {}", e);
+                LiteLLMError::Serialization(e.to_string())
+            })?;
 
-        // Send HTTP request to LiteLLM
-        let http_request = self.create_chat_request(request)?;
-        self.send_request(&mut socket, &http_request).await?;
+        // Build HTTP request
+        let uri = create_uds_uri("/v1/chat/completions")?;
+        let request = Request::builder()
+            .method(Method::POST)
+            .uri(uri)
+            .header(header::CONTENT_TYPE, "application/json")
+            .header(header::ACCEPT, "application/json")
+            .header(header::USER_AGENT, "dcmt-litellm-client/1.0")
+            .header(header::CONTENT_LENGTH, request_body.len())
+            .body(Body::from(request_body))?;
 
-        // Read response
-        let response = self.read_response(&mut socket).await?;
+        // Send request via UDS
+        let response = make_uds_request(&self.socket_path, request).await?;
 
-        // Parse as LiteLLM chat completion response
-        let chat_response: ChatCompletionResponse = serde_json::from_str(&response)
+        // Check response status
+        if response.status() != hyper::StatusCode::OK {
+            let status = response.status();
+            let body = hyper::body::to_bytes(response.into_body()).await?;
+            let error_text = String::from_utf8_lossy(&body);
+            error!("Chat completion request failed: {} - {}", status, error_text);
+            return Err(anyhow::anyhow!("Chat completion failed: {}", error_text));
+        }
+
+        // Parse response body
+        let body_bytes = hyper::body::to_bytes(response.into_body()).await?;
+        let chat_response: ChatCompletionResponse = serde_json::from_slice(&body_bytes)
             .map_err(|e| {
                 error!("Failed to parse chat completion response: {}", e);
                 LiteLLMError::InvalidResponse(e.to_string())
@@ -42,129 +65,43 @@ impl ChatClient {
     }
 
     /// Create streaming chat completion via UDS
-    pub async fn create_streaming_chat_completion(&self, request: ChatCompletionRequest) -> Result<UnixStream> {
+    pub async fn create_streaming_chat_completion(&self, request: ChatCompletionRequest) -> Result<hyper::Response<Body>> {
         debug!("Creating streaming chat completion with model: {}", request.model);
 
-        // Connect to UDS socket
-        let mut socket = self.connect_with_retry().await?;
-
-        // Send HTTP request to LiteLLM
-        let http_request = self.create_streaming_chat_request(request)?;
-        self.send_request(&mut socket, &http_request).await?;
-
-        Ok(socket)
-    }
-
-    async fn connect_with_retry(&self) -> Result<UnixStream> {
-        let mut attempts = 0;
-        let max_attempts = 5;
-
-        loop {
-            match UnixStream::connect(&self.socket_path) {
-                Ok(socket) => {
-                    socket.set_nonblocking(true)?;
-                    socket.set_read_timeout(Some(Duration::from_secs(30)))?;
-                    socket.set_write_timeout(Some(Duration::from_secs(30)))?;
-                    return Ok(socket);
-                }
-                Err(_e) if attempts < max_attempts => {
-                    attempts += 1;
-                    debug!("UDS connection attempt {} failed, retrying...", attempts);
-                    tokio::time::sleep(Duration::from_millis(100 * attempts)).await;
-                }
-                Err(e) => {
-                    error!("Failed to connect to UDS after {} attempts: {}", max_attempts, e);
-                    return Err(anyhow::anyhow!("UDS connection failed: {}", e));
-                }
-            }
-        }
-    }
-
-    fn create_chat_request(&self, request: ChatCompletionRequest) -> Result<String> {
-        let request_body = serde_json::to_string(&request)
-            .map_err(|e| {
-                error!("Failed to serialize chat request: {}", e);
-                LiteLLMError::Serialization(e.to_string())
-            })?;
-
-        Ok(format!(
-            "POST /v1/chat/completions HTTP/1.1\r\n\
-             Host: localhost\r\n\
-             User-Agent: dcmt-litellm-client/1.0\r\n\
-             Content-Type: application/json\r\n\
-             Content-Length: {}\r\n\
-             Accept: application/json\r\n\
-             Connection: close\r\n\
-             \r\n\
-             {}",
-            request_body.len(),
-            request_body
-        ))
-    }
-
-    fn create_streaming_chat_request(&self, request: ChatCompletionRequest) -> Result<String> {
+        // Create streaming request
         let mut streaming_request = request;
         streaming_request.stream = Some(true);
 
-        let request_body = serde_json::to_string(&streaming_request)
+        // Create request body
+        let request_body = serde_json::to_vec(&streaming_request)
             .map_err(|e| {
                 error!("Failed to serialize streaming chat request: {}", e);
                 LiteLLMError::Serialization(e.to_string())
             })?;
 
-        Ok(format!(
-            "POST /v1/chat/completions HTTP/1.1\r\n\
-             Host: localhost\r\n\
-             User-Agent: dcmt-litellm-client/1.0\r\n\
-             Content-Type: application/json\r\n\
-             Content-Length: {}\r\n\
-             Accept: text/event-stream\r\n\
-             Cache-Control: no-cache\r\n\
-             Connection: close\r\n\
-             \r\n\
-             {}",
-            request_body.len(),
-            request_body
-        ))
-    }
+        // Build HTTP request with streaming headers
+        let uri = create_uds_uri("/v1/chat/completions")?;
+        let request = Request::builder()
+            .method(Method::POST)
+            .uri(uri)
+            .header(header::CONTENT_TYPE, "application/json")
+            .header(header::ACCEPT, "text/event-stream")
+            .header(header::CACHE_CONTROL, "no-cache")
+            .header(header::USER_AGENT, "dcmt-litellm-client/1.0")
+            .header(header::CONTENT_LENGTH, request_body.len())
+            .body(Body::from(request_body))?;
 
-    async fn send_request(&self, socket: &mut UnixStream, request: &str) -> Result<()> {
-        socket.write_all(request.as_bytes())?;
-        socket.flush()?;
-        Ok(())
-    }
+        // Send request via UDS
+        let response = make_uds_request(&self.socket_path, request).await?;
 
-    async fn read_response(&self, socket: &mut UnixStream) -> Result<String> {
-        let mut buffer = Vec::new();
-        let mut temp_buffer = [0; 1024];
-
-        loop {
-            match socket.read(&mut temp_buffer) {
-                Ok(0) => break, // Connection closed
-                Ok(n) => buffer.extend_from_slice(&temp_buffer[..n]),
-                Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
-                    tokio::time::sleep(Duration::from_millis(10)).await;
-                    continue;
-                }
-                Err(_e) => {
-                    error!("Failed to read from UDS");
-                    return Err(anyhow::anyhow!("UDS read error"));
-                }
-            }
+        if response.status() != hyper::StatusCode::OK {
+            let status = response.status();
+            let body = hyper::body::to_bytes(response.into_body()).await?;
+            let error_text = String::from_utf8_lossy(&body);
+            error!("Streaming chat completion request failed: {} - {}", status, error_text);
+            return Err(anyhow::anyhow!("Streaming chat completion failed: {}", error_text));
         }
 
-        let response = String::from_utf8(buffer)?;
-
-        // Extract JSON body from HTTP response
-        let body_start = response.find("\r\n\r\n")
-            .ok_or_else(|| anyhow::anyhow!("Invalid HTTP response"))?;
-
-        let body = response[body_start + 4..].trim();
-
-        if body.is_empty() {
-            return Err(anyhow::anyhow!("Empty response body"));
-        }
-
-        Ok(body.to_string())
+        Ok(response)
     }
 }

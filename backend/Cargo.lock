@@ -443,6 +443,8 @@ dependencies = [
  "futures",
  "futures-util",
  "git2",
+ "http 0.2.12",
+ "hyper 0.14.32",
  "notify",
  "regex",
  "reqwest 0.11.27",

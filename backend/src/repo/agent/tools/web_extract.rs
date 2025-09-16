@@ -1,5 +1,5 @@
 use super::*;
-use crate::repo::tavily::{TavilyRepository, ExtractRequest};
+use crate::repo::tavily::ExtractRequest;
 use std::path::Path;
 
 /// Tool for extracting content from web URLs using Tavily API
@@ -80,7 +80,7 @@ impl AgentTool for WebExtractTool {
         }
     }
     
-    async fn execute(&self, _workspace: &Path, args: Value, _repo: Option<&crate::repo::agent::AgentRepo>) -> AgentResult<String> {
+    async fn execute(&self, _workspace: &Path, args: Value, repo: Option<&crate::repo::agent::AgentRepo>) -> AgentResult<String> {
         // Extract URLs parameter (can be string or array)
         let urls = match &args["urls"] {
             Value::String(url) => vec![url.clone()],
@@ -153,12 +153,13 @@ impl AgentTool for WebExtractTool {
             });
         }
         
-        // Create Tavily repository and perform extraction
-        let tavily_repo = TavilyRepository::new()
-            .map_err(|e| AgentError::ToolExecutionError {
-                tool: self.name().to_string(),
-                error: format!("Failed to create Tavily client: {}", e),
-            })?;
+        // Get Tavily repository from AgentRepo
+        let repo = repo.ok_or_else(|| AgentError::ToolExecutionError {
+            tool: self.name().to_string(),
+            error: "Agent repository not available".to_string(),
+        })?;
+
+        let tavily_repo = repo.tavily_repository();
             
         tracing::info!("Extracting content from {} URL(s)", urls.len());
         

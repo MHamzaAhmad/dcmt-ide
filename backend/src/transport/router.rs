@@ -1,4 +1,4 @@
-use crate::{config::Config, svc::{AgentService, FileService, LaTeXService, GitService}, repo::AgentRepo};
+use crate::{config::Config, svc::{AgentService, FileService, LaTeXService, GitService}, repo::{AgentRepo, tavily::TavilyRepository}};
 use crate::transport::middleware::{cors::create_cors_layer, logging::create_trace_layer, create_clerk_auth_layer};
 use crate::transport::routes::{agent_router, files_router, latex_router, sse_router, websocket_router, git_router};
 use crate::transport::routes::websocket::WebSocketServices;
@@ -28,13 +28,23 @@ pub async fn create_router(config: Config) -> Result<Router> {
         config.workspace_path.clone(),
         config.agent.litellm_base_url.clone(),
     )?);
-    
+
+    // Create Tavily repository with API key
+    let tavily_repo = match config.tavily_api_key {
+        Some(api_key) => Arc::new(TavilyRepository::new(api_key)?),
+        None => {
+            tracing::warn!("TAVILY_API_KEY not configured - web search and extraction will be unavailable");
+            return Err(anyhow::anyhow!("TAVILY_API_KEY is required for web search functionality"));
+        }
+    };
+
     // Create agent repository and service
     let agent_repo = Arc::new(AgentRepo::new(
         config.workspace_path.clone(),
         config.agent.litellm_base_url.clone(),
         file_service.clone(),
         latex_service.clone(),
+        tavily_repo,
     ).await?);
     let agent_service = Arc::new(AgentService::new(agent_repo));
     

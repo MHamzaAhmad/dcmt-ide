@@ -13,6 +13,7 @@ use crate::model::agent::{
     ChatMessage, ChatRequest, ToolCall, ToolFunction, EventMetadata,
 };
 use crate::svc::{FileService, LaTeXService};
+use crate::repo::tavily::TavilyRepository;
 
 pub mod events;
 pub mod session;
@@ -32,6 +33,7 @@ pub struct AgentRepo {
     workspace_path: PathBuf,
     file_service: Arc<FileService>,
     latex_service: Arc<LaTeXService>,
+    tavily_repo: Arc<TavilyRepository>,
 }
 
 /// Streaming context for processing SSE chunks
@@ -222,6 +224,7 @@ impl AgentRepo {
         litellm_base_url: String,
         file_service: Arc<FileService>,
         latex_service: Arc<LaTeXService>,
+        tavily_repo: Arc<TavilyRepository>,
     ) -> AgentResult<Self> {
         // Load system prompt from file
         let system_prompt = Self::load_system_prompt(&workspace_path).await?;
@@ -250,9 +253,15 @@ impl AgentRepo {
             workspace_path,
             file_service,
             latex_service,
+            tavily_repo,
         })
     }
-    
+
+    /// Get a reference to the Tavily repository
+    pub fn tavily_repository(&self) -> &Arc<TavilyRepository> {
+        &self.tavily_repo
+    }
+
     /// Loads the system prompt from the consolidated prompts file
     async fn load_system_prompt(workspace_path: &PathBuf) -> AgentResult<String> {
         let prompt_path = workspace_path.parent()
@@ -314,7 +323,7 @@ impl AgentRepo {
             .await?;
         
         // Process with tool calling loop
-        let response = self.process_with_tools(messages, request.model, &request.session_id).await?;
+        let response = self.process_with_tools(messages, request.model, &request.session_id, &request.auth_token.as_deref().unwrap_or("")).await?;
         
         // Add assistant response to session
         self.session_manager
@@ -340,6 +349,7 @@ impl AgentRepo {
         mut messages: Vec<ChatMessage>,
         model: String,
         session_id: &str,
+        auth_token: &str,
     ) -> AgentResult<ChatMessage> {
         let mut iteration_count = 0;
         const MAX_ITERATIONS: usize = 25; // Prevent infinite loops
@@ -360,7 +370,7 @@ impl AgentRepo {
                 })
                 .await;
 
-            let response = self.call_litellm(&messages, &model, session_id, &request.auth_token.as_deref().unwrap_or("")).await?;
+            let response = self.call_litellm(&messages, &model, session_id, auth_token).await?;
             
             // Check for tool calls
             if let Some(tool_calls) = response.tool_calls.clone() {

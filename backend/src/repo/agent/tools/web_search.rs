@@ -1,5 +1,5 @@
 use super::*;
-use crate::repo::tavily::{TavilyRepository, SearchRequest};
+use crate::repo::tavily::SearchRequest;
 use std::path::Path;
 
 /// Tool for performing web searches using Tavily API
@@ -69,7 +69,7 @@ impl AgentTool for WebSearchTool {
         }
     }
     
-    async fn execute(&self, _workspace: &Path, args: Value, _repo: Option<&crate::repo::agent::AgentRepo>) -> AgentResult<String> {
+    async fn execute(&self, _workspace: &Path, args: Value, repo: Option<&crate::repo::agent::AgentRepo>) -> AgentResult<String> {
         // Extract required parameters
         let query = args["query"]
             .as_str()
@@ -109,12 +109,13 @@ impl AgentTool for WebSearchTool {
             request = request.with_depth(search_depth);
         }
         
-        // Create Tavily repository and perform search
-        let tavily_repo = TavilyRepository::new()
-            .map_err(|e| AgentError::ToolExecutionError {
-                tool: self.name().to_string(),
-                error: format!("Failed to create Tavily client: {}", e),
-            })?;
+        // Get Tavily repository from AgentRepo
+        let repo = repo.ok_or_else(|| AgentError::ToolExecutionError {
+            tool: self.name().to_string(),
+            error: "Agent repository not available".to_string(),
+        })?;
+
+        let tavily_repo = repo.tavily_repository();
             
         tracing::info!("Performing web search for query: {}", query);
         

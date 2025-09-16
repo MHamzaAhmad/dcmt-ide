@@ -13,6 +13,7 @@ pub use extract::{ExtractRequest, ExtractResponse, ExtractResult};
 pub struct TavilyRepository {
     client: Client,
     base_url: String,
+    api_key: String,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -37,21 +38,26 @@ pub enum TavilyError {
 }
 
 impl TavilyRepository {
-    /// Creates a new Tavily repository instance using proxy
-    pub fn new() -> Result<Self> {
+    /// Creates a new Tavily repository instance with API key
+    pub fn new(api_key: String) -> Result<Self> {
+        if api_key.is_empty() {
+            return Err(anyhow::anyhow!("Tavily API key is required").into());
+        }
+
         let client = Client::builder()
             .timeout(Duration::from_secs(30))
             .pool_max_idle_per_host(10)
             .pool_idle_timeout(Duration::from_secs(60))
             .build()?;
-        
-        // Get base URL from environment, default to proxy URL
+
+        // Get base URL from environment, default to direct API URL
         let base_url = std::env::var("TAVILY_BASE_URL")
-            .unwrap_or_else(|_| "http://127.0.0.1:8082".to_string());
-            
+            .unwrap_or_else(|_| "https://api.tavily.com".to_string());
+
         Ok(Self {
             client,
             base_url,
+            api_key,
         })
     }
     
@@ -63,7 +69,7 @@ impl TavilyRepository {
         
         let response = self.client
             .post(&url)
-            .header("Authorization", "Bearer ")
+            .header("Authorization", format!("Bearer {}", self.api_key))
             .header("Content-Type", "application/json")
             .json(&request)
             .send()
@@ -88,7 +94,7 @@ impl TavilyRepository {
         
         let response = self.client
             .post(&url)
-            .header("Authorization", "Bearer ")
+            .header("Authorization", format!("Bearer {}", self.api_key))
             .header("Content-Type", "application/json")
             .json(&request)
             .send()

@@ -7,6 +7,7 @@ pub struct Config {
     pub server: ServerConfig,
     pub agent: AgentConfig,
     pub clerk_secret_key: Option<String>,
+    pub tavily_api_key: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -41,12 +42,14 @@ impl Config {
             .unwrap_or_else(|_| "http://127.0.0.1:4000".to_string());
 
         let clerk_secret_key = std::env::var("CLERK_SECRET_KEY").ok();
+        let tavily_api_key = std::env::var("TAVILY_API_KEY").ok();
 
         Ok(Config {
             workspace_path,
             server: ServerConfig { host, port },
             agent: AgentConfig { litellm_base_url },
             clerk_secret_key,
+            tavily_api_key,
         })
     }
 }

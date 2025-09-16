@@ -323,7 +323,7 @@ impl AgentRepo {
             .await?;
         
         // Process with tool calling loop
-        let response = self.process_with_tools(messages, request.model, &request.session_id, &request.auth_token.as_deref().unwrap_or("")).await?;
+        let response = self.process_with_tools(messages, request.model, &request.session_id).await?;
         
         // Add assistant response to session
         self.session_manager
@@ -349,7 +349,6 @@ impl AgentRepo {
         mut messages: Vec<ChatMessage>,
         model: String,
         session_id: &str,
-        auth_token: &str,
     ) -> AgentResult<ChatMessage> {
         let mut iteration_count = 0;
         const MAX_ITERATIONS: usize = 25; // Prevent infinite loops
@@ -370,7 +369,7 @@ impl AgentRepo {
                 })
                 .await;
 
-            let response = self.call_litellm(&messages, &model, session_id, auth_token).await?;
+            let response = self.call_litellm(&messages, &model, session_id).await?;
             
             // Check for tool calls
             if let Some(tool_calls) = response.tool_calls.clone() {
@@ -552,7 +551,7 @@ impl AgentRepo {
     }
     
     /// Calls LiteLLM API with streaming support
-    async fn call_litellm(&self, messages: &[ChatMessage], model: &str, session_id: &str, auth_token: &str) -> AgentResult<ChatMessage> {
+    async fn call_litellm(&self, messages: &[ChatMessage], model: &str, session_id: &str) -> AgentResult<ChatMessage> {
         // Build request with streaming enabled
         let request = serde_json::json!({
             "model": model,
@@ -565,7 +564,6 @@ impl AgentRepo {
         let response = self.http_client
             .post(format!("{}/v1/chat/completions", self.config.litellm_base_url))
             .header("Accept", "text/event-stream")
-            .header("Authorization", format!("Bearer {}", auth_token))
             .json(&request)
             .send()
             .await

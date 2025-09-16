@@ -1,7 +1,6 @@
 // Desktop Agent Operations via Tauri Commands
 import { invoke } from '@tauri-apps/api/core';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
-import { liteLLMClient } from '../../litellm';
 import type { 
     AgentOperations, 
     AgentChatRequest, 
@@ -22,8 +21,12 @@ export class DesktopAgentAdapter implements AgentOperations {
     private fileEventCallbacks: FileEventCallback[] = [];
 
     async listModels(): Promise<LiteLLMModelsResponse> {
-        // Use centralized LiteLLM client
-        return await liteLLMClient.fetchModels();
+        // Use backend API endpoint (even for desktop, use HTTP API)
+        const response = await fetch(`${import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001'}/api/llm/models`);
+        if (!response.ok) {
+            throw new Error(`Failed to fetch models: ${response.statusText}`);
+        }
+        return await response.json();
     }
 
     async sendMessage(request: AgentChatRequest): Promise<AgentChatResponse> {

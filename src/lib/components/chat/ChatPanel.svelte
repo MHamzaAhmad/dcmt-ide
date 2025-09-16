@@ -41,8 +41,8 @@
 	
 	// Query for fetching models from LiteLLM
 	const modelsQuery = createQuery({
-		queryKey: ['litellm-models'],
-		queryFn: () => modelsAPI.listLiteLLMModels(),
+		queryKey: ['listModels'],
+		queryFn: () => modelsAPI.listModels(),
 		staleTime: 5 * 60 * 1000, // 5 minutes
 		retry: 2,
 		enabled: () => isAgentMode

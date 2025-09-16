@@ -1,7 +1,6 @@
 // Models API Endpoints
 
 import { apiClient } from './client';
-import { liteLLMClient } from './litellm';
 import type { ModelsResponse, ChatRequest, ChatResponse, LiteLLMModelsResponse, LiteLLMModel, LLMModel } from './types';
 
 export const modelsAPI = {
@@ -10,21 +9,21 @@ export const modelsAPI = {
 	 */
 	async listModels(): Promise<ModelsResponse> {
 		try {
-			// Use centralized LiteLLM client
-			const liteLLMResponse = await liteLLMClient.fetchModels();
-			
+			// Use backend API endpoint
+			const liteLLMResponse = await apiClient.get<LiteLLMModelsResponse>('/api/llm/models');
+
 			// Transform LiteLLM response to our format
 			const models: LLMModel[] = liteLLMResponse.data.map((model: LiteLLMModel) => ({
 				id: model.id,
 				name: model.id.replace(/^gpt-/, 'GPT-').replace(/^claude-/, 'Claude ').replace(/^gemini-/, 'Gemini '),
 				description: `${model.owned_by} model`
 			}));
-			
+
 			return { models };
 		} catch (error) {
-			console.error('Failed to fetch models from LiteLLM:', error);
-			
-			// Fallback to static models if LiteLLM is not available
+			console.error('Failed to fetch models from backend:', error);
+
+			// Fallback to static models if backend is not available
 			return {
 				models: [
 					{ id: 'gpt-4-turbo', name: 'GPT-4 Turbo', description: 'Most capable GPT-4 model' },
@@ -34,14 +33,6 @@ export const modelsAPI = {
 				]
 			};
 		}
-	},
-
-	/**
-	 * List models with raw LiteLLM format
-	 */
-	async listLiteLLMModels(): Promise<LiteLLMModelsResponse> {
-		// Use centralized LiteLLM client
-		return await liteLLMClient.fetchModels();
 	},
 
 	/**

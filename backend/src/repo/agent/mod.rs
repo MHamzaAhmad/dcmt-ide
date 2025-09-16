@@ -537,12 +537,117 @@ impl AgentRepo {
     }
     
     /// Calls LiteLLM API with streaming support
-    async fn call_litellm(&self, messages: &[ChatMessage], model: &str, session_id: &str, auth_token: &str) -> AgentResult<ChatMessage> {
-        // TODO: Update this method to use LiteLLM repository with streaming support
-        // The current implementation uses HTTP streaming, but we need to adapt it for UDS streaming
-        Err(AgentError::LiteLLMError {
-            message: "Agent streaming not yet implemented with UDS".to_string(),
-        })
+    async fn call_litellm(&self, messages: &[ChatMessage], model: &str, session_id: &str, _auth_token: &str) -> AgentResult<ChatMessage> {
+        use crate::repo::litellm::types::{ChatCompletionRequest, ChatMessage as LiteLLMChatMessage};
+
+        // Convert messages to LiteLLM format
+        let litellm_messages: Vec<LiteLLMChatMessage> = messages.iter().map(|msg| LiteLLMChatMessage {
+            role: msg.role.clone(),
+            content: msg.content.clone().unwrap_or_default(),
+        }).collect();
+
+        // Get tool definitions for the request
+        let tool_definitions = self.get_tool_definitions();
+        let tools: Option<Vec<serde_json::Value>> = if tool_definitions.is_empty() {
+            None
+        } else {
+            Some(tool_definitions.into_iter().map(|t| serde_json::to_value(t).unwrap()).collect())
+        };
+
+        // Create chat completion request
+        let request = ChatCompletionRequest {
+            model: model.to_string(),
+            messages: litellm_messages,
+            stream: Some(true),
+            temperature: Some(0.7),
+            max_tokens: None,
+            tools,
+            tool_choice: Some(serde_json::json!("auto")),
+        };
+
+        // Get streaming response from LiteLLM
+        let streaming_response = self.litellm_repo.create_streaming_chat_completion(request).await
+            .map_err(|e| AgentError::LiteLLMError {
+                message: format!("Failed to create streaming chat completion: {}", e),
+            })?;
+
+        // Process the streaming response
+        let mut streaming_context = StreamingContext::new();
+        let mut body = streaming_response.into_body();
+
+        while let Some(chunk_result) = body.next().await {
+            match chunk_result {
+                Ok(bytes) => {
+                    let chunk_str = String::from_utf8_lossy(&bytes);
+
+                    // Process SSE format
+                    for line in chunk_str.lines() {
+                        if line.starts_with("data: ") {
+                            let data = &line[6..]; // Remove "data: " prefix
+
+                            if data == "[DONE]" {
+                                continue;
+                            }
+
+                            // Parse JSON data
+                            if let Ok(json_data) = serde_json::from_str::<serde_json::Value>(data) {
+                                // Process the chunk and get streaming events
+                                let events = streaming_context.process_chunk(&json_data);
+
+                                // Broadcast streaming events
+                                for event in events {
+                                    match event {
+                                        StreamingEvent::Content(content) => {
+                                            self.event_broadcaster
+                                                .broadcast(session_id, AgentEvent::LLMStreaming {
+                                                    content: content.clone(),
+                                                    metadata: Self::create_metadata(&format!("stream-{}", uuid::Uuid::new_v4())),
+                                                })
+                                                .await;
+
+                                            // Also emit StreamChunk for backward compatibility
+                                            self.event_broadcaster
+                                                .broadcast(session_id, AgentEvent::StreamChunk {
+                                                    content,
+                                                    metadata: Self::create_metadata(&format!("chunk-{}", uuid::Uuid::new_v4())),
+                                                })
+                                                .await;
+                                        }
+                                        StreamingEvent::ToolCallStart { id, name } => {
+                                            let id_clone = id.clone();
+                                            self.event_broadcaster
+                                                .broadcast(session_id, AgentEvent::ToolCallStart {
+                                                    tool_id: id,
+                                                    tool_name: name,
+                                                    metadata: Self::create_metadata(&format!("tool-start-{}", id_clone)),
+                                                })
+                                                .await;
+                                        }
+                                        StreamingEvent::ToolCallReady(tool_call) => {
+                                            self.event_broadcaster
+                                                .broadcast(session_id, AgentEvent::ToolCallReady {
+                                                    tool_call: tool_call.clone(),
+                                                    metadata: Self::create_metadata(&format!("tool-ready-{}", tool_call.id)),
+                                                })
+                                                .await;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                Err(e) => {
+                    tracing::error!("Error reading from stream: {}", e);
+                    return Err(AgentError::LiteLLMError {
+                        message: format!("Stream reading error: {}", e),
+                    });
+                }
+            }
+        }
+
+        // Finalize and return the complete message
+        Ok(streaming_context.finalize())
     }
     
     /// Gets the event broadcaster for WebSocket integration

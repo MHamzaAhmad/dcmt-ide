@@ -104,11 +104,14 @@ COPY --chown=appuser:appgroup docker/docker-entrypoint.sh /app/docker-entrypoint
 # Copy LiteLLM configuration (no auth needed for UDS)
 COPY --chown=appuser:appgroup litellm/config.yaml /app/litellm/config.yaml
 
+# Copy LiteLLM startup script
+COPY --chown=appuser:appgroup litellm/start_proxy.py /app/litellm/start_proxy.py
+
 # Copy prompts directory
 COPY --chown=appuser:appgroup prompts/ /app/prompts/
 
 # Make scripts executable
-RUN chmod +x /app/docker-entrypoint.sh
+RUN chmod +x /app/docker-entrypoint.sh /app/litellm/start_proxy.py
 
 # Create workspace directory with proper permissions
 RUN mkdir -p /app/workspace && chown -R appuser:appgroup /app/workspace

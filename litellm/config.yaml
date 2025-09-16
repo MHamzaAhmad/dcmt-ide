@@ -12,5 +12,3 @@ model_list:
       model: anthropic/claude-3-5-sonnet-20241022
       api_key: os.environ/ANTHROPIC_API_KEY
 
-# Custom authentication using Clerk
-custom_auth: auth.user_api_key_auth

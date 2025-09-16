@@ -51,30 +51,6 @@ COPY backend/src ./src
 # Build the actual application
 RUN touch src/cmd/main.rs && cargo build --release
 
-# Tavily proxy build stage
-FROM golang:1.24-alpine AS tavily-builder
-
-# Install build dependencies
-RUN apk add --no-cache git ca-certificates
-
-WORKDIR /app
-
-# Copy go mod files for dependency caching
-COPY lib/tavily/go.mod lib/tavily/go.sum ./
-
-# Download dependencies
-RUN go mod download && go mod verify
-
-# Copy source code
-COPY lib/tavily/*.go ./
-
-# Build the proxy with optimizations
-RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build \
-    -ldflags='-w -s -extldflags "-static"' \
-    -a -installsuffix cgo \
-    -o tavily-proxy \
-    .
-
 # Production stage
 FROM texlive/texlive:latest
 
@@ -92,7 +68,7 @@ RUN apt-get update && apt-get install -y \
 # Install LiteLLM and Clerk Python SDK
 RUN python3 -m venv /app/litellm-venv && \
     /app/litellm-venv/bin/pip install --upgrade pip && \
-    /app/litellm-venv/bin/pip install 'litellm[proxy]' clerk-backend-api
+    /app/litellm-venv/bin/pip install 'litellm[proxy]'
 
 # Create app user
 RUN groupadd -g 1001 appgroup && \
@@ -101,7 +77,6 @@ RUN groupadd -g 1001 appgroup && \
 # Create necessary directories
 RUN mkdir -p /app/frontend \
     /app/backend \
-    /app/tavily \
     /app/logs \
     /var/log/supervisor \
     /run/nginx \
@@ -121,17 +96,13 @@ COPY --from=frontend-builder --chown=appuser:appgroup /app/build /app/frontend
 # Copy built backend
 COPY --from=backend-builder --chown=appuser:appgroup /app/backend/target/release/dcmt-backend /app/backend/dcmt-backend
 
-# Copy built Tavily proxy
-COPY --from=tavily-builder --chown=appuser:appgroup /app/tavily-proxy /app/tavily/tavily-proxy
-
 # Copy configuration files
 COPY --chown=appuser:appgroup docker/nginx-internal.conf /etc/nginx/nginx.conf
 COPY --chown=appuser:appgroup docker/supervisord.conf /etc/supervisord.conf
 COPY --chown=appuser:appgroup docker/docker-entrypoint.sh /app/docker-entrypoint.sh
 
-# Copy LiteLLM configuration and auth module
+# Copy LiteLLM configuration
 COPY --chown=appuser:appgroup litellm/config.yaml /app/litellm/config.yaml
-COPY --chown=appuser:appgroup litellm/auth.py /app/litellm/auth.py
 
 # Copy prompts directory
 COPY --chown=appuser:appgroup prompts/ /app/prompts/

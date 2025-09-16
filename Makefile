@@ -1,4 +1,4 @@
-.PHONY: litellm docker-build docker-run ssl-setup tavily-proxy
+.PHONY: litellm docker-build docker-run docker-rebuild ssl-setup tavily-proxy
 litellm:
 	docker run \
 		--env-file .env \
@@ -28,7 +28,7 @@ docker-run:
 
 docker-rebuild:
 	@git pull origin ft/local-no-proxy
-	@docker rm -f dcmt-editor
+	@docker rm -f dcmt-editor 2>/dev/null || true
 	docker-build
 	docker-run
 

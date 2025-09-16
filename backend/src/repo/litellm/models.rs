@@ -1,5 +1,5 @@
 use super::types::*;
-use super::uds_http::{make_uds_request, create_uds_uri};
+use super::uds_http::make_uds_request;
 use anyhow::Result;
 use hyper::Body;
 use hyper::Request;
@@ -21,10 +21,9 @@ impl ModelsClient {
         debug!("Fetching models from LiteLLM via UDS: {}", self.socket_path);
 
         // Build HTTP request
-        let uri = create_uds_uri("/v1/models")?;
         let request = Request::builder()
             .method(Method::GET)
-            .uri(uri)
+            .uri("/v1/models")
             .header(header::HOST, "litellm")
             .header(header::ACCEPT, "application/json")
             .header(header::USER_AGENT, "dcmt-litellm-client/1.0")

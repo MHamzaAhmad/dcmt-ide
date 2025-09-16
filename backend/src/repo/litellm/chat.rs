@@ -1,5 +1,5 @@
 use super::types::*;
-use super::uds_http::{make_uds_request, create_uds_uri};
+use super::uds_http::make_uds_request;
 use anyhow::Result;
 use hyper::Body;
 use hyper::Request;
@@ -28,11 +28,10 @@ impl ChatClient {
                 LiteLLMError::Serialization(e.to_string())
             })?;
 
-        // Build HTTP request
-        let uri = create_uds_uri("/v1/chat/completions")?;
+        // Build HTTP request with absolute URI
         let request = Request::builder()
             .method(Method::POST)
-            .uri(uri)
+            .uri("/v1/chat/completions")
             .header(header::HOST, "litellm")
             .header(header::CONTENT_TYPE, "application/json")
             .header(header::ACCEPT, "application/json")
@@ -81,10 +80,9 @@ impl ChatClient {
             })?;
 
         // Build HTTP request with streaming headers
-        let uri = create_uds_uri("/v1/chat/completions")?;
         let request = Request::builder()
             .method(Method::POST)
-            .uri(uri)
+            .uri("/v1/chat/completions")
             .header(header::HOST, "litellm")
             .header(header::CONTENT_TYPE, "application/json")
             .header(header::ACCEPT, "text/event-stream")

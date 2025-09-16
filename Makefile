@@ -1,4 +1,4 @@
-.PHONY: litellm docker-build docker-run ssl-setup tavily-proxy
+.PHONY: litellm docker-build docker-run ssl-setup tavily-proxy pull docker-clean docker-restart
 litellm:
 	docker run \
 		--env-file .env \
@@ -6,6 +6,9 @@ litellm:
 		-p 4000:4000 \
 		ghcr.io/berriai/litellm:main-latest \
 		--config /app/config.yaml --detailed_debug
+
+pull:
+	@git pull origin main
 
 docker-build:
 	export $$(grep -v '^#' .env | xargs) && \
@@ -27,6 +30,11 @@ docker-run:
 		--rm \
 		-d \
 		dcmt-editor:latest
+
+docker-clean:
+	@docker rm -f dcmt-editor
+
+docker-restart: docker-clean pull docker-build docker-run
 
 ssl-setup:
 	@if [ "$$(id -u)" -ne 0 ]; then \

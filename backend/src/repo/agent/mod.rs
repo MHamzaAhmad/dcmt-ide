@@ -541,9 +541,25 @@ impl AgentRepo {
         use crate::repo::litellm::types::{ChatCompletionRequest, ChatMessage as LiteLLMChatMessage};
 
         // Convert messages to LiteLLM format
-        let litellm_messages: Vec<LiteLLMChatMessage> = messages.iter().map(|msg| LiteLLMChatMessage {
-            role: msg.role.clone(),
-            content: msg.content.clone().unwrap_or_default(),
+        let litellm_messages: Vec<LiteLLMChatMessage> = messages.iter().map(|msg| {
+            // Convert tool_calls from backend format to LiteLLM format
+            let tool_calls = msg.tool_calls.as_ref().map(|calls| {
+                calls.iter().map(|call| crate::repo::litellm::types::ToolCall {
+                    id: call.id.clone(),
+                    call_type: call.call_type.clone(),
+                    function: crate::repo::litellm::types::ToolFunction {
+                        name: call.function.name.clone(),
+                        arguments: call.function.arguments.clone(),
+                    },
+                }).collect()
+            });
+
+            LiteLLMChatMessage {
+                role: msg.role.clone(),
+                content: msg.content.clone(),
+                tool_calls,
+                tool_call_id: msg.tool_call_id.clone(),
+            }
         }).collect();
 
         // Get tool definitions for the request

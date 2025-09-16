@@ -94,7 +94,9 @@ impl LiteLLMRepository {
             .map(|choice| choice.message.clone())
             .unwrap_or_else(|| ChatMessage {
                 role: "assistant".to_string(),
-                content: "No response available".to_string(),
+                content: Some("No response available".to_string()),
+                tool_calls: None,
+                tool_call_id: None,
             });
 
         ChatResponse {

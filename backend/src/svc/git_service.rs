@@ -61,11 +61,15 @@ impl GitService {
             messages: vec![
                 ChatMessage {
                     role: "system".to_string(),
-                    content: "You are a helpful assistant that generates git commit summaries. Always respond with valid JSON.".to_string(),
+                    content: Some("You are a helpful assistant that generates git commit summaries. Always respond with valid JSON.".to_string()),
+                    tool_calls: None,
+                    tool_call_id: None,
                 },
                 ChatMessage {
                     role: "user".to_string(),
-                    content: formatted_prompt,
+                    content: Some(formatted_prompt),
+                    tool_calls: None,
+                    tool_call_id: None,
                 },
             ],
             temperature: Some(0.3),
@@ -84,7 +88,8 @@ impl GitService {
             .ok_or_else(|| anyhow::anyhow!("No choices in LiteLLM response"))?
             .message
             .content
-            .clone();
+            .clone()
+            .ok_or_else(|| anyhow::anyhow!("No content in LiteLLM response"))?;
 
         self.parse_ai_response(ai_content)
     }

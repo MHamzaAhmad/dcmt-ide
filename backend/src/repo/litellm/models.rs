@@ -25,6 +25,7 @@ impl ModelsClient {
         let request = Request::builder()
             .method(Method::GET)
             .uri(uri)
+            .header(header::HOST, "litellm")
             .header(header::ACCEPT, "application/json")
             .header(header::USER_AGENT, "dcmt-litellm-client/1.0")
             .body(Body::empty())?;

@@ -3,6 +3,8 @@
 	import { workspaceStore, eventStore } from '$lib/stores';
 	import { theme } from '$lib/stores/theme.js';
 	import { debounce } from '$lib/utils/debounce';
+	import { editorModelRegistry } from '$lib/editor/modelRegistry';
+	import { SaveController } from '$lib/editor/saveController';
 	import type * as Monaco from 'monaco-editor';
 
 	let editorContainer: HTMLDivElement;
@@ -12,6 +14,10 @@
 	let activeFilePath = $state<string | null>(null);
 	let currentFiles = $state<any[]>([]);
 	let isInternalUpdate = false;
+	let saveController: SaveController | null = null;
+	let currentModel: Monaco.editor.ITextModel | null = null;
+	let sessionId = crypto?.randomUUID?.() ?? String(Math.random());
+	let beforeUnloadHandler: (() => void) | null = null;
 	let agentIsModifyingFile = $state(false);
 	let lastAgentUpdateTime = $state(0);
 	let hasConflict = $state(false);
@@ -63,21 +69,7 @@
 
 
 
-	// Create debounced save function
-	const debouncedSave = debounce(async (filePath: string, content: string) => {
-		if (!filePath) return;
-		
-		try {
-			// Update content in workspace store first
-			workspaceStore.updateFileContent(filePath, content);
-			
-			// Save the file through workspace store - this will trigger the reactive chain
-			// WorkspaceStore → LaTeXStore (if .tex file) → PDFStore automatically
-			await workspaceStore.saveFile(filePath);
-		} catch (error) {
-			console.error('Failed to save file:', error);
-		}
-	}, 800);
+	// Legacy debounced save removed; SaveController handles persistence
 	
 	// Handle active file changes and file content updates
 	$effect(() => {
@@ -91,15 +83,8 @@
 			
 			if (editor && activeFilePath) {
 				const activeFile = workspaceState.files.get(activeFilePath);
-				if (activeFile) {
-					updateEditorContent(activeFile.content || '', 'file_switch');
-					
-					// Update language based on file extension
-					const model = editor.getModel();
-					if (model && monacoInstance) {
-						const language = getLanguageFromPath(activeFile.path);
-						monacoInstance.editor.setModelLanguage(model, language);
-					}
+				if (activeFile && monacoInstance) {
+					attachModel(activeFile.path, activeFile.content || '');
 				}
 			}
 		} else {
@@ -136,31 +121,63 @@
 	// Helper function to update editor content with proper internal update tracking
 	function updateEditorContent(content: string, source: 'file_switch' | 'agent_update' | 'reload') {
 		if (!editor) return;
-		
 		isInternalUpdate = true;
-		
 		if (source === 'agent_update') {
 			agentIsModifyingFile = true;
-			// Clear conflict state when agent updates
 			hasConflict = false;
-			
-			// Show brief indication that agent modified the file
-			setTimeout(() => {
-				agentIsModifyingFile = false;
-			}, 2000);
+			setTimeout(() => { agentIsModifyingFile = false; }, 2000);
 		}
-		
-		editor.setValue(content);
-		
-		setTimeout(() => { 
-			isInternalUpdate = false; 
-		}, 0);
+		const model = editor.getModel();
+		if (model) {
+			const viewState = editor.saveViewState();
+			// Use pushEditOperations to preserve undo stack and avoid cursor jump
+			if (model.getValue() !== content) {
+				model.pushEditOperations([], [{ range: model.getFullModelRange(), text: content }], () => null);
+			}
+			if (viewState) editor.restoreViewState(viewState);
+		} else {
+			editor.setValue(content);
+		}
+		setTimeout(() => { isInternalUpdate = false; }, 0);
+	}
+
+	function attachModel(path: string, content: string) {
+		if (!monacoInstance || !editor) return;
+		const language = getLanguageFromPath(path);
+		editorModelRegistry.init(monacoInstance);
+		const previous = editor.getModel();
+		const model = editorModelRegistry.getOrCreate(path, content, language);
+		currentModel = model;
+		if (previous !== model) {
+			const viewState = editor.saveViewState();
+			editor.setModel(model);
+			if (viewState) editor.restoreViewState(viewState);
+		}
+		// Ensure language matches
+		editorModelRegistry.setLanguage(path, language);
+		// Update content if model is new/empty but content differs
+		if (model.getValue() !== content) {
+			updateEditorContent(content, 'file_switch');
+		}
+		// (Re)wire save controller for this path
+		if (saveController) { saveController.dispose(); saveController = null; }
+		saveController = new SaveController({
+			path,
+			model,
+			saveFn: async (p) => {
+				// Origin-aware: mark as user to prevent self-reload
+				await workspaceStore.saveFile(p);
+			},
+			debounceMs: 800
+		});
 	}
 
 	onMount(async () => {
 		if (typeof window === 'undefined' || !editorContainer) return;
 		
 		try {
+				beforeUnloadHandler = () => { try { saveController?.flush(); } catch (_) {} };
+				window.addEventListener('beforeunload', beforeUnloadHandler);
 			// Configure Monaco Environment with cdnjs workers (CORS-friendly)
 			self.MonacoEnvironment = {
 				getWorkerUrl: function (_moduleId: any, label: string) {
@@ -265,16 +282,15 @@
 				if (activeFilePath && !isInternalUpdate) {
 					const content = editor.getValue();
 					workspaceStore.updateFileContent(activeFilePath, content);
-					
-					// Trigger debounced save
-					debouncedSave(activeFilePath, content);
+					// Use SaveController for async, single-flight saves
+					saveController?.schedule();
 				}
 			});
 		
 			// Handle manual save (Cmd/Ctrl+S)
 			editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, () => {
 				if (activeFilePath) {
-					debouncedSave.flush();
+					saveController?.flush();
 				}
 			});
 
@@ -282,7 +298,7 @@
 			if (activeFilePath) {
 				const activeFile = workspaceState.files.get(activeFilePath);
 				if (activeFile) {
-					updateEditorContent(activeFile.content || '', 'file_switch');
+					attachModel(activeFile.path, activeFile.content || '');
 				}
 			}
 			
@@ -346,13 +362,17 @@
 		if (editor) {
 			editor.dispose();
 		}
-		// Cancel any pending saves
-		debouncedSave.cancel();
+	// Cancel any pending saves
+	saveController?.dispose();
 		
 		// Unsubscribe from events
 		if (eventUnsubscribe) {
 			eventUnsubscribe();
 			eventUnsubscribe = null;
+		}
+		if (typeof window !== 'undefined' && beforeUnloadHandler) {
+			window.removeEventListener('beforeunload', beforeUnloadHandler);
+			beforeUnloadHandler = null;
 		}
 	});
 </script>

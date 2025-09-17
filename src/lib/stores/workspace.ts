@@ -366,6 +366,39 @@ function createWorkspaceStore() {
             }
         },
 
+        /**
+         * Commit a successful save performed elsewhere (e.g., SaveController)
+         * - Updates file state to not dirty, refreshes originalContent and lastModified
+         * - Emits a file modified event with provided source (defaults to 'user')
+         * - Does NOT perform any IO
+         */
+        commitSave(path: string, content?: string, source: 'agent' | 'user' | 'watcher' = 'user'): void {
+            const currentState = get({ subscribe });
+            const file = currentState.files.get(path);
+            if (!file) return;
+
+            const newContent = content ?? file.content;
+            update(state => {
+                const newFiles = new Map(state.files);
+                const updatedFile: FileContent = {
+                    ...file,
+                    content: newContent,
+                    isDirty: false,
+                    originalContent: newContent,
+                    lastModified: Date.now()
+                };
+                newFiles.set(path, updatedFile);
+                return {
+                    ...state,
+                    files: newFiles,
+                    lastActivity: Date.now()
+                };
+            });
+
+            // Emit event for downstream consumers
+            store.emitFileChange(path, 'modified', source);
+        },
+
         // File content updates (from editor)
         updateFileContent(path: string, content: string): void {
             update(state => {

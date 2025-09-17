@@ -79,7 +79,7 @@ pub async fn create_router(config: Config) -> Result<Router> {
         .nest("/api", api_routes)
         .nest("/sse", sse_routes)
         .nest("/ws", websocket_router().with_state(websocket_services))
-        // .layer(create_clerk_auth_layer(config.clerk_secret_key.clone()))
+        .layer(create_clerk_auth_layer(config.clerk_secret_key.clone()))
         .layer(create_cors_layer())
         .layer(create_trace_layer());
 

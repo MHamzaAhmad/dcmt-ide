@@ -82,12 +82,20 @@
 	
 	// Update available models when query succeeds
 	$effect(() => {
-		if (isAgentMode && $modelsQuery.data?.data) {
+		if (isAgentMode && $modelsQuery.data?.models) {
+			// Transform LLMModel[] back to LiteLLMModel[] for agent store
+			const liteLLMModels: LiteLLMModel[] = $modelsQuery.data.models.map(model => ({
+				id: model.id,
+				object: 'model',
+				created: Date.now(),
+				owned_by: model.description?.replace(' model', '') || 'unknown'
+			}));
+
 			// Update agent store with LiteLLM models
 			agentStore.update(state => ({
 				...state,
-				availableModels: $modelsQuery.data.data,
-				selectedModel: state.selectedModel || $modelsQuery.data.data[0] || null
+				availableModels: liteLLMModels,
+				selectedModel: state.selectedModel || liteLLMModels[0] || null
 			}));
 		}
 	});

@@ -8,7 +8,7 @@ litellm:
 		--config /app/config.yaml --detailed_debug
 
 pull:
-	@git pull origin ft/canonical-latex-state
+	@git pull origin main
 
 docker-build:
 	export $$(grep -v '^#' .env | xargs) && \

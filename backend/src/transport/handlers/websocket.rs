@@ -1,5 +1,5 @@
 use crate::transport::routes::websocket::WebSocketServices;
-use crate::model::events::{FileEvent, CompilationEvent};
+use crate::model::events::{FileEvent, CompilationEvent, EventEnvelope};
 use axum::{
     extract::{ws::{Message, WebSocket, WebSocketUpgrade}, State},
     response::Response,
@@ -33,32 +33,60 @@ async fn handle_websocket(socket: WebSocket, services: WebSocketServices) {
         return;
     }
     
-    // Send initial connection confirmation
-    if let Err(e) = sender
-        .send(Message::Text(
-            serde_json::json!({
-                "type": "connection",
-                "status": "connected",
-                "timestamp": std::time::SystemTime::now()
-                    .duration_since(std::time::UNIX_EPOCH)
-                    .unwrap()
-                    .as_millis()
-            })
-            .to_string()
-            .into(),
-        ))
-        .await
-    {
-        error!("Failed to send connection confirmation: {}", e);
-        return;
+    // Defer confirmation; we'll send a Ready after Identify
+
+    // Handle Identify synchronously before spawning tasks
+    let state_for_recv = connection_state.clone();
+    if let Some(Ok(Message::Text(text))) = receiver.next().await {
+        if let Ok(val) = serde_json::from_str::<serde_json::Value>(&text) {
+            if val.get("type").and_then(|t| t.as_str()) == Some("identify") {
+                let last_seen_compilation = val
+                    .get("lastSeen")
+                    .and_then(|ls| ls.get("compilation"))
+                    .and_then(|c| c.as_u64());
+                let snapshot = state_for_recv.services.latex_service.get_snapshot().await;
+                let current_seq = state_for_recv.services.latex_service.current_compilation_seq();
+                let ready = serde_json::json!({
+                    "type": "ready",
+                    "snapshot": { "latex": snapshot },
+                    "cursors": { "compilation": current_seq }
+                });
+                let _ = state_for_recv.send_json(&mut sender, ready).await;
+                if let Some(since) = last_seen_compilation {
+                    let events = state_for_recv.services.latex_service.get_compilation_since(since).await;
+                    for env in events {
+                        let msg = serde_json::json!({
+                            "type": "event",
+                            "topic": env.topic,
+                            "seq": env.seq,
+                            "ts": env.ts,
+                            "payload": {
+                                "event_type": match env.payload.event_type {
+                                    crate::model::events::CompilationEventType::Queued => "queued",
+                                    crate::model::events::CompilationEventType::Started => "started",
+                                    crate::model::events::CompilationEventType::Success => "success",
+                                    crate::model::events::CompilationEventType::Error => "error",
+                                    crate::model::events::CompilationEventType::MainFileDetected => "main_file_detected",
+                                },
+                                "main_file": env.payload.main_file,
+                                "timestamp": env.payload.timestamp,
+                                "metadata": env.payload.metadata
+                            }
+                        });
+                        let _ = state_for_recv.send_json(&mut sender, msg).await;
+                    }
+                }
+            }
+        }
     }
 
-    // Handle incoming messages and outgoing events concurrently
+    // Now spawn the outgoing sender task
     let send_task = {
         let mut state = connection_state.clone();
+        let mut sender_clone = sender;
         let conn_id = connection_id.clone();
         tokio::spawn(async move {
-            if let Err(e) = state.handle_outgoing_events(&mut sender).await {
+            if let Err(e) = state.handle_outgoing_events(&mut sender_clone).await {
                 error!("Event sender task failed for connection {}: {}", conn_id, e);
             }
             debug!("Event sender task ended for connection {}", conn_id);
@@ -66,10 +94,11 @@ async fn handle_websocket(socket: WebSocket, services: WebSocketServices) {
     };
 
     let receive_task = {
-        let mut state = connection_state.clone();
+        let mut state = state_for_recv.clone();
         let conn_id = connection_id.clone();
+        let mut rx = receiver;
         tokio::spawn(async move {
-            while let Some(msg) = receiver.next().await {
+            while let Some(msg) = rx.next().await {
                 match msg {
                     Ok(Message::Text(text)) => {
                         if let Err(e) = state.handle_incoming_message(text.to_string()).await {
@@ -126,6 +155,7 @@ struct ConnectionState {
     compilation_subscribed: Arc<tokio::sync::RwLock<bool>>,
     file_event_receiver: Arc<tokio::sync::Mutex<Option<broadcast::Receiver<FileEvent>>>>,
     compilation_event_receiver: Arc<tokio::sync::Mutex<Option<broadcast::Receiver<CompilationEvent>>>>,
+    compilation_env_receiver: Arc<tokio::sync::Mutex<Option<tokio::sync::broadcast::Receiver<EventEnvelope<CompilationEvent>>>>>,
     event_tx: Arc<tokio::sync::mpsc::UnboundedSender<WebSocketEvent>>,
     event_rx: Arc<tokio::sync::Mutex<Option<tokio::sync::mpsc::UnboundedReceiver<WebSocketEvent>>>>,
 }
@@ -133,7 +163,7 @@ struct ConnectionState {
 #[derive(Debug, Clone)]
 enum WebSocketEvent {
     FileEvent(FileEvent),
-    CompilationEvent(CompilationEvent),
+    CompilationEnvelope(EventEnvelope<CompilationEvent>),
     ConnectionStatus {
         status: String,
         timestamp: u64,
@@ -151,6 +181,7 @@ impl ConnectionState {
             compilation_subscribed: Arc::new(tokio::sync::RwLock::new(false)),
             file_event_receiver: Arc::new(tokio::sync::Mutex::new(None)),
             compilation_event_receiver: Arc::new(tokio::sync::Mutex::new(None)),
+            compilation_env_receiver: Arc::new(tokio::sync::Mutex::new(None)),
             event_tx: Arc::new(event_tx),
             event_rx: Arc::new(tokio::sync::Mutex::new(Some(event_rx))),
         }
@@ -170,6 +201,12 @@ impl ConnectionState {
             .map_err(|e| format!("Failed to send connection event: {}", e))?;
         
         info!("Initialized WebSocket connection: {}", self.connection_id);
+        Ok(())
+    }
+
+    async fn send_json(&self, sender: &mut futures_util::stream::SplitSink<WebSocket, Message>, value: serde_json::Value) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        let text = value.to_string();
+        sender.send(Message::Text(text.into())).await?;
         Ok(())
     }
     
@@ -271,20 +308,20 @@ impl ConnectionState {
             return Ok(());
         }
         
-        // Subscribe to compilation events
-        let compilation_receiver = self.services.latex_service.subscribe_to_compilation_events();
-        *self.compilation_event_receiver.lock().await = Some(compilation_receiver);
+        // Subscribe to enveloped compilation events
+        let compilation_env_rx = self.services.latex_service.subscribe_to_compilation_envelopes();
+        *self.compilation_env_receiver.lock().await = Some(compilation_env_rx);
         
-        // Start compilation event forwarding task
+        // Start compilation event forwarding task (enveloped)
         let event_tx = self.event_tx.clone();
-        let compilation_receiver_clone = self.compilation_event_receiver.clone();
+        let compilation_env_receiver_clone = self.compilation_env_receiver.clone();
         let connection_id = self.connection_id.clone();
         
         tokio::spawn(async move {
-            let mut receiver_guard = compilation_receiver_clone.lock().await;
+            let mut receiver_guard = compilation_env_receiver_clone.lock().await;
             if let Some(ref mut receiver) = *receiver_guard {
-                while let Ok(compilation_event) = receiver.recv().await {
-                    if event_tx.send(WebSocketEvent::CompilationEvent(compilation_event)).is_err() {
+                while let Ok(enveloped) = receiver.recv().await {
+                    if event_tx.send(WebSocketEvent::CompilationEnvelope(enveloped)).is_err() {
                         debug!("Compilation event receiver stopped for connection {}", connection_id);
                         break;
                     }
@@ -345,25 +382,25 @@ impl ConnectionState {
                         }
                     })
                 }
-                WebSocketEvent::CompilationEvent(compilation_event) => {
+                WebSocketEvent::CompilationEnvelope(enveloped) => {
                     let compilation_subscribed = *self.compilation_subscribed.read().await;
-                    if !compilation_subscribed {
-                        continue; // Skip if not subscribed
-                    }
-                    
+                    if !compilation_subscribed { continue; }
                     serde_json::json!({
-                        "type": "compilation_event",
-                        "event": {
-                            "event_type": match compilation_event.event_type {
+                        "type": "event",
+                        "topic": enveloped.topic,
+                        "seq": enveloped.seq,
+                        "ts": enveloped.ts,
+                        "payload": {
+                            "event_type": match enveloped.payload.event_type {
                                 crate::model::events::CompilationEventType::Queued => "queued",
                                 crate::model::events::CompilationEventType::Started => "started",
                                 crate::model::events::CompilationEventType::Success => "success",
                                 crate::model::events::CompilationEventType::Error => "error",
                                 crate::model::events::CompilationEventType::MainFileDetected => "main_file_detected",
                             },
-                            "main_file": compilation_event.main_file,
-                            "timestamp": compilation_event.timestamp,
-                            "metadata": compilation_event.metadata
+                            "main_file": enveloped.payload.main_file,
+                            "timestamp": enveloped.payload.timestamp,
+                            "metadata": enveloped.payload.metadata
                         }
                     })
                 }

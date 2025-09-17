@@ -43,6 +43,21 @@ export interface APIError {
 	status: number;
 }
 
+
+// Canonical LaTeX build state (snapshot)
+export type LatexBuildPhase = 'idle' | 'queued' | 'started' | 'success' | 'error';
+
+export interface LatexBuildState {
+	main_file: string | null;
+	phase: LatexBuildPhase;
+	pdf_path: string | null;
+	pdf_version: number;
+	engine: string | null;
+	errors: string[] | null;
+	started_at: number | null;
+	finished_at: number | null;
+	session_id: string;
+}
 // File System Types (shared between desktop and web)
 export interface FileInfo {
 	name: string;
@@ -97,6 +112,7 @@ export interface PlatformAPI {
 	// LaTeX compilation
 	compileLatex?(request: LaTeXCompileRequest): Promise<LaTeXCompileResponse>;
 	findMainLatexFile?(): Promise<string>;
+	getLatexStatus?(): Promise<LatexBuildState>;
 	
 	// Compilation events
 	onCompilationEvent?(callback: (event: CompilationEvent) => void): () => void;
@@ -125,6 +141,7 @@ export interface ProjectOperations {
 export interface LaTeXOperations {
 	compileLatex(request: LaTeXCompileRequest): Promise<LaTeXCompileResponse>;
 	findMainLatexFile(): Promise<string>;
+	getLatexStatus(): Promise<LatexBuildState>;
 }
 
 export interface GitOperations {

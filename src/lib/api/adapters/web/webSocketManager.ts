@@ -25,6 +25,9 @@ export class WebSocketManager {
     private fileEventCallbacks: FileEventCallback[] = [];
     private compilationEventCallbacks: CompilationEventCallback[] = [];
     private connectionCallbacks: ((connected: boolean) => void)[] = [];
+    // Small buffer to hold recent compilation events until a subscriber attaches
+    private compilationEventBuffer: CompilationEvent[] = [];
+    private maxCompilationBuffer: number = 50;
 
     // Message queue for messages sent while connecting
     private messageQueue: any[] = [];
@@ -73,8 +76,8 @@ export class WebSocketManager {
                 // Send any queued messages
                 this.sendQueuedMessages();
 
-                // Auto-subscribe to events
-                this.handleConnectionOpen();
+                // Perform identify/handshake first; subscriptions are sent after server Ready
+                this.sendIdentify();
 
                 // Notify connection callbacks
                 this.connectionCallbacks.forEach(callback => callback(true));
@@ -85,9 +88,17 @@ export class WebSocketManager {
                     const data = JSON.parse(event.data);
                     console.log('WebSocketManager: Received event:', data);
 
-                    // Handle compilation events
-                    if (data.type === 'compilation_event') {
-                        this.handleCompilationEvent(data.event);
+                    // New protocol: handshake + enveloped replay
+                    if (data.type === 'ready' && data.snapshot) {
+                        this.handleReady(data);
+                        return;
+                    }
+                    if (data.type === 'event' && data.topic === 'compilation' && data.payload) {
+                        // Treat replayed enveloped payloads like normal compilation events
+                        this.handleCompilationEvent(data.payload);
+                        // Track last seen
+                        this.compilationLastSeq = typeof data.seq === 'number' ? data.seq : this.compilationLastSeq;
+                        return;
                     }
 
                     // Handle file events
@@ -98,6 +109,11 @@ export class WebSocketManager {
                     // Handle connection status
                     if (data.type === 'connection') {
                         console.log('WebSocketManager: Connection status:', data.status);
+                    }
+
+                    // Legacy compilation events
+                    if (data.type === 'compilation_event') {
+                        this.handleCompilationEvent(data.event);
                     }
                 } catch (error) {
                     console.error('WebSocketManager: Failed to parse WebSocket message:', error);
@@ -178,6 +194,88 @@ export class WebSocketManager {
         }
     }
 
+    // ===== Handshake state =====
+    private compilationLastSeq: number = 0;
+
+    private sendIdentify(): void {
+        const identify = {
+            type: 'identify',
+            lastSeen: {
+                compilation: this.compilationLastSeq || 0,
+            },
+        };
+        this.send(identify);
+    }
+
+    private handleReady(data: any): void {
+        try {
+            // Apply snapshot into existing consumers via synthetic events
+            const snapshot = data.snapshot;
+            if (snapshot?.latex) {
+                const latex = snapshot.latex;
+                // Emit synthetic events to initialize state for legacy consumers
+                if (latex.main_file) {
+                    this.handleCompilationEvent({
+                        id: 'snapshot-main-file',
+                        event_type: 'main_file_detected',
+                        main_file: latex.main_file,
+                        timestamp: Date.now(),
+                    });
+                }
+                switch (latex.phase) {
+                    case 'queued':
+                        this.handleCompilationEvent({
+                            id: 'snapshot-queued',
+                            event_type: 'queued',
+                            main_file: latex.main_file || '',
+                            timestamp: Date.now(),
+                            metadata: { reason: 'snapshot' },
+                        });
+                        break;
+                    case 'started':
+                        this.handleCompilationEvent({
+                            id: 'snapshot-started',
+                            event_type: 'started',
+                            main_file: latex.main_file || '',
+                            timestamp: Date.now(),
+                            metadata: { engine: latex.engine || undefined },
+                        });
+                        break;
+                    case 'success':
+                        this.handleCompilationEvent({
+                            id: 'snapshot-success',
+                            event_type: 'success',
+                            main_file: latex.main_file || '',
+                            timestamp: Date.now(),
+                            metadata: {
+                                pdf_path: latex.pdf_path || undefined,
+                                duration_ms: 0,
+                                engine: latex.engine || undefined,
+                            },
+                        });
+                        break;
+                    case 'error':
+                        this.handleCompilationEvent({
+                            id: 'snapshot-error',
+                            event_type: 'error',
+                            main_file: latex.main_file || '',
+                            timestamp: Date.now(),
+                            metadata: { errors: latex.errors || ['error'] },
+                        });
+                        break;
+                }
+            }
+
+            // Update cursors and send legacy subscriptions for compatibility
+            if (typeof data.cursors?.compilation === 'number') {
+                this.compilationLastSeq = data.cursors.compilation;
+            }
+            this.handleConnectionOpen();
+        } catch (e) {
+            console.error('WebSocketManager: Failed to handle Ready message:', e);
+        }
+    }
+
     // Subscribe to file events
     onFileEvent(callback: FileEventCallback): () => void {
         this.fileEventCallbacks.push(callback);
@@ -206,6 +304,22 @@ export class WebSocketManager {
         // Auto-subscribe if connected
         if (this.isConnected) {
             this.send({ type: 'subscribe_compilation' });
+        }
+
+        // Ensure connection is established
+        if (!this.ws || (this.ws.readyState !== WebSocket.OPEN && this.ws.readyState !== WebSocket.CONNECTING)) {
+            this.connect();
+        }
+
+        // Drain buffered events to this new subscriber
+        if (this.compilationEventBuffer.length > 0) {
+            try {
+                this.compilationEventBuffer.forEach(evt => {
+                    try { callback(evt); } catch (e) { console.error('WebSocketManager: Error delivering buffered event:', e); }
+                });
+            } catch (e) {
+                console.error('WebSocketManager: Failed draining buffered compilation events:', e);
+            }
         }
 
         // Return unsubscribe function
@@ -272,6 +386,11 @@ export class WebSocketManager {
 
     private handleCompilationEvent(event: CompilationEvent): void {
         console.log(`WebSocketManager: Handling compilation event: ${event.event_type}`);
+        // Buffer for late subscribers
+        this.compilationEventBuffer.push(event);
+        if (this.compilationEventBuffer.length > this.maxCompilationBuffer) {
+            this.compilationEventBuffer.shift();
+        }
         this.compilationEventCallbacks.forEach((callback, index) => {
             try {
                 callback(event);

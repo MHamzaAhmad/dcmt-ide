@@ -71,3 +71,14 @@ pub async fn find_main_latex_file(
         }
     }
 }
+
+#[debug_handler]
+pub async fn latex_status(
+    State(service): State<Arc<LaTeXService>>,
+) -> Result<Json<Value>, StatusCode> {
+    let snapshot = service.get_snapshot().await;
+    Ok(Json(json!({
+        "success": true,
+        "latex": snapshot
+    })))
+}

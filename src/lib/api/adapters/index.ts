@@ -4,7 +4,7 @@ import { DesktopApiAdapter } from './desktop';
 import { WebApiAdapter } from './web';
 import { WebGitAdapter } from './web/git';
 import { DesktopGitAdapter } from './desktop/git';
-import type { PlatformAPI, ProjectInfo, LaTeXCompileRequest, LaTeXCompileResponse, GitOperations, CompilationEvent } from '../types';
+import type { PlatformAPI, ProjectInfo, LaTeXCompileRequest, LaTeXCompileResponse, GitOperations, CompilationEvent, LatexBuildState } from '../types';
 
 // Create singleton instances lazily
 let desktopAdapter: DesktopApiAdapter | null = null;
@@ -119,6 +119,13 @@ export class UnifiedPlatformApi implements PlatformAPI {
 			throw new Error('LaTeX main file finding not supported on this platform');
 		}
 		return await this.adapter.findMainLatexFile();
+	}
+
+	async getLatexStatus(): Promise<LatexBuildState> {
+		if (!this.adapter.getLatexStatus) {
+			throw new Error('LaTeX status not supported on this platform');
+		}
+		return await this.adapter.getLatexStatus();
 	}
 
 	// Compilation events

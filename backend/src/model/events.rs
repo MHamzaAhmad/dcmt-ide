@@ -39,6 +39,15 @@ pub struct CompilationEventMetadata {
     pub duration_ms: Option<u64>,
 }
 
+// Generic event envelope used for cursoring and replay on transports
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct EventEnvelope<T> {
+    pub topic: String,
+    pub seq: u64,
+    pub ts: u64,
+    pub payload: T,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum FileEventType {
     Created,

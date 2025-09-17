@@ -1,10 +1,13 @@
 use crate::model::{LaTeXCompileRequest, LaTeXCompileResponse, LaTeXProvider, CompilationEvent, FileEvent};
 use crate::repo::LaTeXRepository;
+use crate::model::latex::{LatexBuildPhase, LatexBuildState};
+use crate::model::events::EventEnvelope;
 use crate::repo::latex_repository::EngineAttempt;
 use anyhow::Result;
 use std::path::PathBuf;
 use std::sync::Arc;
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
+use std::sync::atomic::AtomicU64;
 use tokio::sync::{Mutex, RwLock, broadcast};
 use tokio::time::{Duration, Instant};
 use tracing::{debug, error, info, warn};
@@ -17,29 +20,106 @@ pub struct LaTeXService {
     repository: Arc<LaTeXRepository>,
     compilation_lock: Arc<Mutex<()>>,
     compilation_event_sender: CompilationEventSender,
+    compilation_env_sender: tokio::sync::broadcast::Sender<EventEnvelope<CompilationEvent>>,
     main_tex_file: Arc<RwLock<Option<PathBuf>>>,
     debounce_timers: Arc<RwLock<HashMap<String, Instant>>>,
     is_auto_compile_enabled: Arc<RwLock<bool>>,
+    build_state: Arc<RwLock<LatexBuildState>>,
+    build_state_tx: tokio::sync::watch::Sender<LatexBuildState>,
+    compilation_seq: Arc<AtomicU64>,
+    compilation_buffer: Arc<RwLock<VecDeque<EventEnvelope<CompilationEvent>>>>,
 }
 
 impl LaTeXService {
     pub fn new(workspace_path: PathBuf) -> Self {
         let repository = Arc::new(LaTeXRepository::new(workspace_path));
         let compilation_lock = Arc::new(Mutex::new(()));
-        let (compilation_event_sender, _) = broadcast::channel(1000);
+    let (compilation_event_sender, _) = broadcast::channel(1000);
+    let (compilation_env_sender, _) = broadcast::channel(1000);
+
+        // Initialize canonical build state and channels
+        let session_id = format!("session-{}", uuid::Uuid::new_v4());
+        let initial_state = LatexBuildState {
+            main_file: None,
+            phase: LatexBuildPhase::Idle,
+            pdf_path: None,
+            pdf_version: 0,
+            engine: None,
+            errors: None,
+            started_at: None,
+            finished_at: None,
+            session_id,
+        };
+        let (build_state_tx, build_state_rx) = tokio::sync::watch::channel(initial_state.clone());
+        drop(build_state_rx);
 
         Self {
             repository,
             compilation_lock,
             compilation_event_sender,
+            compilation_env_sender,
             main_tex_file: Arc::new(RwLock::new(None)),
             debounce_timers: Arc::new(RwLock::new(HashMap::new())),
             is_auto_compile_enabled: Arc::new(RwLock::new(true)),
+            build_state: Arc::new(RwLock::new(initial_state)),
+            build_state_tx,
+            compilation_seq: Arc::new(AtomicU64::new(0)),
+            compilation_buffer: Arc::new(RwLock::new(VecDeque::with_capacity(256))),
         }
     }
 
     pub fn subscribe_to_compilation_events(&self) -> CompilationEventReceiver {
         self.compilation_event_sender.subscribe()
+    }
+
+    pub fn subscribe_to_compilation_envelopes(&self) -> tokio::sync::broadcast::Receiver<EventEnvelope<CompilationEvent>> {
+        self.compilation_env_sender.subscribe()
+    }
+
+    pub fn subscribe_snapshot(&self) -> tokio::sync::watch::Receiver<LatexBuildState> {
+        self.build_state_tx.subscribe()
+    }
+
+    pub async fn get_snapshot(&self) -> LatexBuildState {
+        self.build_state.read().await.clone()
+    }
+
+    pub async fn get_compilation_since(&self, since: u64) -> Vec<EventEnvelope<CompilationEvent>> {
+        let buf = self.compilation_buffer.read().await;
+        buf.iter().filter(|e| e.seq > since).cloned().collect()
+    }
+
+    pub fn current_compilation_seq(&self) -> u64 {
+        self.compilation_seq.load(std::sync::atomic::Ordering::SeqCst)
+    }
+
+    fn next_seq(&self) -> u64 {
+        self.compilation_seq.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1
+    }
+
+    async fn push_enveloped(&self, payload: CompilationEvent) {
+        let envelope = EventEnvelope {
+            topic: "compilation".to_string(),
+            seq: self.next_seq(),
+            ts: payload.timestamp,
+            payload,
+        };
+        {
+            let mut buf = self.compilation_buffer.write().await;
+            if buf.len() == buf.capacity() { buf.pop_front(); }
+            buf.push_back(envelope.clone());
+        }
+    // Broadcast both envelope and raw for compatibility (raw can be removed later)
+    let _ = self.compilation_env_sender.send(envelope.clone());
+    let _ = self.compilation_event_sender.send(envelope.payload.clone());
+    }
+
+    async fn update_state<F: FnOnce(&mut LatexBuildState)>(&self, f: F) {
+        {
+            let mut s = self.build_state.write().await;
+            f(&mut s);
+            let _ = self.build_state_tx.send(s.clone());
+        }
     }
 
     pub async fn set_auto_compile(&self, enabled: bool) {
@@ -125,7 +205,8 @@ impl LaTeXService {
                 main_file_str.clone(),
                 format!("file_change:{}", file_event.path)
             );
-            let _ = self.compilation_event_sender.send(queued_event);
+            self.update_state(|s| { s.phase = LatexBuildPhase::Queued; }).await;
+            self.push_enveloped(queued_event).await;
 
             // Start debounced compilation
             self.schedule_debounced_compilation(main_file_str, "file_change").await;
@@ -193,8 +274,9 @@ impl LaTeXService {
                 *self.main_tex_file.write().await = Some(main_file.clone());
                 
                 // Emit main file detected event
-                let event = CompilationEvent::main_file_detected(main_file_str);
-                let _ = self.compilation_event_sender.send(event);
+                let event = CompilationEvent::main_file_detected(main_file_str.clone());
+                self.update_state(|s| { s.main_file = Some(main_file_str.clone()); }).await;
+                self.push_enveloped(event).await;
                 
                 info!("Main LaTeX file detected: {:?}", main_file);
                 Ok(())
@@ -220,8 +302,9 @@ impl LaTeXService {
             .to_string_lossy()
             .to_string();
         
-        let event = CompilationEvent::main_file_detected(main_file_str);
-        let _ = self.compilation_event_sender.send(event);
+    let event = CompilationEvent::main_file_detected(main_file_str.clone());
+    self.update_state(|s| { s.main_file = Some(main_file_str.clone()); }).await;
+    self.push_enveloped(event).await;
         
         info!("Main LaTeX file manually set: {:?}", main_file);
     }
@@ -249,6 +332,34 @@ impl LaTeXService {
 
         // Check if latexmk is available
         if !self.repository.check_latexmk_available().await {
+            // Emit an error event so subscribers are informed even on preflight failure
+            let main_for_error = {
+                let current_main = self.main_tex_file.read().await.clone();
+                match current_main {
+                    Some(p) => p.strip_prefix(&self.repository.workspace_path)
+                        .unwrap_or(&p)
+                        .to_string_lossy()
+                        .to_string(),
+                    None => "unknown".to_string(),
+                }
+            };
+
+            self.push_enveloped(CompilationEvent::error(
+                main_for_error.clone(),
+                vec![
+                    "latexmk is not available".to_string(),
+                    "Please install latexmk to compile LaTeX documents".to_string(),
+                ],
+                None,
+            )).await;
+            self.update_state(|s| {
+                s.phase = LatexBuildPhase::Error;
+                s.errors = Some(vec!["latexmk is not available".to_string()]);
+                s.finished_at = Some(
+                    std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_millis() as u64
+                );
+            }).await;
+
             let error_response = LaTeXCompileResponse::error(
                 "latexmk is not available".to_string(),
                 vec!["Please install latexmk to compile LaTeX documents".to_string()],
@@ -264,6 +375,20 @@ impl LaTeXService {
                 file
             }
             Err(e) => {
+                // Emit an error event when no main file is found
+                self.push_enveloped(CompilationEvent::error(
+                    "unknown".to_string(),
+                    vec![e.to_string()],
+                    None,
+                )).await;
+                self.update_state(|s| {
+                    s.phase = LatexBuildPhase::Error;
+                    s.errors = Some(vec![e.to_string()]);
+                    s.finished_at = Some(
+                        std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_millis() as u64
+                    );
+                }).await;
+
                 let error_response = LaTeXCompileResponse::error(
                     "Could not find main LaTeX file".to_string(),
                     vec![e.to_string()],
@@ -292,7 +417,15 @@ impl LaTeXService {
                             vec![format!("Specified engine '{}' is not available", engine)],
                             Some(engine.to_string())
                         );
-                        let _ = self.compilation_event_sender.send(error_event);
+                        self.update_state(|s| {
+                            s.phase = LatexBuildPhase::Error;
+                            s.errors = Some(vec![format!("Specified engine '{}' is not available", engine)]);
+                            s.engine = Some(engine.to_string());
+                            s.finished_at = Some(
+                                std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_millis() as u64
+                            );
+                        }).await;
+                        self.push_enveloped(error_event).await;
 
                         return Ok(LaTeXCompileResponse::error(
                             format!("Specified engine '{}' is not available", engine),
@@ -327,7 +460,15 @@ impl LaTeXService {
             
             // Emit started event
             let started_event = CompilationEvent::started(main_file_str.clone(), engine.clone());
-            let _ = self.compilation_event_sender.send(started_event);
+            self.update_state(|s| {
+                s.phase = LatexBuildPhase::Started;
+                s.engine = Some(engine.clone());
+                s.started_at = Some(
+                    std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_millis() as u64
+                );
+                s.errors = None;
+            }).await;
+            self.push_enveloped(started_event).await;
             
             match self.repository.execute_latexmk(&main_tex_file, engine).await {
                 Ok(attempt) => {
@@ -350,7 +491,17 @@ impl LaTeXService {
                             engine.clone(),
                             duration_ms
                         );
-                        let _ = self.compilation_event_sender.send(success_event);
+                        self.update_state(|s| {
+                            s.phase = LatexBuildPhase::Success;
+                            s.pdf_path = Some(relative_pdf_path.clone());
+                            s.engine = Some(engine.clone());
+                            s.finished_at = Some(
+                                std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_millis() as u64
+                            );
+                            s.errors = None;
+                            s.pdf_version = s.pdf_version.saturating_add(1);
+                        }).await;
+                        self.push_enveloped(success_event).await;
                         
                         return Ok(LaTeXCompileResponse::success(
                             format!("Compilation successful with {}", engine),
@@ -409,7 +560,14 @@ impl LaTeXService {
             detailed_errors.clone(),
             engines_to_try.first().cloned()
         );
-        let _ = self.compilation_event_sender.send(error_event);
+        self.update_state(|s| {
+            s.phase = LatexBuildPhase::Error;
+            s.errors = Some(detailed_errors.clone());
+            s.finished_at = Some(
+                std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_millis() as u64
+            );
+        }).await;
+        self.push_enveloped(error_event).await;
         
         Ok(LaTeXCompileResponse::error(
             error_message,
@@ -494,7 +652,8 @@ impl LaTeXService {
                 main_file_str.clone(),
                 "agent_completion".to_string()
             );
-            let _ = self.compilation_event_sender.send(queued_event);
+            self.update_state(|s| { s.phase = LatexBuildPhase::Queued; }).await;
+            self.push_enveloped(queued_event).await;
 
             // Execute compilation immediately (no debouncing)
             let request = LaTeXCompileRequest {

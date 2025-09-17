@@ -9,5 +9,6 @@ use std::sync::Arc;
 pub fn latex_router() -> Router<Arc<LaTeXService>> {
     Router::new()
         .route("/compile", post(latex::compile_latex))
-        .route("/find-main", get(latex::find_main_latex_file))
+    .route("/find-main", get(latex::find_main_latex_file))
+    .route("/status", get(latex::latex_status))
 }

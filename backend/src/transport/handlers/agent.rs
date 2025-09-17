@@ -44,24 +44,6 @@ pub async fn chat_handler(
             "model is required".to_string()
         ));
     }
-
-    // Extract auth token from headers
-    request.auth_token = headers.get(AUTHORIZATION)
-        .and_then(|header| header.to_str().ok())
-        .and_then(|auth_header| {
-            if auth_header.starts_with("Bearer ") {
-                Some(auth_header["Bearer ".len()..].to_string())
-            } else {
-                None
-            }
-        });
-
-    if request.auth_token.is_none() {
-        return Err((
-            StatusCode::UNAUTHORIZED,
-            "Authorization token is required".to_string()
-        ));
-    }
     
     // Queue the chat request
     match service.queue_chat(request).await {

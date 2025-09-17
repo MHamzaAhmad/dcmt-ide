@@ -36,6 +36,7 @@ export class WebApiAdapter implements PlatformAPI {
 	// LaTeX operations
 	compileLatex = this.latex.compileLatex.bind(this.latex);
 	findMainLatexFile = this.latex.findMainLatexFile.bind(this.latex);
+	getLatexStatus = this.latex.getLatexStatus.bind(this.latex);
 	
 	// Compilation events
 	onCompilationEvent = (callback: (event: any) => void) => {

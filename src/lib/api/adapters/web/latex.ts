@@ -1,6 +1,6 @@
 // Web LaTeX Adapter - HTTP API
 import { apiClient } from '../../client';
-import type { LaTeXCompileRequest, LaTeXCompileResponse, LaTeXOperations } from '../../types';
+import type { LaTeXCompileRequest, LaTeXCompileResponse, LaTeXOperations, LatexBuildState } from '../../types';
 
 export class WebLatexAdapter implements LaTeXOperations {
 	async compileLatex(request: LaTeXCompileRequest): Promise<LaTeXCompileResponse> {
@@ -29,12 +29,21 @@ export class WebLatexAdapter implements LaTeXOperations {
 			if (!response.success) {
 				throw new Error(response.message || 'Failed to find main LaTeX file');
 			}
-			
 			return response.main_file || '';
 		} catch (error) {
 			console.error('Web LaTeX find main file failed:', error);
 			throw error;
 		}
+	}
+
+	async getLatexStatus(): Promise<LatexBuildState> {
+		const res = await apiClient.get<{ success: boolean; latex: LatexBuildState }>(
+			'/api/latex/status'
+		);
+		if (!res.success) {
+			throw new Error('Failed to fetch LaTeX status');
+		}
+		return res.latex;
 	}
 
 	async setAutoCompile(enabled: boolean): Promise<void> {

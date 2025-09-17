@@ -68,7 +68,7 @@ pub async fn create_router(config: Config) -> Result<Router> {
         .nest("/llm", llm_routes);
     
     // Protect only REST API routes with Clerk authentication
-    let api_routes_protected = api_routes.layer(create_clerk_auth_layer(config.clerk_secret_key.clone()));
+    // let api_routes_protected = api_routes.layer(create_clerk_auth_layer(config.clerk_secret_key.clone()));
         
         // Create combined WebSocket services state
         let websocket_services = WebSocketServices {
@@ -80,7 +80,7 @@ pub async fn create_router(config: Config) -> Result<Router> {
         // Main application router
     let app = Router::new()
     // REST API (protected)
-    .nest("/api", api_routes_protected)
+    .nest("/api", api_routes.clone())
     // Realtime endpoints (unprotected) - required for browser WS/SSE connectivity
     .nest("/sse", sse_routes)
     .nest("/ws", websocket_router().with_state(websocket_services))

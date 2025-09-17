@@ -20,34 +20,21 @@ export interface PDFDocument {
     fileSize?: number;
 }
 
-export interface PDFViewerState {
-    currentPage: number;
-    scale: number;
-    rotation: number;
-    viewMode: 'fit-width' | 'fit-height' | 'fit-page' | 'actual-size';
-}
+// PDFViewerState moved to component level - UI state is managed by components
 
 export interface PDFState {
     // Core state
     isReady: boolean;
-    
+
     // PDF document
     currentPdf: PDFDocument | null;
     isLoading: boolean;
     loadingProgress: number;
-    
-    // Viewer state
-    viewer: PDFViewerState;
-    
-    // Canvas state
-    canvas: HTMLCanvasElement | null;
-    context: CanvasRenderingContext2D | null;
-    isRendering: boolean;
-    
+
     // Auto-refresh
     autoRefresh: boolean;
     lastRefreshTime: number;
-    
+
     // Operation-based cache invalidation
     lastOperationId: string | null;
     operationHistory: Array<{
@@ -58,13 +45,12 @@ export interface PDFState {
         pdfPath?: string;
     }>;
     maxOperationHistory: number;
-    
-    
+
     // Error handling
     error: string | null;
     retryCount: number;
     maxRetries: number;
-    
+
     // History
     recentPdfs: string[];
     maxRecentPdfs: number;
@@ -76,15 +62,6 @@ function createPdfStore() {
         currentPdf: null,
         isLoading: false,
         loadingProgress: 0,
-        viewer: {
-            currentPage: 1,
-            scale: 1.5,
-            rotation: 0,
-            viewMode: 'fit-width'
-        },
-        canvas: null,
-        context: null,
-        isRendering: false,
         autoRefresh: true,
         lastRefreshTime: 0,
         lastOperationId: null,
@@ -109,23 +86,16 @@ function createPdfStore() {
         );
     });
 
-    const canRender = derived([{ subscribe }], ([$pdf]) => {
-        return !!(
-            $pdf.currentPdf?.pdfDoc && 
-            $pdf.canvas && 
-            $pdf.context && 
-            !$pdf.isRendering
-        );
-    });
+    // canRender removed - components manage their own rendering capability
 
     const currentPageInfo = derived([{ subscribe }], ([$pdf]) => {
         if (!$pdf.currentPdf) {
             return { current: 0, total: 0, text: '- / -' };
         }
         return {
-            current: $pdf.viewer.currentPage,
+            current: 1, // Default to first page
             total: $pdf.currentPdf.numPages,
-            text: `${$pdf.viewer.currentPage} / ${$pdf.currentPdf.numPages}`
+            text: `1 / ${$pdf.currentPdf.numPages}`
         };
     });
 
@@ -135,15 +105,13 @@ function createPdfStore() {
     let eventUnsubscribe: (() => void) | null = null;
     let pdfjsLib: any = null;
     let currentLoadingPath: string | null = null;
-    let currentRenderTask: any = null; // Track current render operation for cancellation
     let processedCompilationEventIds = new Set<string>(); // Track processed compilation events
 
     const store = {
         subscribe,
         
-        // Derived stores  
+        // Derived stores
         hasValidPdf: { subscribe: hasValidPdf.subscribe },
-        canRender: { subscribe: canRender.subscribe },
         currentPageInfo: { subscribe: currentPageInfo.subscribe },
 
         // Initialization
@@ -159,11 +127,7 @@ function createPdfStore() {
                 // Subscribe to EventStore compilation events (unified approach)
                 store.subscribeToCompilationEvents();
 
-                // Keep legacy event listeners as fallback
-                if (browser) {
-                    window.addEventListener('latex-compiled', store.handleLatexCompiled);
-                    window.addEventListener('latex-compile-error', store.handleLatexError);
-                }
+                // No legacy event listeners - using pure EventStore pattern
 
                 // Check for existing PDFs
                 const latexState = latexStore.getCurrentState();
@@ -249,24 +213,7 @@ function createPdfStore() {
             }
         },
 
-        // Legacy event handlers (kept for compatibility)
-
-        handleLatexCompiled(event: Event): void {
-            const customEvent = event as CustomEvent;
-            const { outputFile } = customEvent.detail;
-            
-            if (outputFile) {
-                console.log(`PDFStore: LaTeX compiled successfully, loading: ${outputFile}`);
-                store.loadPdf(outputFile);
-            }
-        },
-
-        handleLatexError(): void {
-            console.log('PDFStore: LaTeX compilation failed, keeping current PDF');
-            
-            // Don't clear the current PDF on compilation errors
-            // Users can still view the last successful version
-        },
+        // Legacy event handlers removed - using EventStore reactive streams
 
         // Operation tracking helpers
         createOperationId(type: 'compilation' | 'agent' | 'manual' | 'file_watcher', source: string): string {
@@ -440,11 +387,7 @@ function createPdfStore() {
                         loadingProgress: 100,
                         error: null,
                         lastRefreshTime: Date.now(),
-                        recentPdfs: newRecentPdfs,
-                        viewer: {
-                            ...state.viewer,
-                            currentPage: 1 // Reset to first page
-                        }
+                        recentPdfs: newRecentPdfs
                     };
                 });
 
@@ -452,16 +395,9 @@ function createPdfStore() {
                 
                 // Clear loading state
                 currentLoadingPath = null;
-                
-                // Render first page if canvas is ready
-                const updatedState = get({ subscribe });
-                console.log(`PDFStore: Checking canvas availability - canvas: ${!!updatedState.canvas}, context: ${!!updatedState.context}`);
-                if (updatedState.canvas && updatedState.context) {
-                    console.log(`PDFStore: Canvas ready, rendering first page...`);
-                    await store.renderCurrentPage();
-                } else {
-                    console.log(`PDFStore: Canvas not ready yet, will render when canvas becomes available`);
-                }
+
+                // Note: Canvas rendering is now handled by the PDFPreview component
+                // through reactive effects when PDF state changes
 
             } catch (error) {
                 console.error(`PDFStore: Failed to load PDF ${pdfPath}:`, error);
@@ -495,178 +431,11 @@ function createPdfStore() {
             }
         },
 
-        // Canvas management
-        setCanvas(canvas: HTMLCanvasElement | null): void {
-            const context = canvas?.getContext('2d') || null;
-            console.log(`PDFStore: Setting canvas - canvas: ${!!canvas}, context: ${!!context}`);
-            
-            update(state => ({
-                ...state,
-                canvas,
-                context
-            }));
+        // Canvas management removed - components manage their own canvases
 
-            // Render current page if PDF is loaded
-            if (canvas && context) {
-                const currentState = get({ subscribe });
-                console.log(`PDFStore: Canvas set and PDF available: ${!!currentState.currentPdf}`);
-                if (currentState.currentPdf) {
-                    console.log(`PDFStore: Rendering PDF on canvas set`);
-                    store.renderCurrentPage();
-                }
-            }
-        },
+        // Rendering removed - components manage their own rendering
 
-        // Rendering
-        async renderCurrentPage(): Promise<void> {
-            const initialState = get({ subscribe });
-            
-            if (!initialState.currentPdf?.pdfDoc || !initialState.canvas || !initialState.context) {
-                console.log('PDFStore: Cannot render - missing PDF document or canvas');
-                return;
-            }
-
-            if (initialState.isRendering) {
-                console.log('PDFStore: Already rendering, skipping');
-                return;
-            }
-
-            // Cancel any ongoing render operation
-            if (currentRenderTask) {
-                console.log('PDFStore: Cancelling previous render operation');
-                try {
-                    currentRenderTask.cancel();
-                } catch (e) {
-                    // Ignore cancellation errors
-                }
-                currentRenderTask = null;
-            }
-
-            update(state => ({ ...state, isRendering: true, error: null }));
-
-            try {
-                // Get fresh state for rendering
-                const renderState = get({ subscribe });
-                if (!renderState.currentPdf?.pdfDoc || !renderState.canvas || !renderState.context) {
-                    console.log('PDFStore: State changed during render setup, aborting');
-                    return;
-                }
-
-                const page = await renderState.currentPdf.pdfDoc.getPage(renderState.viewer.currentPage);
-                const viewport = page.getViewport({ 
-                    scale: renderState.viewer.scale,
-                    rotation: renderState.viewer.rotation 
-                });
-
-                // Update canvas size
-                renderState.canvas.width = viewport.width;
-                renderState.canvas.height = viewport.height;
-
-                // Clear canvas
-                renderState.context.clearRect(0, 0, viewport.width, viewport.height);
-
-                // Create render context and start render task
-                const renderContext = {
-                    canvasContext: renderState.context,
-                    viewport: viewport
-                };
-
-                // Store render task for potential cancellation
-                currentRenderTask = page.render(renderContext);
-                
-                // Wait for render completion
-                await currentRenderTask.promise;
-                
-                console.log(`PDFStore: Page ${renderState.viewer.currentPage} rendered successfully`);
-                currentRenderTask = null;
-
-            } catch (error) {
-                currentRenderTask = null;
-                
-                // Don't log cancellation errors as actual errors
-                if (error && typeof error === 'object' && 'name' in error && error.name === 'RenderingCancelledException') {
-                    console.log('PDFStore: Render operation was cancelled');
-                    return;
-                }
-                
-                console.error('PDFStore: Error rendering page:', error);
-                update(state => ({
-                    ...state,
-                    error: 'Failed to render PDF page'
-                }));
-            } finally {
-                update(state => ({ ...state, isRendering: false }));
-            }
-        },
-
-        // Viewer controls
-        nextPage(): void {
-            const currentState = get({ subscribe });
-            if (currentState.currentPdf && currentState.viewer.currentPage < currentState.currentPdf.numPages) {
-                update(state => ({
-                    ...state,
-                    viewer: { ...state.viewer, currentPage: state.viewer.currentPage + 1 }
-                }));
-                store.renderCurrentPage();
-            }
-        },
-
-        prevPage(): void {
-            const currentState = get({ subscribe });
-            if (currentState.viewer.currentPage > 1) {
-                update(state => ({
-                    ...state,
-                    viewer: { ...state.viewer, currentPage: state.viewer.currentPage - 1 }
-                }));
-                store.renderCurrentPage();
-            }
-        },
-
-        goToPage(pageNumber: number): void {
-            const currentState = get({ subscribe });
-            if (currentState.currentPdf && pageNumber >= 1 && pageNumber <= currentState.currentPdf.numPages) {
-                update(state => ({
-                    ...state,
-                    viewer: { ...state.viewer, currentPage: pageNumber }
-                }));
-                store.renderCurrentPage();
-            }
-        },
-
-        zoomIn(): void {
-            update(state => ({
-                ...state,
-                viewer: { ...state.viewer, scale: Math.min(state.viewer.scale + 0.2, 3.0) }
-            }));
-            store.renderCurrentPage();
-        },
-
-        zoomOut(): void {
-            update(state => ({
-                ...state,
-                viewer: { ...state.viewer, scale: Math.max(state.viewer.scale - 0.2, 0.5) }
-            }));
-            store.renderCurrentPage();
-        },
-
-        setScale(scale: number): void {
-            update(state => ({
-                ...state,
-                viewer: { ...state.viewer, scale: Math.max(0.5, Math.min(scale, 3.0)) }
-            }));
-            store.renderCurrentPage();
-        },
-
-        rotate(): void {
-            update(state => ({
-                ...state,
-                viewer: { 
-                    ...state.viewer, 
-                    rotation: (state.viewer.rotation + 90) % 360 
-                }
-            }));
-            store.renderCurrentPage();
-        },
+        // Viewer controls removed - components manage their own UI state
 
         // Settings
         setAutoRefresh(enabled: boolean): void {
@@ -788,28 +557,13 @@ function createPdfStore() {
 
         // Cleanup
         async destroy(): Promise<void> {
-            // Cancel any ongoing render operation
-            if (currentRenderTask) {
-                console.log('PDFStore: Cancelling render operation during cleanup');
-                try {
-                    currentRenderTask.cancel();
-                } catch (e) {
-                    // Ignore cancellation errors during cleanup
-                }
-                currentRenderTask = null;
-            }
-
             // Clean up PDF document
             const currentState = get({ subscribe });
             if (currentState.currentPdf?.pdfDoc && typeof currentState.currentPdf.pdfDoc.destroy === 'function') {
                 currentState.currentPdf.pdfDoc.destroy();
             }
 
-            // Remove event listeners
-            if (browser) {
-                window.removeEventListener('latex-compiled', store.handleLatexCompiled);
-                window.removeEventListener('latex-compile-error', store.handleLatexError);
-            }
+            // No legacy event listeners to remove
 
             // Unsubscribe from EventStore events
             if (eventUnsubscribe) {

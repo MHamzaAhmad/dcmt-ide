@@ -167,6 +167,7 @@ function createPdfStore() {
 
                 // Check for existing PDFs
                 const latexState = latexStore.getCurrentState();
+                console.log(`PDFStore: Current LaTeX state - mainFile: ${latexState.mainFile}, currentPdfPath: ${latexState.currentPdfPath}`);
                 if (latexState.currentPdfPath) {
                     const initOperationId = store.createOperationId('manual', 'initialization');
                     await store.loadPdf(latexState.currentPdfPath, initOperationId, 'manual', 'initialization');

@@ -79,7 +79,7 @@ export function useAgentFileSync(options: AgentFileSyncOptions = {}) {
     // NOTE: read_file is excluded as it doesn't modify files
     const FILE_TOOLS = new Set([
         'write_file', 
-        'update_file',
+        'patch_file',
         'create_file',
         'delete_file',
         'create_directory',
@@ -309,7 +309,7 @@ export function useAgentFileSync(options: AgentFileSyncOptions = {}) {
             case 'copy_file':
                 return 'created';
             case 'write_file':
-            case 'update_file':
+            case 'patch_file':
                 return 'modified';
             case 'delete_file':
                 return 'deleted';

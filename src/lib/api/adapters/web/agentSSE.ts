@@ -238,6 +238,8 @@ export class AgentSSEAdapter {
         if ('content' in event) payload.content = event.content;
         if ('tool' in event) payload.tool = event.tool;
         if ('tool_id' in event) payload.toolId = event.tool_id;
+        if ('display_name' in event) payload.display_name = (event as any).display_name;
+        if ('progressive_form' in event) payload.progressive_form = (event as any).progressive_form;
         if ('tool_name' in event) payload.toolName = event.tool_name;
         if ('tool_call' in event) payload.toolCall = event.tool_call;
         if ('result' in event) payload.result = event.result;

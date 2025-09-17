@@ -302,12 +302,18 @@ export class DesktopAgentSSEAdapter {
         const subtype = typeMapping[event.type];
         if (!subtype) return;
 
-        // Extract relevant data from event
-        const payload: any = { sessionId };
+    // Extract relevant data from event (parity with web adapter)
+    const payload: any = { sessionId };
         
-        if ('tool' in event) payload.tool = event.tool;
-        if ('result' in event) payload.result = event.result;
-        if ('message' in event) payload.message = event.message;
+    if ('content' in event) payload.content = (event as any).content;
+    if ('tool' in event) payload.tool = event.tool;
+    if ('tool_id' in event) payload.toolId = (event as any).tool_id;
+    if ('display_name' in event) payload.display_name = (event as any).display_name;
+    if ('progressive_form' in event) payload.progressive_form = (event as any).progressive_form;
+    if ('tool_name' in event) payload.toolName = (event as any).tool_name;
+    if ('tool_call' in event) payload.toolCall = (event as any).tool_call;
+    if ('result' in event) payload.result = (event as any).result;
+    if ('message' in event) payload.message = (event as any).message;
 
         eventStore.emit({
             type: 'agent',

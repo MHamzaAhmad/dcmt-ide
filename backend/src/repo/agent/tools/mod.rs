@@ -6,7 +6,9 @@ use crate::model::agent::{ToolDefinition, FunctionDefinition, AgentResult, Agent
 // Import individual tools
 pub mod read_file;
 pub mod write_file;
+pub mod patch_file;
 pub mod update_file;
+pub mod search_files;
 pub mod list_files;
 pub mod create_directory;
 pub mod delete_file;
@@ -16,7 +18,9 @@ pub mod web_extract;
 
 pub use read_file::ReadFileTool;
 pub use write_file::WriteFileTool;
+pub use patch_file::PatchFileTool;
 pub use update_file::UpdateFileTool;
+pub use search_files::SearchFilesTool;
 pub use list_files::ListFilesTool;
 pub use create_directory::CreateDirectoryTool;
 pub use delete_file::DeleteFileTool;
@@ -54,7 +58,9 @@ impl ToolRegistry {
         let tools: Vec<Box<dyn AgentTool>> = vec![
             Box::new(ReadFileTool),
             Box::new(WriteFileTool),
+            Box::new(PatchFileTool),
             Box::new(UpdateFileTool),
+            Box::new(SearchFilesTool),
             Box::new(ListFilesTool),
             Box::new(CreateDirectoryTool),
             Box::new(DeleteFileTool),

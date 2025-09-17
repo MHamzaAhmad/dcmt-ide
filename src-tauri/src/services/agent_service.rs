@@ -191,7 +191,7 @@ impl AgentService {
     fn is_file_modifying_tool(tool: &str) -> bool {
         matches!(
             tool,
-            "write_file" | "update_file" | "create_file" | "delete_file" | "create_directory"
+            "write_file" | "patch_file" | "create_file" | "delete_file" | "create_directory"
         )
     }
 
@@ -500,6 +500,21 @@ impl AgentService {
                 
                 // Execute tools (in parallel if multiple)
                 if tool_calls.len() > 1 {
+                    // Emit ToolCallRequested for each tool with UI metadata before execution
+                    for tool_call in &tool_calls {
+                        let (display_name, progressive_form) = tool_registry
+                            .get_tool_metadata(&tool_call.function.name)
+                            .unwrap_or((tool_call.function.name.clone(), format!("Running {}", tool_call.function.name)));
+                        event_broadcaster
+                            .broadcast(session_id, AgentEvent::ToolCallRequested {
+                                tool: tool_call.function.name.clone(),
+                                args: serde_json::from_str(&tool_call.function.arguments).unwrap_or(serde_json::Value::Null),
+                                display_name: Some(display_name),
+                                progressive_form: Some(progressive_form),
+                                metadata: EventMetadata::new(format!("tool-req-{}", tool_call.id)),
+                            })
+                            .await;
+                    }
                     // Multiple tools - execute in parallel
                     let tool_futures: Vec<_> = tool_calls
                         .iter()
@@ -543,6 +558,19 @@ impl AgentService {
                 } else {
                     // Single tool - execute normally
                     for tool_call in &tool_calls {
+                        // Emit ToolCallRequested prior to execution for consistent UI
+                        let (display_name, progressive_form) = tool_registry
+                            .get_tool_metadata(&tool_call.function.name)
+                            .unwrap_or((tool_call.function.name.clone(), format!("Running {}", tool_call.function.name)));
+                        event_broadcaster
+                            .broadcast(session_id, AgentEvent::ToolCallRequested {
+                                tool: tool_call.function.name.clone(),
+                                args: serde_json::from_str(&tool_call.function.arguments).unwrap_or(serde_json::Value::Null),
+                                display_name: Some(display_name),
+                                progressive_form: Some(progressive_form),
+                                metadata: EventMetadata::new(format!("tool-req-{}", tool_call.id)),
+                            })
+                            .await;
                         match Self::execute_tool(
                             &tool_call.function,
                             &tool_registry,

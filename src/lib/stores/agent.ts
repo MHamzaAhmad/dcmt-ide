@@ -554,7 +554,7 @@ function createAgentStore() {
                                 case 'delete_file':
                                     changeType = 'deleted';
                                     break;
-                                case 'update_file':
+                                case 'patch_file':
                                     changeType = 'modified';
                                     break;
                                 default:

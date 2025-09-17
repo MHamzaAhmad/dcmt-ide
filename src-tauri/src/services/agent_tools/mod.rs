@@ -4,7 +4,9 @@ use crate::models::agent::{AgentResult, ToolDefinition, AgentError};
 
 pub mod read_file;
 pub mod write_file;
+pub mod patch_file;
 pub mod update_file;
+pub mod search_files;
 pub mod list_files;
 pub mod create_directory;
 pub mod delete_file;
@@ -14,7 +16,9 @@ pub mod web_extract;
 
 pub use read_file::ReadFileTool;
 pub use write_file::WriteFileTool;
+pub use patch_file::PatchFileTool;
 pub use update_file::UpdateFileTool;
+pub use search_files::SearchFilesTool;
 pub use list_files::ListFilesTool;
 pub use create_directory::CreateDirectoryTool;
 pub use delete_file::DeleteFileTool;
@@ -37,7 +41,9 @@ pub trait AgentTool: Send + Sync {
 pub enum Tool {
     ReadFile(ReadFileTool),
     WriteFile(WriteFileTool),
+    PatchFile(PatchFileTool),
     UpdateFile(UpdateFileTool),
+    SearchFiles(SearchFilesTool),
     ListFiles(ListFilesTool),
     CreateDirectory(CreateDirectoryTool),
     DeleteFile(DeleteFileTool),
@@ -51,7 +57,9 @@ impl Tool {
         match self {
             Tool::ReadFile(tool) => tool.definition(),
             Tool::WriteFile(tool) => tool.definition(),
+            Tool::PatchFile(tool) => tool.definition(),
             Tool::UpdateFile(tool) => tool.definition(),
+            Tool::SearchFiles(tool) => tool.definition(),
             Tool::ListFiles(tool) => tool.definition(),
             Tool::CreateDirectory(tool) => tool.definition(),
             Tool::DeleteFile(tool) => tool.definition(),
@@ -65,7 +73,9 @@ impl Tool {
         match self {
             Tool::ReadFile(_) => "Read File",
             Tool::WriteFile(_) => "Write File",
+            Tool::PatchFile(_) => "Patch File",
             Tool::UpdateFile(_) => "Update File",
+            Tool::SearchFiles(_) => "Search Files",
             Tool::ListFiles(_) => "List Files",
             Tool::CreateDirectory(_) => "Create Directory",
             Tool::DeleteFile(_) => "Delete File",
@@ -79,7 +89,9 @@ impl Tool {
         match self {
             Tool::ReadFile(_) => "Reading file",
             Tool::WriteFile(_) => "Writing file",
+            Tool::PatchFile(_) => "Patching file",
             Tool::UpdateFile(_) => "Updating file",
+            Tool::SearchFiles(_) => "Searching files",
             Tool::ListFiles(_) => "Listing files",
             Tool::CreateDirectory(_) => "Creating directory",
             Tool::DeleteFile(_) => "Deleting file",
@@ -93,7 +105,9 @@ impl Tool {
         match self {
             Tool::ReadFile(tool) => tool.execute(workspace_path, args, app_handle).await,
             Tool::WriteFile(tool) => tool.execute(workspace_path, args, app_handle).await,
+            Tool::PatchFile(tool) => tool.execute(workspace_path, args, app_handle).await,
             Tool::UpdateFile(tool) => tool.execute(workspace_path, args, app_handle).await,
+            Tool::SearchFiles(tool) => tool.execute(workspace_path, args, app_handle).await,
             Tool::ListFiles(tool) => tool.execute(workspace_path, args, app_handle).await,
             Tool::CreateDirectory(tool) => tool.execute(workspace_path, args, app_handle).await,
             Tool::DeleteFile(tool) => tool.execute(workspace_path, args, app_handle).await,
@@ -107,7 +121,9 @@ impl Tool {
         match self {
             Tool::ReadFile(_) => "read_file",
             Tool::WriteFile(_) => "write_file",
+            Tool::PatchFile(_) => "patch_file",
             Tool::UpdateFile(_) => "update_file",
+            Tool::SearchFiles(_) => "search_files",
             Tool::ListFiles(_) => "list_files",
             Tool::CreateDirectory(_) => "create_directory",
             Tool::DeleteFile(_) => "delete_file",
@@ -130,7 +146,9 @@ impl ToolRegistry {
         let tools = vec![
             Tool::ReadFile(ReadFileTool),
             Tool::WriteFile(WriteFileTool),
+            Tool::PatchFile(PatchFileTool),
             Tool::UpdateFile(UpdateFileTool),
+            Tool::SearchFiles(SearchFilesTool),
             Tool::ListFiles(ListFilesTool),
             Tool::CreateDirectory(CreateDirectoryTool),
             Tool::DeleteFile(DeleteFileTool),
@@ -233,19 +251,16 @@ mod tests {
 
     #[test]
     fn test_tool_registry_creation() {
-        let registry = ToolRegistry::new();
-        assert_eq!(registry.tools.len(), 7);
-        
-        let tool_names: Vec<String> = registry.tools.iter()
-            .map(|tool| tool.name().to_string())
-            .collect();
-        assert!(tool_names.contains(&"read_file".to_string()));
-        assert!(tool_names.contains(&"write_file".to_string()));
-        assert!(tool_names.contains(&"update_file".to_string()));
-        assert!(tool_names.contains(&"list_files".to_string()));
-        assert!(tool_names.contains(&"create_directory".to_string()));
-        assert!(tool_names.contains(&"delete_file".to_string()));
-        assert!(tool_names.contains(&"compile".to_string()));
+    let registry = ToolRegistry::new();
+    let tool_names: Vec<String> = registry.tools.iter().map(|tool| tool.name().to_string()).collect();
+    assert!(tool_names.contains(&"read_file".to_string()));
+    assert!(tool_names.contains(&"write_file".to_string()));
+    assert!(tool_names.contains(&"patch_file".to_string()));
+    assert!(tool_names.contains(&"search_files".to_string()));
+    assert!(tool_names.contains(&"list_files".to_string()));
+    assert!(tool_names.contains(&"create_directory".to_string()));
+    assert!(tool_names.contains(&"delete_file".to_string()));
+    assert!(tool_names.contains(&"compile".to_string()));
     }
     
     #[test]

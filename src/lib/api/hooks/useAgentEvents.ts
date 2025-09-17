@@ -79,7 +79,7 @@ export function useAgentEvents(options: AgentEventHookOptions = {}) {
         switch (event.type) {
             case 'ToolCompleted':
                 // Check if this was a file operation tool
-                const fileTools = ['read_file', 'write_file', 'update_file', 'create_file', 'delete_file', 'create_directory'];
+                const fileTools = ['read_file', 'write_file', 'patch_file', 'create_file', 'delete_file', 'create_directory'];
                 if (fileTools.includes(event.tool)) {
                     // Parse the result to extract file path if possible
                     try {

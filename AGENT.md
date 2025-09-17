@@ -175,11 +175,11 @@ All tools operate within the workspace directory and include security measures t
 - **Features**: Automatic directory creation
 - **Output**: Success confirmation with file stats
 
-### 3. Update File Tool (`update_file`)
-- **Purpose**: Targeted file modifications using find-and-replace
-- **Parameters**: `path`, `old_content`, `new_content`
-- **Safety**: Exact matching required, unique content validation
-- **Output**: Modification summary
+### 3. Patch File Tool (`patch_file`)
+- **Purpose**: Minimal, structured edits to files (insert/replace/delete ranges)
+- **Parameters**: `path`, `patch` (ops/unified_diff/dmp_ops), optional `precondition` (mtime)
+- **Safety**: Applies targeted diffs; fails on precondition mismatch
+- **Output**: Patch result summary
 
 ### 4. List Files Tool (`list_files`)
 - **Purpose**: Directory exploration

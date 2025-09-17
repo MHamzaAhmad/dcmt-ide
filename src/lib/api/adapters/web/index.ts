@@ -1,27 +1,36 @@
 // Web Platform Adapters
 import { WebFileSystemAdapter } from './filesystem';
 import { WebProjectAdapter } from './project';
-import { WebSocketAdapter, WebFileWatcher } from './fileWebSocket';
+import { WebFileWatcher } from './fileWebSocket';
 import { WebLatexAdapter } from './latex';
 import { AgentSSEAdapter } from './agentSSE';
+import { webSocketManager } from './webSocketManager';
 import type { PlatformAPI } from '../../types';
 
 // Combined Web API Adapter using composition with spread
 export class WebApiAdapter implements PlatformAPI {
 	private fileSystem = new WebFileSystemAdapter();
 	private project = new WebProjectAdapter();
-	private websocket = new WebSocketAdapter();
 	private fileWatcher = new WebFileWatcher();
 	private latex = new WebLatexAdapter();
 	private agentSSE = new AgentSSEAdapter();
+	private compilationEventUnsubscribe: (() => void) | null = null;
 
 	constructor() {
-		// Auto-connect WebSocket and initialize file watcher for proper event flow
+		// Initialize with shared WebSocket manager
 		if (typeof window !== 'undefined') {
-			this.websocket.connect();
-			// File watcher is automatically initialized when created, 
-			// and will subscribe to WebSocket events
-			console.log('WebApiAdapter: Initialized with WebSocket and file watcher');
+			// WebSocket is managed by WebSocketManager singleton
+			// File watcher uses the same WebSocket manager internally
+			console.log('WebApiAdapter: Initializing with shared WebSocket manager');
+			console.log('WebApiAdapter: WebSocket connection stats:', webSocketManager.getStats());
+
+			// Ensure WebSocket is connected
+			webSocketManager.connect();
+
+			// Log after connection attempt
+			setTimeout(() => {
+				console.log('WebApiAdapter: WebSocket stats after connection attempt:', webSocketManager.getStats());
+			}, 100);
 		}
 	}
 
@@ -45,16 +54,30 @@ export class WebApiAdapter implements PlatformAPI {
 	findMainLatexFile = this.latex.findMainLatexFile.bind(this.latex);
 	
 	// Compilation events
-	onCompilationEvent = this.websocket.onCompilationEvent?.bind(this.websocket);
+	onCompilationEvent = (callback: (event: any) => void) => {
+		// Subscribe via WebSocketManager
+		this.compilationEventUnsubscribe = webSocketManager.onCompilationEvent(callback);
+		console.log('WebApiAdapter: Subscribed to compilation events via WebSocketManager');
+
+		// Return unsubscribe function
+		return () => {
+			if (this.compilationEventUnsubscribe) {
+				this.compilationEventUnsubscribe();
+				this.compilationEventUnsubscribe = null;
+			}
+		};
+	};
 	setAutoCompile = this.latex.setAutoCompile?.bind(this.latex);
 	setMainFile = this.latex.setMainFile?.bind(this.latex);
 
 	// Web-specific functionality
-	getWebSocket = () => this.websocket;
 	getFileWatcher = () => this.fileWatcher;
 	getAgentSSE = () => this.agentSSE;
 	getProjectInfo = this.project.getProjectInfo.bind(this.project);
+
+	// Get WebSocket connection stats for debugging
+	getWebSocketStats = () => webSocketManager.getStats();
 }
 
 // Export individual adapters for direct access if needed
-export { WebFileSystemAdapter, WebProjectAdapter, WebSocketAdapter, WebFileWatcher, WebLatexAdapter, AgentSSEAdapter };
+export { WebFileSystemAdapter, WebProjectAdapter, WebFileWatcher, WebLatexAdapter, AgentSSEAdapter };

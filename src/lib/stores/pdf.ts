@@ -102,10 +102,12 @@ function createPdfStore() {
     // Internal state
     let isInitialized = false;
     let latexUnsubscribe: (() => void) | null = null;
+    let latexPdfPathUnsubscribe: (() => void) | null = null; // Separate subscription for PDF path changes
     let eventUnsubscribe: (() => void) | null = null;
     let pdfjsLib: any = null;
     let currentLoadingPath: string | null = null;
     let processedCompilationEventIds = new Set<string>(); // Track processed compilation events
+    let lastPdfPath: string | null = null; // Track last PDF path to avoid duplicates
 
     const store = {
         subscribe,
@@ -129,13 +131,8 @@ function createPdfStore() {
 
                 // No legacy event listeners - using pure EventStore pattern
 
-                // Check for existing PDFs
-                const latexState = latexStore.getCurrentState();
-                console.log(`PDFStore: Current LaTeX state - mainFile: ${latexState.mainFile}, currentPdfPath: ${latexState.currentPdfPath}`);
-                if (latexState.currentPdfPath) {
-                    const initOperationId = store.createOperationId('manual', 'initialization');
-                    await store.loadPdf(latexState.currentPdfPath, initOperationId, 'manual', 'initialization');
-                }
+                // Note: PDF loading is now reactive - will load when LaTeX PDF path changes
+                // The actual loading happens through the reactive subscription to LaTeX store
 
                 update(state => ({
                     ...state,
@@ -144,6 +141,20 @@ function createPdfStore() {
 
                 isInitialized = true;
                 console.log('PDFStore: Initialized successfully');
+
+                // Subscribe to LaTeX store PDF path changes for reactive loading
+                latexPdfPathUnsubscribe = latexStore.subscribe(state => {
+                    if (state.currentPdfPath && state.currentPdfPath !== lastPdfPath) {
+                        console.log(`PDFStore: LaTeX PDF path changed to: ${state.currentPdfPath}`);
+                        lastPdfPath = state.currentPdfPath;
+
+                        // Load PDF when path becomes available
+                        if (isInitialized && state.currentPdfPath) {
+                            const initOperationId = store.createOperationId('manual', 'latex_path_change');
+                            store.loadPdf(state.currentPdfPath, initOperationId, 'manual', 'latex_path_change');
+                        }
+                    }
+                });
 
             } catch (error) {
                 const errorMessage = error instanceof Error ? error.message : 'Failed to initialize PDF store';
@@ -571,10 +582,16 @@ function createPdfStore() {
                 eventUnsubscribe = null;
             }
             
-            // Unsubscribe from LaTeX store
+            // Unsubscribe from LaTeX store compilation events
             if (latexUnsubscribe) {
                 latexUnsubscribe();
                 latexUnsubscribe = null;
+            }
+
+            // Unsubscribe from LaTeX store PDF path changes
+            if (latexPdfPathUnsubscribe) {
+                latexPdfPathUnsubscribe();
+                latexPdfPathUnsubscribe = null;
             }
 
             // Reset state

@@ -48,112 +48,156 @@ struct Choice {
 }
 
 pub struct GitService {
-    repo: Arc<GitRepository>,
+    repo: Option<Arc<GitRepository>>,
+    workspace_path: PathBuf,
     http_client: Client,
     litellm_base_url: String,
 }
 
 impl GitService {
     pub fn new(workspace_path: PathBuf, litellm_base_url: String) -> Result<Self> {
-        let repo = Arc::new(GitRepository::new(workspace_path)?);
+        let repo = if GitRepository::repository_exists(&workspace_path) {
+            Some(Arc::new(GitRepository::new(workspace_path.clone())?))
+        } else {
+            None
+        };
         let http_client = Client::new();
 
         Ok(Self {
             repo,
+            workspace_path,
             http_client,
             litellm_base_url,
         })
     }
 
+    pub fn is_repository_initialized(&self) -> bool {
+        self.repo.is_some()
+    }
+
     pub async fn get_status(&self) -> Result<GitStatus> {
-        self.repo.get_status()
+        match &self.repo {
+            Some(repo) => repo.get_status(),
+            None => Ok(GitStatus {
+                branch: "main".to_string(),
+                ahead: 0,
+                behind: 0,
+                staged: Vec::new(),
+                unstaged: Vec::new(),
+                untracked: Vec::new(),
+                is_initialized: false,
+                has_commits: false,
+            }),
+        }
     }
 
     pub async fn get_diff(&self, staged: bool) -> Result<GitDiff> {
-        self.repo.get_diff(staged)
+        match &self.repo {
+            Some(repo) => repo.get_diff(staged),
+            None => Err(anyhow::anyhow!("Git repository is not initialized")),
+        }
     }
 
     pub async fn generate_commit_summary(&self, staged: bool) -> Result<CommitSummary> {
-        let diff_string = self.repo.get_diff_as_string(staged)?;
-        
-        if diff_string.is_empty() {
-            return Ok(CommitSummary {
-                summary: "No changes to commit".to_string(),
-                bullets: vec!["No changes detected".to_string()],
-                suggested_message: "chore: no changes".to_string(),
-            });
+        match &self.repo {
+            Some(repo) => {
+                let diff_string = repo.get_diff_as_string(staged)?;
+
+                if diff_string.is_empty() {
+                    return Ok(CommitSummary {
+                        summary: "No changes to commit".to_string(),
+                        bullets: vec!["No changes detected".to_string()],
+                        suggested_message: "chore: no changes".to_string(),
+                    });
+                }
+
+                let prompt = self.load_prompt_template()?;
+                let formatted_prompt = prompt.replace("{diff_content}", &diff_string);
+
+                let request = LiteLLMRequest {
+                    model: "gpt-4o-mini".to_string(),
+                    messages: vec![
+                        LiteLLMMessage {
+                            role: "system".to_string(),
+                            content: "You are a helpful assistant that generates git commit summaries. Always respond with valid JSON.".to_string(),
+                        },
+                        LiteLLMMessage {
+                            role: "user".to_string(),
+                            content: formatted_prompt,
+                        },
+                    ],
+                    temperature: 0.3,
+                    response_format: ResponseFormat {
+                        format_type: "json_object".to_string(),
+                    },
+                };
+
+                let response = self
+                    .http_client
+                    .post(format!("{}/chat/completions", self.litellm_base_url))
+                    .json(&request)
+                    .send()
+                    .await
+                    .context("Failed to send request to LiteLLM")?;
+
+                if !response.status().is_success() {
+                    let status = response.status();
+                    let error_text = response.text().await.unwrap_or_default();
+                    return Err(anyhow::anyhow!(
+                        "LiteLLM request failed with status {}: {}",
+                        status,
+                        error_text
+                    ));
+                }
+
+                let litellm_response: LiteLLMResponse = response
+                    .json()
+                    .await
+                    .context("Failed to parse LiteLLM response")?;
+
+                let ai_content = litellm_response
+                    .choices
+                    .first()
+                    .ok_or_else(|| anyhow::anyhow!("No choices in LiteLLM response"))?
+                    .message
+                    .content
+                    .clone();
+
+                self.parse_ai_response(ai_content)
+            }
+            None => Err(anyhow::anyhow!("Git repository is not initialized")),
         }
-
-        let prompt = self.load_prompt_template()?;
-        let formatted_prompt = prompt.replace("{diff_content}", &diff_string);
-        
-        let request = LiteLLMRequest {
-            model: "gpt-4o-mini".to_string(),
-            messages: vec![
-                LiteLLMMessage {
-                    role: "system".to_string(),
-                    content: "You are a helpful assistant that generates git commit summaries. Always respond with valid JSON.".to_string(),
-                },
-                LiteLLMMessage {
-                    role: "user".to_string(),
-                    content: formatted_prompt,
-                },
-            ],
-            temperature: 0.3,
-            response_format: ResponseFormat {
-                format_type: "json_object".to_string(),
-            },
-        };
-
-        let response = self
-            .http_client
-            .post(format!("{}/chat/completions", self.litellm_base_url))
-            .json(&request)
-            .send()
-            .await
-            .context("Failed to send request to LiteLLM")?;
-
-        if !response.status().is_success() {
-            let status = response.status();
-            let error_text = response.text().await.unwrap_or_default();
-            return Err(anyhow::anyhow!(
-                "LiteLLM request failed with status {}: {}",
-                status,
-                error_text
-            ));
-        }
-
-        let litellm_response: LiteLLMResponse = response
-            .json()
-            .await
-            .context("Failed to parse LiteLLM response")?;
-
-        let ai_content = litellm_response
-            .choices
-            .first()
-            .ok_or_else(|| anyhow::anyhow!("No choices in LiteLLM response"))?
-            .message
-            .content
-            .clone();
-
-        self.parse_ai_response(ai_content)
     }
 
     pub async fn stage_files(&self, paths: Vec<String>) -> Result<()> {
-        self.repo.stage_files(paths)
+        match &self.repo {
+            Some(repo) => repo.stage_files(paths),
+            None => Err(anyhow::anyhow!("Git repository is not initialized")),
+        }
     }
 
     pub async fn stage_all(&self) -> Result<()> {
-        self.repo.stage_all()
+        match &self.repo {
+            Some(repo) => repo.stage_all(),
+            None => Err(anyhow::anyhow!("Git repository is not initialized")),
+        }
     }
 
     pub async fn commit(&self, message: String) -> Result<CommitResult> {
-        self.repo.commit(message)
+        match &self.repo {
+            Some(repo) => repo.commit(message),
+            None => Err(anyhow::anyhow!("Git repository is not initialized")),
+        }
     }
 
     pub async fn push(&self) -> Result<()> {
-        let branch = self.repo.get_current_branch()?;
-        self.repo.push("origin", &branch)
+        match &self.repo {
+            Some(repo) => {
+                let branch = repo.get_current_branch()?;
+                repo.push("origin", &branch)
+            }
+            None => Err(anyhow::anyhow!("Git repository is not initialized")),
+        }
     }
 
     pub async fn commit_and_push(&self, message: String) -> Result<CommitResult> {

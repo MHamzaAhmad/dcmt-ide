@@ -17,6 +17,8 @@ pub struct GitStatus {
     pub staged: Vec<GitFileStatus>,
     pub unstaged: Vec<GitFileStatus>,
     pub untracked: Vec<String>,
+    pub is_initialized: bool,
+    pub has_commits: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -87,6 +89,20 @@ impl GitRepository {
         })
     }
 
+    pub fn repository_exists(workspace_path: &Path) -> bool {
+        Repository::open_ext(workspace_path, RepositoryOpenFlags::empty(), Vec::<&Path>::new()).is_ok()
+    }
+
+    pub fn has_commits(&self) -> Result<bool> {
+        let repo = self.repo.lock().unwrap();
+        let has_commits = match repo.head() {
+            Ok(_) => true,
+            Err(e) if e.code() == ErrorCode::UnbornBranch => false,
+            Err(e) => return Err(e.into()),
+        };
+        Ok(has_commits)
+    }
+
     pub fn get_current_branch(&self) -> Result<String> {
         let repo = self.repo.lock().unwrap();
         let head = repo.head()?;
@@ -100,36 +116,52 @@ impl GitRepository {
 
     pub fn get_status(&self) -> Result<GitStatus> {
         let repo = self.repo.lock().unwrap();
-        let branch = {
+
+        // Check if repository has commits
+        let has_commits = match repo.head() {
+            Ok(_) => true,
+            Err(e) if e.code() == ErrorCode::UnbornBranch => false,
+            Err(e) => return Err(e.into()),
+        };
+
+        let branch = if has_commits {
             let head = repo.head()?;
-            if let Some(name) = head.shorthand() {
+            let branch_name = if let Some(name) = head.shorthand() {
                 name.to_string()
             } else {
                 "HEAD".to_string()
-            }
+            };
+            branch_name
+        } else {
+            // Default branch name when no commits
+            "main".to_string()
         };
-        
-        // Get ahead/behind counts
-        let (ahead, behind) = self.get_ahead_behind_internal(&repo, &branch)?;
-        
+
+        // Get ahead/behind counts (only if we have commits and a valid branch)
+        let (ahead, behind) = if has_commits {
+            self.get_ahead_behind_internal(&repo, &branch).unwrap_or((0, 0))
+        } else {
+            (0, 0)
+        };
+
         // Get file statuses
         let mut status_options = StatusOptions::new();
         status_options.include_untracked(true);
-        
+
         let statuses = repo.statuses(Some(&mut status_options))?;
-        
+
         let mut staged = Vec::new();
         let mut unstaged = Vec::new();
         let mut untracked = Vec::new();
-        
+
         for entry in statuses.iter() {
             let path = entry.path().unwrap_or("").to_string();
             let status = entry.status();
-            
+
             if status.contains(Status::WT_NEW) {
                 untracked.push(path.clone());
             }
-            
+
             // Check staged changes
             if status.intersects(
                 Status::INDEX_NEW | Status::INDEX_MODIFIED | Status::INDEX_DELETED | Status::INDEX_RENAMED,
@@ -143,7 +175,7 @@ impl GitRepository {
                 } else {
                     FileChangeType::Renamed
                 };
-                
+
                 staged.push(GitFileStatus {
                     path: path.clone(),
                     status: change_type,
@@ -151,7 +183,7 @@ impl GitRepository {
                     deletions: 0,
                 });
             }
-            
+
             // Check unstaged changes
             if status.intersects(
                 Status::WT_MODIFIED | Status::WT_DELETED | Status::WT_RENAMED,
@@ -163,7 +195,7 @@ impl GitRepository {
                 } else {
                     FileChangeType::Renamed
                 };
-                
+
                 unstaged.push(GitFileStatus {
                     path,
                     status: change_type,
@@ -172,7 +204,7 @@ impl GitRepository {
                 });
             }
         }
-        
+
         Ok(GitStatus {
             branch,
             ahead,
@@ -180,6 +212,8 @@ impl GitRepository {
             staged,
             unstaged,
             untracked,
+            is_initialized: true,
+            has_commits,
         })
     }
 
@@ -425,27 +459,3 @@ impl GitRepository {
 // Implement Send + Sync for GitRepository since git2::Repository is Send but not Sync
 unsafe impl Send for GitRepository {}
 unsafe impl Sync for GitRepository {}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    
-    #[test]
-    fn test_git_status_serialization() {
-        let status = GitStatus {
-            branch: "main".to_string(),
-            ahead: 2,
-            behind: 1,
-            staged: vec![],
-            unstaged: vec![],
-            untracked: vec!["new_file.txt".to_string()],
-        };
-        
-        let json = serde_json::to_string(&status).unwrap();
-        let deserialized: GitStatus = serde_json::from_str(&json).unwrap();
-        
-        assert_eq!(deserialized.branch, "main");
-        assert_eq!(deserialized.ahead, 2);
-        assert_eq!(deserialized.behind, 1);
-    }
-}

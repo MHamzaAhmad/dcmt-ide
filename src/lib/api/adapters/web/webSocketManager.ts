@@ -26,6 +26,9 @@ export class WebSocketManager {
     private compilationEventCallbacks: CompilationEventCallback[] = [];
     private connectionCallbacks: ((connected: boolean) => void)[] = [];
 
+    // Message queue for messages sent while connecting
+    private messageQueue: any[] = [];
+
     // Connection stats
     private connectionCount: number = 0;
     private lastConnectedAt: number | null = null;
@@ -43,10 +46,10 @@ export class WebSocketManager {
         return WebSocketManager.instance;
     }
 
-    // Connect to WebSocket if not already connected
+    // Connect to WebSocket if not already connected or connecting
     connect(): void {
-        if (this.ws && this.ws.readyState === WebSocket.OPEN) {
-            console.log('WebSocketManager: Already connected');
+        if (this.ws && (this.ws.readyState === WebSocket.OPEN || this.ws.readyState === WebSocket.CONNECTING)) {
+            console.log(`WebSocketManager: Already ${this.ws.readyState === WebSocket.OPEN ? 'connected' : 'connecting'}`);
             return;
         }
 
@@ -66,6 +69,9 @@ export class WebSocketManager {
                 this.reconnectAttempts = 0;
                 this.lastConnectedAt = Date.now();
                 this.disconnectReason = null;
+
+                // Send any queued messages
+                this.sendQueuedMessages();
 
                 // Auto-subscribe to events
                 this.handleConnectionOpen();
@@ -138,6 +144,7 @@ export class WebSocketManager {
         this.isConnected = false;
         this.lastDisconnectedAt = Date.now();
         this.disconnectReason = 'Manual disconnect';
+        this.messageQueue = []; // Clear message queue
 
         // Notify connection callbacks
         this.connectionCallbacks.forEach(callback => callback(false));
@@ -145,10 +152,29 @@ export class WebSocketManager {
 
     // Send message to server
     send(data: any): void {
-        if (this.isConnected && this.ws) {
+        if (this.isConnected && this.ws && this.ws.readyState === WebSocket.OPEN) {
             this.ws.send(JSON.stringify(data));
         } else {
-            console.warn('WebSocketManager: Cannot send message - not connected');
+            // Queue message for later if connecting
+            if (this.ws && this.ws.readyState === WebSocket.CONNECTING) {
+                console.log('WebSocketManager: WebSocket is still connecting, queuing message');
+                this.messageQueue.push(data);
+            } else {
+                console.warn('WebSocketManager: Cannot send message - not connected and not connecting');
+            }
+        }
+    }
+
+    // Send all queued messages
+    private sendQueuedMessages(): void {
+        if (this.messageQueue.length > 0) {
+            console.log(`WebSocketManager: Sending ${this.messageQueue.length} queued messages`);
+            this.messageQueue.forEach(message => {
+                if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+                    this.ws.send(JSON.stringify(message));
+                }
+            });
+            this.messageQueue = [];
         }
     }
 

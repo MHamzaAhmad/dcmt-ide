@@ -16,23 +16,7 @@ export class WebApiAdapter implements PlatformAPI {
 	private agentSSE = new AgentSSEAdapter();
 	private compilationEventUnsubscribe: (() => void) | null = null;
 
-	constructor() {
-		// Initialize with shared WebSocket manager
-		if (typeof window !== 'undefined') {
-			// WebSocket is managed by WebSocketManager singleton
-			// File watcher uses the same WebSocket manager internally
-			console.log('WebApiAdapter: Initializing with shared WebSocket manager');
-			console.log('WebApiAdapter: WebSocket connection stats:', webSocketManager.getStats());
-
-			// Ensure WebSocket is connected
-			webSocketManager.connect();
-
-			// Log after connection attempt
-			setTimeout(() => {
-				console.log('WebApiAdapter: WebSocket stats after connection attempt:', webSocketManager.getStats());
-			}, 100);
-		}
-	}
+	constructor() {}
 
 	// Spread filesystem operations
 	getDirectoryTree = this.fileSystem.getDirectoryTree.bind(this.fileSystem);

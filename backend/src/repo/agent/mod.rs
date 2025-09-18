@@ -3,7 +3,7 @@ use std::sync::Arc;
 use std::time::Duration;
 use futures::future::join_all;
 use futures::StreamExt;
-use reqwest::Client;
+// use reqwest::Client; // no longer needed for LLM calls
 use tokio::fs;
 use uuid::Uuid;
 use serde_json::Value;
@@ -14,6 +14,7 @@ use crate::model::agent::{
 };
 use crate::svc::{FileService, LaTeXService};
 use crate::repo::tavily::TavilyRepository;
+use crate::repo::llm::{LLMRepository, ChatCompletionRequest};
 
 pub mod events;
 pub mod session;
@@ -26,7 +27,7 @@ pub use tools::{ToolRegistry, AgentTool};
 /// Main repository for agent operations
 pub struct AgentRepo {
     config: AgentConfig,
-    http_client: Client,
+    llm_repo: Arc<LLMRepository>,
     tool_registry: ToolRegistry,
     session_manager: Arc<SessionManager>,
     event_broadcaster: Arc<EventBroadcaster>,
@@ -235,7 +236,8 @@ impl AgentRepo {
             max_session_age: Duration::from_secs(3600), // 1 hour
         };
         
-        let http_client = Client::new();
+    let llm_repo = Arc::new(LLMRepository::new(config.litellm_base_url.clone())
+            .map_err(|e| AgentError::Generic(anyhow::anyhow!(e)))?);
         let tool_registry = ToolRegistry::new();
         let session_manager = Arc::new(SessionManager::new(config.max_session_age));
         let event_broadcaster = Arc::new(EventBroadcaster::new());
@@ -246,7 +248,7 @@ impl AgentRepo {
         
         Ok(Self {
             config,
-            http_client,
+            llm_repo,
             tool_registry,
             session_manager,
             event_broadcaster,
@@ -552,33 +554,25 @@ impl AgentRepo {
     
     /// Calls LiteLLM API with streaming support
     async fn call_litellm(&self, messages: &[ChatMessage], model: &str, session_id: &str) -> AgentResult<ChatMessage> {
-        // Build request with streaming enabled
-        let request = serde_json::json!({
-            "model": model,
-            "messages": messages,
-            "tools": self.tool_registry.get_definitions(),
-            "tool_choice": "auto",
-            "stream": true
-        });
+        // Build typed request with streaming enabled via wrapper
+    let req = ChatCompletionRequest {
+            model: model.to_string(),
+            messages: messages.to_vec(),
+            tools: Some(self.tool_registry.get_definitions()),
+            tool_choice: Some("auto".to_string()),
+            stream: Some(true),
+            temperature: None,
+            max_tokens: None,
+            response_format: None,
+        };
         
-        let response = self.http_client
-            .post(format!("{}/v1/chat/completions", self.config.litellm_base_url))
-            .header("Accept", "text/event-stream")
-            .json(&request)
-            .send()
+        let response = self.llm_repo
+            .create_chat_completion_stream(req)
             .await
-            .map_err(AgentError::HttpError)?;
-        
-        if !response.status().is_success() {
-            let status = response.status();
-            let error_text = response.text().await.unwrap_or_default();
-            return Err(AgentError::LiteLLMError {
-                message: format!("HTTP {}: {}", status, error_text),
-            });
-        }
+            .map_err(|e| AgentError::LiteLLMError { message: e.to_string() })?;
         
         // Process SSE stream
-        let mut stream = response.bytes_stream();
+    let mut stream = response.bytes_stream();
         let mut context = StreamingContext::new();
         let mut buffer = String::new();
         

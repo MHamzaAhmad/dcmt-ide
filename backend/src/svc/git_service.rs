@@ -1,5 +1,5 @@
 use anyhow::{Context, Result};
-use reqwest::Client;
+// use reqwest::Client; // not needed anymore
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -8,6 +8,8 @@ use std::fs;
 use crate::repo::git_repository::{
     CommitResult, GitDiff, GitRepository, GitStatus,
 };
+use crate::repo::llm::{LLMRepository, ChatCompletionRequest};
+use crate::model::agent::{ChatMessage as AgentChatMessage, ResponseFormat as AgentResponseFormat};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CommitSummary {
@@ -50,8 +52,7 @@ struct Choice {
 pub struct GitService {
     repo: Option<Arc<GitRepository>>,
     _workspace_path: PathBuf,
-    http_client: Client,
-    litellm_base_url: String,
+    llm_repo: Arc<LLMRepository>,
 }
 
 impl GitService {
@@ -61,13 +62,12 @@ impl GitService {
         } else {
             None
         };
-        let http_client = Client::new();
+    let llm_repo = Arc::new(LLMRepository::new(litellm_base_url.clone())?);
 
         Ok(Self {
             repo,
             _workspace_path: workspace_path,
-            http_client,
-            litellm_base_url,
+            llm_repo,
         })
     }
 
@@ -114,46 +114,26 @@ impl GitService {
         let prompt = self.load_prompt_template()?;
                 let formatted_prompt = prompt.replace("{diff_content}", &diff_string);
 
-                let request = LiteLLMRequest {
-                    model: "gpt-4o-mini".to_string(),
-                    messages: vec![
-                        LiteLLMMessage {
-                            role: "system".to_string(),
-                            content: "You are a helpful assistant that generates git commit summaries. Always respond with valid JSON.".to_string(),
-                        },
-                        LiteLLMMessage {
-                            role: "user".to_string(),
-                            content: formatted_prompt,
-                        },
-                    ],
-                    temperature: 0.3,
-                    response_format: ResponseFormat {
-                        format_type: "json_object".to_string(),
-                    },
+                // Build typed non-streaming chat request
+                let messages = vec![
+                    AgentChatMessage { role: "system".into(), content: Some("You are a helpful assistant that generates git commit summaries. Always respond with valid JSON.".into()), tool_calls: None, tool_call_id: None },
+                    AgentChatMessage { role: "user".into(), content: Some(formatted_prompt), tool_calls: None, tool_call_id: None },
+                ];
+                let req = ChatCompletionRequest {
+                    model: "gpt-4o-mini".into(),
+                    messages,
+                    tools: None,
+                    tool_choice: None,
+                    stream: Some(false),
+                    temperature: Some(0.3),
+                    max_tokens: None,
+                    response_format: Some(AgentResponseFormat { format_type: "json_object".into() }),
                 };
 
-                let response = self
-                    .http_client
-                    .post(format!("{}/chat/completions", self.litellm_base_url))
-                    .json(&request)
-                    .send()
+                let litellm_response = self.llm_repo
+                    .create_chat_completion(&req)
                     .await
                     .context("Failed to send request to LiteLLM")?;
-
-                if !response.status().is_success() {
-                    let status = response.status();
-                    let error_text = response.text().await.unwrap_or_default();
-                    return Err(anyhow::anyhow!(
-                        "LiteLLM request failed with status {}: {}",
-                        status,
-                        error_text
-                    ));
-                }
-
-                let litellm_response: LiteLLMResponse = response
-                    .json()
-                    .await
-                    .context("Failed to parse LiteLLM response")?;
 
                 let ai_content = litellm_response
                     .choices
@@ -161,7 +141,8 @@ impl GitService {
                     .ok_or_else(|| anyhow::anyhow!("No choices in LiteLLM response"))?
                     .message
                     .content
-                    .clone();
+                    .clone()
+                    .unwrap_or_default();
 
                 self.parse_ai_response(ai_content)
             }

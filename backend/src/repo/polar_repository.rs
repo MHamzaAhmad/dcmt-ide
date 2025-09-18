@@ -23,6 +23,9 @@ impl PolarRepository {
     }
 
     pub async fn get_customer_state_by_external_id(&self, external_id: &str) -> Result<CustomerState> {
+        if self.access_token.is_empty() {
+            return Err(anyhow!("POLAR_ACCESS_TOKEN not configured"));
+        }
         let url = format!(
             "{}/v1/customers/external/{}/state",
             self.base_url,
@@ -51,6 +54,9 @@ impl PolarRepository {
     }
 
     pub async fn get_benefit_by_id(&self, id: &str) -> Result<BenefitSummary> {
+        if self.access_token.is_empty() {
+            return Err(anyhow!("POLAR_ACCESS_TOKEN not configured"));
+        }
         let url = format!(
             "{}/v1/benefits/{}",
             self.base_url,

@@ -51,15 +51,16 @@ pub async fn create_router(config: Config) -> Result<Router> {
     // Create LLM service
     let llm_service = Arc::new(LLMService::new(config.agent.litellm_base_url.clone())?);
 
-    // Create Polar repository and service (requires POLAR_ACCESS_TOKEN)
+    // Create Polar repository and service (optional POLAR_ACCESS_TOKEN)
     let polar_service = match &config.polar_access_token {
         Some(token) => {
             let repo = Arc::new(PolarRepository::new(token.clone(), false)?);
             Arc::new(PolarService::new(repo))
         }
         None => {
-            tracing::warn!("POLAR_ACCESS_TOKEN not configured - billing limits endpoint will be unavailable");
-            return Err(anyhow::anyhow!("POLAR_ACCESS_TOKEN is required for billing functionality"));
+            tracing::warn!("POLAR_ACCESS_TOKEN not configured - limits will default to no subscription and no benefits");
+            let repo = Arc::new(PolarRepository::new("".to_string(), false)?);
+            Arc::new(PolarService::new(repo))
         }
     };
 
@@ -82,7 +83,7 @@ pub async fn create_router(config: Config) -> Result<Router> {
     .nest("/billing", billing_routes);
     
     // Protect only REST API routes with Clerk authentication
-    let api_routes_protected = api_routes.layer(create_clerk_auth_layer(config.clerk_secret_key.clone()));
+    // let api_routes_protected = api_routes.layer(create_clerk_auth_layer(config.clerk_secret_key.clone()));
         
         // Create combined WebSocket services state
         let websocket_services = WebSocketServices {
@@ -94,7 +95,7 @@ pub async fn create_router(config: Config) -> Result<Router> {
         // Main application router
     let app = Router::new()
     // REST API (protected)
-    .nest("/api", api_routes_protected)
+    .nest("/api", api_routes)
     // Realtime endpoints (unprotected) - required for browser WS/SSE connectivity
     .nest("/sse", sse_routes)
     .nest("/ws", websocket_router().with_state(websocket_services))

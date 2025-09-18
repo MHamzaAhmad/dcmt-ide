@@ -374,3 +374,22 @@ export interface CommitSummary {
 	bullets: string[];
 	suggestedMessage: string;
 }
+
+// Billing / Limits
+export interface BenefitInfo {
+	id: string;
+	benefit_id: string;
+	benefit_type: string;
+	description: string;
+	metadata: any;
+}
+
+export interface LimitsResponse {
+	has_active_subscription: boolean;
+	benefits: BenefitInfo[];
+}
+
+// Billing Operations (unified across platforms)
+export interface BillingOperations {
+	getLimits(): Promise<LimitsResponse>;
+}

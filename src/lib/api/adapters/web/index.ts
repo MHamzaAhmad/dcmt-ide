@@ -6,6 +6,7 @@ import { WebLatexAdapter } from './latex';
 import { AgentSSEAdapter } from './agentSSE';
 import { webSocketManager } from './webSocketManager';
 import type { PlatformAPI } from '../../types';
+export { WebBillingAdapter } from './billing';
 
 // Combined Web API Adapter using composition with spread
 export class WebApiAdapter implements PlatformAPI {

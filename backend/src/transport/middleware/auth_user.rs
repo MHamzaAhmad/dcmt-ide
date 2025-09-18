@@ -1,5 +1,4 @@
 use axum::{http::request::Parts, extract::FromRequestParts};
-use async_trait::async_trait;
 use axum::http::header::AUTHORIZATION;
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
 use serde_json::Value;
@@ -9,7 +8,6 @@ pub struct AuthUser {
     pub user_id: String,
 }
 
-#[async_trait]
 impl<S> FromRequestParts<S> for AuthUser
 where
     S: Send + Sync,

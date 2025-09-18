@@ -5,6 +5,7 @@ import { DesktopFileWatcher } from './fileWatcher';
 import { DesktopLatexAdapter } from './latex';
 import { DesktopAgentSSEAdapter } from './agentSSE';
 import type { PlatformAPI } from '../../types';
+export { DesktopBillingAdapter } from './billing';
 
 // Combined Desktop API Adapter using composition with spread
 export class DesktopApiAdapter implements PlatformAPI {

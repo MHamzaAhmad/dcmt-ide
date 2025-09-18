@@ -3,6 +3,8 @@
 	import { Button } from '$lib/components/ui/button';
 	import { Play, Download, FileText } from '@lucide/svelte';
 	import { pdfStore, latexStore, isCompiling } from '$lib/stores';
+	import { billingStore } from '$lib/stores';
+	import { Badge } from '$lib/components/ui/badge';
 	import LaTeXErrorPanel from '$lib/components/errors/LaTeXErrorPanel.svelte';
 
 	// Props
@@ -18,6 +20,8 @@
 	// Reactive store subscriptions
 	const pdfState = $derived($pdfStore);
 	const latexState = $derived($latexStore);
+	const billingState = $derived($billingStore);
+	let downloadUsed = $state(false);
 	// Use store derivatives directly - no manual subscriptions needed
 	const hasValidPdf = $derived(pdfState.currentPdf && pdfState.currentPdf.pdfDoc && !pdfState.isLoading && !pdfState.error);
 
@@ -40,8 +44,8 @@
 		if (!pdfState.currentPdf?.pdfDoc) return;
 
 		try {
-			// Get device pixel ratio for high-DPI displays
-			const devicePixelRatio = window.devicePixelRatio || 1;
+				// Get device pixel ratio for high-DPI displays
+				const devicePixelRatio = window.devicePixelRatio || 1;
 			
 			for (let pageNum = 1; pageNum <= pdfState.currentPdf.numPages; pageNum++) {
 				const canvas = canvases[pageNum - 1];
@@ -91,6 +95,8 @@
 		// PDF store handles all initialization automatically
 		// through the orchestrator system
 		console.log('PDFPreview: Component mounted, stores handle initialization');
+		// Initialize per-session download usage flag
+		downloadUsed = getDownloadUsed();
 	});
 
 	// Handler functions following STATE.md reactive patterns
@@ -99,8 +105,33 @@
 		latexStore.forceCompile();
 	}
 
+	function hasUnlimitedDownloads(): boolean {
+		if (!billingState.isReady) return false;
+		// Check by benefit type or description keyword
+		return billingState.benefits.some((b) => b.benefit_type === 'unlimited_downloads' || b.description?.toLowerCase().includes('unlimited download'));
+	}
+
+	function getDownloadUsed(): boolean {
+		if (typeof window === 'undefined') return false;
+		return sessionStorage.getItem('dcmt-download-used') === '1';
+	}
+
 	async function handleDownload() {
 		if (!hasValidPdf || !pdfState.currentPdf) return;
+
+		// Enforce download limits: if user lacks unlimited_downloads and no active sub, allow only one
+		if (billingState.isReady && !hasUnlimitedDownloads()) {
+			// Track a single allowed download per session
+			const key = 'dcmt-download-used';
+			const used = sessionStorage.getItem(key);
+			if (used === '1') {
+				return; // Already used this session
+			} else {
+				sessionStorage.setItem(key, '1');
+				// Reflect immediately in UI
+				downloadUsed = true;
+			}
+		}
 		
 		try {
 			// Create download link for PDF
@@ -135,17 +166,29 @@
 			<Play size={12} />
 			{$isCompiling ? 'Compiling...' : 'Compile'}
 		</Button>
-		
+
 		<Button
 			variant="outline"
 			size="sm"
 			onclick={handleDownload}
-			disabled={!hasValidPdf}
+			disabled={!hasValidPdf || (billingState.isReady && !hasUnlimitedDownloads() && downloadUsed)}
 			class="h-6 gap-1.5 px-2"
 		>
 			<Download size={12} />
 			Download
 		</Button>
+
+		{#if billingState.isReady && !hasUnlimitedDownloads()}
+			<div class="ml-auto flex items-center gap-2 text-xs text-muted-foreground">
+				<Badge variant="secondary">Downloads</Badge>
+				{#if downloadUsed}
+					<span>None remaining</span>
+					<a href="https://polar.sh/" target="_blank" class="underline underline-offset-2 hover:text-foreground">Upgrade to get more</a>
+				{:else}
+					<span>1 remaining</span>
+				{/if}
+			</div>
+		{/if}
 	</div>
 	{/if}
 

@@ -1,7 +1,7 @@
 // Unified API Adapter - Platform Detection and Selection
 import { isTauri } from '$lib/utils/platform';
-import { DesktopApiAdapter } from './desktop';
-import { WebApiAdapter } from './web';
+import { DesktopApiAdapter, DesktopBillingAdapter } from './desktop';
+import { WebApiAdapter, WebBillingAdapter } from './web';
 import { WebGitAdapter } from './web/git';
 import { DesktopGitAdapter } from './desktop/git';
 import type { PlatformAPI, ProjectInfo, LaTeXCompileRequest, LaTeXCompileResponse, GitOperations, CompilationEvent, LatexBuildState } from '../types';
@@ -9,6 +9,8 @@ import type { PlatformAPI, ProjectInfo, LaTeXCompileRequest, LaTeXCompileRespons
 // Create singleton instances lazily
 let desktopAdapter: DesktopApiAdapter | null = null;
 let webAdapter: WebApiAdapter | null = null;
+let desktopBilling: DesktopBillingAdapter | null = null;
+let webBilling: WebBillingAdapter | null = null;
 let desktopGitAdapter: DesktopGitAdapter | null = null;
 let webGitAdapter: WebGitAdapter | null = null;
 
@@ -50,6 +52,17 @@ export function getWebAdapter(): WebApiAdapter {
 		webAdapter = new WebApiAdapter();
 	}
 	return webAdapter;
+}
+
+// Billing adapter (unified)
+export function getBillingAdapter() {
+	if (isTauri()) {
+		if (!desktopBilling) desktopBilling = new DesktopBillingAdapter();
+		return desktopBilling;
+	} else {
+		if (!webBilling) webBilling = new WebBillingAdapter();
+		return webBilling;
+	}
 }
 
 /**
@@ -215,3 +228,4 @@ export function getWebGitAdapter(): WebGitAdapter {
 // Export platform-specific adapters
 export * from './desktop';
 export * from './web';
+export * from '../billing';

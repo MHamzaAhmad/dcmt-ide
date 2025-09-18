@@ -14,6 +14,7 @@ export { latexStore, isCompiling } from './latex';
 export { pdfStore } from './pdf';
 export { agentStore } from './agent';
 export { gitStore } from './git';
+export { billingStore } from './billing';
 
 // Orchestrator
 export { orchestrator, initializationOrchestrator } from './orchestrator';

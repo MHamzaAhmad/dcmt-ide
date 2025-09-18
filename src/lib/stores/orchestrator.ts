@@ -6,6 +6,7 @@
 import { writable, get } from 'svelte/store';
 import { browser } from '$app/environment';
 import { workspaceStore } from './workspace';
+import { billingStore } from './billing';
 import { latexStore } from './latex';
 import { pdfStore } from './pdf';
 import { agentStore } from './agent';
@@ -64,6 +65,11 @@ function createInitializationOrchestrator() {
         {
             name: 'workspace',
             description: 'Initialize workspace and detect files',
+            status: 'pending'
+        },
+        {
+            name: 'billing',
+            description: 'Fetch billing limits',
             status: 'pending'
         },
         {
@@ -153,27 +159,27 @@ function createInitializationOrchestrator() {
 
             try {
                 // // Step 0: Check authentication (web only)
-                if (!isTauri()) {
-                    await orchestrator.executeStep('auth', async () => {
-                        console.log('InitializationOrchestrator: Checking authentication...');
-                        await authStore.initialize();
+                // if (!isTauri()) {
+                //     await orchestrator.executeStep('auth', async () => {
+                //         console.log('InitializationOrchestrator: Checking authentication...');
+                //         await authStore.initialize();
 
-                        // Check if authenticated
-                        const authState = authStore.getCurrentState();
-                        if (!authState.isAuthenticated) {
-                            console.log('InitializationOrchestrator: User not authenticated, redirecting...');
-                            // Auth store will handle redirect, just stop initialization
-                            throw new Error('Authentication required');
-                        }
+                //         // Check if authenticated
+                //         const authState = authStore.getCurrentState();
+                //         if (!authState.isAuthenticated) {
+                //             console.log('InitializationOrchestrator: User not authenticated, redirecting...');
+                //             // Auth store will handle redirect, just stop initialization
+                //             throw new Error('Authentication required');
+                //         }
 
-                        console.log('InitializationOrchestrator: User authenticated');
+                //         console.log('InitializationOrchestrator: User authenticated');
 
-                        // Emit auth event
-                        if (authState.user) {
-                            eventStore.events.authAuthenticated(authState.user.id || 'unknown', authState.user.email);
-                        }
-                    });
-                }
+                //         // Emit auth event
+                //         if (authState.user) {
+                //             eventStore.events.authAuthenticated(authState.user.id || 'unknown', authState.user.email);
+                //         }
+                //     });
+                // }
 
                 // Step 1: Check project selection (desktop only)
                 if (isTauri()) {
@@ -234,6 +240,12 @@ function createInitializationOrchestrator() {
                     if (!workspaceState.isReady) {
                         throw new Error('Workspace initialization incomplete');
                     }
+                });
+
+                // Step 3.5: Initialize Billing (limits) once to avoid repeated calls
+                await orchestrator.executeStep('billing', async () => {
+                    console.log('InitializationOrchestrator: Fetching billing limits...');
+                    await billingStore.initializeOnce();
                 });
 
                 // Step 4-7: Initialize LaTeX, PDF, Git, and Agent in parallel (independent operations)

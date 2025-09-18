@@ -2,6 +2,8 @@
 	import { Tabs, TabsList, TabsTrigger } from '$lib/components/ui/tabs';
 	import { Code, MessageSquare, Bot } from '@lucide/svelte';
 	import { editorState } from '$lib/stores/editor.js';
+	import { billingStore } from '$lib/stores/billing';
+	import { Tooltip as TooltipRoot, TooltipContent, TooltipTrigger, TooltipProvider } from '$lib/components/ui/tooltip';
 	
 	interface Props {
 		// File information
@@ -51,6 +53,30 @@
 	// Get editor state reactively
 	const editorStateValue = $derived($editorState);
 	const currentActiveTab = $derived(showTabs ? editorStateValue.activeTab : activeTab);
+	const billingState = $derived($billingStore);
+
+	// Prompt limits UI (free: 2 per session; pro: unlimited)
+	function hasUnlimitedPrompts(): boolean {
+		if (!billingState.isReady) return false;
+		return billingState.benefits.some((b) => b.benefit_type === 'unlimited_prompts' || b.description?.toLowerCase().includes('unlimited prompt'));
+	}
+
+	function getPromptsUsed(): number {
+		if (typeof window === 'undefined') return 0;
+		const v = window.sessionStorage.getItem('dcmt-chat-prompts-used');
+		const n = v ? parseInt(v, 10) : 0;
+		return Number.isFinite(n) && n >= 0 ? n : 0;
+	}
+
+	let promptsUsed = $state(0);
+	let promptsRemaining = $derived(hasUnlimitedPrompts() ? '∞' : Math.max(0, 2 - promptsUsed));
+
+	if (typeof window !== 'undefined') {
+		promptsUsed = getPromptsUsed();
+		window.addEventListener('dcmt-prompts-updated', () => {
+			promptsUsed = getPromptsUsed();
+		});
+	}
 	
 	function handleTabChange(value: string) {
 		if (showTabs) {
@@ -119,19 +145,39 @@
 		{/if}
 	</div>
 	
-	<!-- Right side: Tabs -->
+	<!-- Right side: Tabs + prompts badge -->
 	{#if showTabs}
-		<Tabs value={currentActiveTab} onValueChange={handleTabChange} class="w-auto">
-			<TabsList class="h-6 bg-muted/50">
-				<TabsTrigger value="code" class="h-5 px-2 text-xs gap-1 data-[state=active]:bg-background">
-					<Code size={12} />
-					<span>Code</span>
-				</TabsTrigger>
-				<TabsTrigger value="chat" class="h-5 px-2 text-xs gap-1 data-[state=active]:bg-background">
-					<MessageSquare size={12} />
-					<span>Chat</span>
-				</TabsTrigger>
-			</TabsList>
-		</Tabs>
+		<div class="flex items-center gap-2">
+			<Tabs value={currentActiveTab} onValueChange={handleTabChange} class="w-auto">
+				<TabsList class="h-6 bg-muted/50">
+					<TabsTrigger value="code" class="h-5 px-2 text-xs gap-1 data-[state=active]:bg-background">
+						<Code size={12} />
+						<span>Code</span>
+					</TabsTrigger>
+					<TabsTrigger value="chat" class="h-5 px-2 text-xs gap-1 data-[state=active]:bg-background">
+						<MessageSquare size={12} />
+						<span>Chat</span>
+					</TabsTrigger>
+				</TabsList>
+			</Tabs>
+
+			<!-- Prompts remaining circular badge with tooltip -->
+			<TooltipProvider>
+				<TooltipRoot>
+					<TooltipTrigger>
+						<div class="w-6 h-6 rounded-full border flex items-center justify-center text-xs select-none">
+							{billingState.isReady ? promptsRemaining : '–'}
+						</div>
+					</TooltipTrigger>
+					<TooltipContent>
+						{#if billingState.isReady}
+							{hasUnlimitedPrompts() ? 'Unlimited prompts' : (promptsRemaining === 0 ? 'No prompts remaining' : `${promptsRemaining} prompt${promptsRemaining === 1 ? '' : 's'} remaining`)}
+						{:else}
+							Loading usage…
+						{/if}
+					</TooltipContent>
+				</TooltipRoot>
+			</TooltipProvider>
+		</div>
 	{/if}
 </div>

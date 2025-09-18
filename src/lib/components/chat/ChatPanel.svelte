@@ -54,6 +54,10 @@
 		if (typeof window === 'undefined') return;
 		window.sessionStorage.setItem('dcmt-chat-prompts-used', String(n));
 		promptsUsed = n;
+		// Notify other components (e.g., header) that prompts count changed
+		try {
+			window.dispatchEvent(new CustomEvent('dcmt-prompts-updated', { detail: n }));
+		} catch {}
 	}
 
 	const isPromptLimitReached = $derived(billingState.isReady && !hasUnlimitedPrompts() && promptsUsed >= 2);
@@ -469,20 +473,6 @@
 			{/if}
 		</div>
 
-			<!-- Prompts counter and upgrade CTA -->
-			{#if billingState.isReady && !hasUnlimitedPrompts()}
-				<div class="mt-2 flex items-center justify-end gap-2 text-xs text-muted-foreground">
-					<Badge variant="secondary">Prompts</Badge>
-					{#if isPromptLimitReached}
-						<span>None remaining</span>
-						<button class="underline underline-offset-2 hover:text-foreground" onclick={handleUpgrade} disabled={upgrading}>
-							{upgrading ? 'Redirecting…' : 'Upgrade to get more'}
-						</button>
-					{:else}
-						<span>{2 - promptsUsed} remaining</span>
-					{/if}
-				</div>
-			{/if}
 		
 		{#if mode === 'docked'}
 		<div class="flex gap-2 relative">
@@ -508,20 +498,6 @@
 				{/if}
 			</Button>
 		</div>
-			<!-- Prompts counter and upgrade CTA -->
-			{#if billingState.isReady && !hasUnlimitedPrompts()}
-				<div class="mt-2 flex items-center justify-end gap-2 text-xs text-muted-foreground">
-					<Badge variant="secondary">Prompts</Badge>
-					{#if isPromptLimitReached}
-						<span>None remaining</span>
-						<button class="underline underline-offset-2 hover:text-foreground" onclick={handleUpgrade} disabled={upgrading}>
-							{upgrading ? 'Redirecting…' : 'Upgrade to get more'}
-						</button>
-					{:else}
-						<span>{2 - promptsUsed} remaining</span>
-					{/if}
-				</div>
-			{/if}
 		{/if}
 	</div>
 	{/if}

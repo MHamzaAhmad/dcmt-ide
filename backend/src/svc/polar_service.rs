@@ -62,6 +62,14 @@ impl PolarService {
             benefits,
         })
     }
+
+    pub async fn create_checkout_session_url(&self, user_id: &str, success_url: &str) -> Result<String> {
+        // Pick first recurring product
+        let products = self.repo.list_products(Some(true)).await?;
+        let product = products.first().ok_or_else(|| anyhow::anyhow!("No recurring products available"))?;
+        let session = self.repo.create_checkout_session(&product.id, success_url, user_id).await?;
+        Ok(session.url)
+    }
 }
 
 #[derive(Debug, Serialize)]

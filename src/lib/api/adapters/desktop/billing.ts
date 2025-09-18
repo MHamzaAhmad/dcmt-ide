@@ -9,4 +9,8 @@ export class DesktopBillingAdapter implements BillingOperations {
 			benefits: []
 		};
 	}
+
+	async createCheckoutSession(): Promise<{ url: string }> {
+		return { url: 'https://polar.sh/' };
+	}
 }

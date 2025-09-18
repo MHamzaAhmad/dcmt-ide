@@ -6,6 +6,7 @@ pub struct Config {
     pub workspace_path: PathBuf,
     pub server: ServerConfig,
     pub agent: AgentConfig,
+    pub base_url: String,
     pub clerk_secret_key: Option<String>,
     pub tavily_api_key: Option<String>,
     pub polar_access_token: Option<String>,
@@ -45,11 +46,15 @@ impl Config {
         let clerk_secret_key = std::env::var("CLERK_SECRET_KEY").ok();
         let tavily_api_key = std::env::var("TAVILY_API_KEY").ok();
         let polar_access_token = std::env::var("POLAR_ACCESS_TOKEN").ok();
+        // Public base URL for building success URL in checkout sessions
+        let base_url = std::env::var("BASE_URL")
+            .unwrap_or_else(|_| format!("http://{}:{}", host, port));
 
         Ok(Config {
             workspace_path,
             server: ServerConfig { host, port },
             agent: AgentConfig { litellm_base_url },
+            base_url,
             clerk_secret_key,
             tavily_api_key,
             polar_access_token,

@@ -10,10 +10,26 @@
 	} from '@lucide/svelte';
 	import { theme } from '$lib/stores/theme.js';
 	import { editorState } from '$lib/stores/editor.js';
+	import { billingStore } from '$lib/stores/billing';
+	import { billingAPI } from '$lib/api/billing';
 
 	let currentTheme = $state('light');
 	let isFileExplorerOpen = $state(true);
 	let isVersionControlOpen = $state(false);
+	const billing = $derived($billingStore);
+	let upgrading = $state(false);
+
+	async function handleUpgrade() {
+		try {
+			upgrading = true;
+			const { url } = await billingAPI.createCheckoutSession();
+			window.location.href = url;
+		} catch (e) {
+			console.error('Failed to create checkout session', e);
+		} finally {
+			upgrading = false;
+		}
+	}
 
 	$effect(() => {
 		currentTheme = $theme;
@@ -70,6 +86,11 @@
 		<div class="flex-1"></div>
 
 		<!-- Theme Toggle -->
+		{#if billing.isReady && !billing.hasActiveSubscription}
+			<Button variant="default" size="sm" onclick={handleUpgrade} disabled={upgrading}>
+				{upgrading ? 'Redirecting…' : 'Upgrade'}
+			</Button>
+		{/if}
 		<Tooltip>
 			<TooltipTrigger>
 				<Button

@@ -5,4 +5,8 @@ export class WebBillingAdapter implements BillingOperations {
 	async getLimits(): Promise<LimitsResponse> {
 		return apiClient.get<LimitsResponse>('/api/billing/limits');
 	}
+
+	async createCheckoutSession(): Promise<{ url: string }> {
+		return apiClient.post<{ url: string }>('/api/billing/checkout', {});
+	}
 }

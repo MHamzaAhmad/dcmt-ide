@@ -1,6 +1,7 @@
 use crate::{config::Config, svc::{AgentService, FileService, LaTeXService, GitService, LLMService, PolarService}, repo::{AgentRepo, tavily::TavilyRepository, PolarRepository}};
-use crate::transport::middleware::{cors::create_cors_layer, logging::create_trace_layer, create_clerk_auth_layer};
+use crate::transport::middleware::{cors::create_cors_layer, logging::create_trace_layer};
 use crate::transport::routes::{agent_router, files_router, latex_router, sse_router, websocket_router, git_router, llm_router, billing_router};
+use crate::transport::handlers::billing::BillingState;
 use crate::transport::routes::websocket::WebSocketServices;
 use anyhow::Result;
 use axum::Router;
@@ -30,7 +31,7 @@ pub async fn create_router(config: Config) -> Result<Router> {
     )?);
 
     // Create Tavily repository with API key
-    let tavily_repo = match config.tavily_api_key {
+    let tavily_repo = match config.tavily_api_key.clone() {
         Some(api_key) => Arc::new(TavilyRepository::new(api_key)?),
         None => {
             tracing::warn!("TAVILY_API_KEY not configured - web search and extraction will be unavailable");
@@ -71,7 +72,7 @@ pub async fn create_router(config: Config) -> Result<Router> {
     let agent_routes = agent_router().with_state(agent_service.clone());
     let sse_routes = sse_router().with_state(agent_service.clone());
     let llm_routes = llm_router().with_state(llm_service.clone());
-    let billing_routes = billing_router().with_state(polar_service.clone());
+    let billing_routes = billing_router().with_state(BillingState { service: polar_service.clone(), config: config.clone() });
     
     // Create API routes (REST) by nesting sub-routers
     let api_routes = Router::new()

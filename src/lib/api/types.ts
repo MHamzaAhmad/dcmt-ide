@@ -392,4 +392,5 @@ export interface LimitsResponse {
 // Billing Operations (unified across platforms)
 export interface BillingOperations {
 	getLimits(): Promise<LimitsResponse>;
+	createCheckoutSession(): Promise<{ url: string }>;
 }

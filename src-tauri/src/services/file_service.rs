@@ -51,34 +51,59 @@ impl FileService {
         };
 
         if metadata.is_dir() {
+            // Filtering helpers
+            fn is_ignored_dir(name: &str) -> bool {
+                matches!(name, ".git" | "target" | "node_modules" | "build" | "dist" | ".cache" | ".idea" | ".vscode")
+            }
+
+            fn is_allowed_ext(ext: &str) -> bool {
+                matches!(ext, "tex" | "sty" | "pdf")
+            }
+
+            fn is_aux_ext(ext: &str) -> bool {
+                matches!(ext,
+                    "aux" | "log" | "out" | "synctex" | "synctex.gz" | "fdb_latexmk" | "fls" |
+                    "toc" | "bbl" | "blg" | "lof" | "lot" | "nav" | "snm" | "xdv" | "idx" |
+                    "ilg" | "ind" | "run.xml" | "bcf")
+            }
+
             let mut children = Vec::new();
-            
             match fs::read_dir(path) {
                 Ok(entries) => {
                     for entry in entries.flatten() {
                         let child_path = entry.path();
+                        let entry_name = entry.file_name().to_string_lossy().to_string();
                         let child_relative = if relative_path.is_empty() {
-                            child_path.file_name()
-                                .unwrap_or_default()
-                                .to_string_lossy()
-                                .to_string()
+                            entry_name.clone()
                         } else {
-                            format!("{}/{}", relative_path, child_path.file_name()
-                                .unwrap_or_default()
-                                .to_string_lossy())
+                            format!("{}/{}", relative_path, entry_name)
                         };
 
-                        match self.build_file_info(&child_path, &child_relative) {
-                            Ok(child_info) => children.push(child_info),
-                            Err(e) => {
-                                warn!("Failed to build info for child {:?}: {}", child_path, e);
+                        if child_path.is_dir() {
+                            if is_ignored_dir(&entry_name) {
+                                continue;
+                            }
+                            match self.build_file_info(&child_path, &child_relative) {
+                                Ok(child_info) => {
+                                    let has_children = child_info.children.as_ref().map(|c| !c.is_empty()).unwrap_or(false);
+                                    if has_children { children.push(child_info); }
+                                }
+                                Err(e) => warn!("Failed to build info for child {:?}: {}", child_path, e),
+                            }
+                        } else {
+                            let ext = child_path.extension().and_then(|e| e.to_str()).map(|s| s.to_lowercase());
+                            if let Some(ext) = ext {
+                                if is_allowed_ext(&ext) && !is_aux_ext(&ext) {
+                                    match self.build_file_info(&child_path, &child_relative) {
+                                        Ok(child_info) => children.push(child_info),
+                                        Err(e) => warn!("Failed to build info for child {:?}: {}", child_path, e),
+                                    }
+                                }
                             }
                         }
                     }
                 }
-                Err(e) => {
-                    warn!("Failed to read directory {:?}: {}", path, e);
-                }
+                Err(e) => warn!("Failed to read directory {:?}: {}", path, e),
             }
 
             // Sort children: directories first, then files, both alphabetically

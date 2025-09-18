@@ -63,13 +63,65 @@ impl FileRepository {
 
         let mut file_info = FileInfo::new(relative_path, name, is_dir, size, modified);
 
+        // Filtering helpers
+        fn is_ignored_dir(name: &str) -> bool {
+            matches!(name,
+                ".git" | "target" | "node_modules" | "build" | "dist" | ".cache" | ".idea" | ".vscode")
+        }
+
+        fn is_allowed_ext(ext: &str) -> bool {
+            matches!(ext, "tex" | "sty" | "pdf")
+        }
+
+        fn is_aux_ext(ext: &str) -> bool {
+            matches!(ext,
+                "aux" | "log" | "out" | "synctex" | "synctex.gz" | "fdb_latexmk" | "fls" |
+                "toc" | "bbl" | "blg" | "lof" | "lot" | "nav" | "snm" | "xdv" | "idx" |
+                "ilg" | "ind" | "run.xml" | "bcf")
+        }
+
         if is_dir && include_children {
             if let Ok(mut entries) = fs::read_dir(path).await {
                 while let Ok(Some(entry)) = entries.next_entry().await {
-                    match self.build_file_info(&entry.path(), true).await {
-                        Ok(child_info) => file_info.add_child(child_info),
-                        Err(e) => {
-                            warn!("Failed to read entry {:?}: {}", entry.path(), e);
+                    let entry_path = entry.path();
+                    let entry_name = entry.file_name().to_string_lossy().to_string();
+
+                    // Skip ignored directories
+                    if entry_path.is_dir() {
+                        if is_ignored_dir(&entry_name) {
+                            continue;
+                        }
+                        match self.build_file_info(&entry_path, true).await {
+                            Ok(child_info) => {
+                                let is_dir = child_info.file_type == "Directory";
+                                let has_children = child_info
+                                    .children
+                                    .as_ref()
+                                    .map(|c| !c.is_empty())
+                                    .unwrap_or(false);
+
+                                if is_dir && has_children {
+                                    file_info.add_child(child_info);
+                                }
+                            }
+                            Err(e) => {
+                                warn!("Failed to read entry {:?}: {}", entry_path, e);
+                            }
+                        }
+                    } else {
+                        // Files: allow only certain extensions and exclude aux files
+                        let ext = entry_path
+                            .extension()
+                            .and_then(|e| e.to_str())
+                            .map(|s| s.to_lowercase());
+
+                        if let Some(ext) = ext {
+                            if is_allowed_ext(&ext) && !is_aux_ext(&ext) {
+                                match self.build_file_info(&entry_path, false).await {
+                                    Ok(child_info) => file_info.add_child(child_info),
+                                    Err(e) => warn!("Failed to read entry {:?}: {}", entry_path, e),
+                                }
+                            }
                         }
                     }
                 }

@@ -110,7 +110,7 @@
 
 	// Create placeholder item with stable ID
 	function createPlaceholderItem(parentPath: string = '', isDirectory: boolean = false): FileNode {
-		const baseName = isDirectory ? 'New Folder' : 'untitled.txt';
+		const baseName = isDirectory ? 'New Folder' : 'untitled.tex';
 		const uniqueName = generateUniqueName(baseName, isDirectory);
 		const fullPath = parentPath ? `${parentPath}/${uniqueName}` : uniqueName;
 		
@@ -357,6 +357,7 @@
 			<ContextMenu.Trigger class="w-full">
 				<TreeViewFolder 
 					name={renamingItem === node.path ? '' : node.name}
+					open={false}
 					class="text-sm hover:bg-accent"
 				>
 				{#snippet icon({ open })}

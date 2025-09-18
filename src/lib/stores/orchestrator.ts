@@ -84,7 +84,7 @@ function createInitializationOrchestrator() {
         },
         {
             name: 'git',
-            description: 'Initialize Git version control',
+            description: 'Initialize version control',
             status: 'pending'
         },
         {
@@ -159,27 +159,27 @@ function createInitializationOrchestrator() {
 
             try {
                 // // Step 0: Check authentication (web only)
-                // if (!isTauri()) {
-                //     await orchestrator.executeStep('auth', async () => {
-                //         console.log('InitializationOrchestrator: Checking authentication...');
-                //         await authStore.initialize();
+                if (!isTauri()) {
+                    await orchestrator.executeStep('auth', async () => {
+                        console.log('InitializationOrchestrator: Checking authentication...');
+                        await authStore.initialize();
 
-                //         // Check if authenticated
-                //         const authState = authStore.getCurrentState();
-                //         if (!authState.isAuthenticated) {
-                //             console.log('InitializationOrchestrator: User not authenticated, redirecting...');
-                //             // Auth store will handle redirect, just stop initialization
-                //             throw new Error('Authentication required');
-                //         }
+                        // Check if authenticated
+                        const authState = authStore.getCurrentState();
+                        if (!authState.isAuthenticated) {
+                            console.log('InitializationOrchestrator: User not authenticated, redirecting...');
+                            // Auth store will handle redirect, just stop initialization
+                            throw new Error('Authentication required');
+                        }
 
-                //         console.log('InitializationOrchestrator: User authenticated');
+                        console.log('InitializationOrchestrator: User authenticated');
 
-                //         // Emit auth event
-                //         if (authState.user) {
-                //             eventStore.events.authAuthenticated(authState.user.id || 'unknown', authState.user.email);
-                //         }
-                //     });
-                // }
+                        // Emit auth event
+                        if (authState.user) {
+                            eventStore.events.authAuthenticated(authState.user.id || 'unknown', authState.user.email);
+                        }
+                    });
+                }
 
                 // Step 1: Check project selection (desktop only)
                 if (isTauri()) {

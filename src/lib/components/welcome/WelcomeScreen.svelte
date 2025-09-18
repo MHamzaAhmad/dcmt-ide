@@ -34,9 +34,9 @@
 					<Code2 class="h-8 w-8 text-primary" />
 				</div>
 			</div>
-			<h1 class="text-3xl font-bold tracking-tight">Welcome to DCMT Editor</h1>
+			<h1 class="text-3xl font-bold tracking-tight">Welcome to Researgent Editor</h1>
 			<p class="text-xl text-muted-foreground max-w-md mx-auto">
-				A powerful code editor with integrated AI assistance for your development workflow.
+				A powerful editor with integrated AI for your PDF creation workflow.
 			</p>
 		</div>
 
@@ -50,7 +50,7 @@
 				</div>
 				<CardTitle class="text-xl">Select Your Project</CardTitle>
 				<CardDescription class="text-base">
-					Choose a folder to start working with your project files. You can change this later in settings.
+					Choose a folder to start working with your project files.
 				</CardDescription>
 			</CardHeader>
 			<CardContent class="space-y-6">
@@ -102,8 +102,8 @@
 							<div class="h-8 w-8 rounded-lg bg-purple-500/10 flex items-center justify-center mx-auto">
 								<Settings class="h-4 w-4 text-purple-500" />
 							</div>
-							<div class="font-medium">AI Assistant</div>
-							<div class="text-muted-foreground">Integrated chat and code assistance</div>
+							<div class="font-medium">AI Chat</div>
+							<div class="text-muted-foreground">Chat with AI to delegate the work to it</div>
 						</div>
 					</div>
 				</div>
@@ -112,7 +112,7 @@
 
 		<!-- Footer -->
 		<div class="text-center text-sm text-muted-foreground">
-			<p>Your files remain on your device. DCMT Editor provides a secure, local development environment.</p>
+			<p>Your files remain on your device. Researgent Editor provides a secure, local environment with AI.</p>
 		</div>
 	</div>
 </div>

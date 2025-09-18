@@ -4,6 +4,9 @@ pub mod latex;
 pub mod sse;
 pub mod websocket;
 pub mod llm;
+pub mod billing;
+
+pub use billing::*;
 
 pub use agent::*;
 pub use files::*;

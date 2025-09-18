@@ -29,6 +29,7 @@ dashmap = "5.5"
 futures = "0.3"
 git2 = "0.18"
 clerk-rs = { version = "0.4.1", features = ["axum"] }
+base64 = "0.22"
 
 [[bin]]
 name = "dcmt-backend"

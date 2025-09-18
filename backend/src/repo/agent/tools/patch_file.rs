@@ -34,7 +34,7 @@ impl PatchFileTool {
         let mut lines: Vec<String> = text.split_inclusive('\n').map(|s| s.to_string()).collect();
         if lines.is_empty() { lines.push(String::new()); }
 
-        let mut apply_range = |
+    let apply_range = |
             lines: &mut Vec<String>,
             start_line: usize, start_col: usize,
             end_line: usize, end_col: usize,
@@ -84,8 +84,8 @@ impl PatchFileTool {
     }
 
     fn apply_unified_diff(text: &str, diff: &str) -> Result<String, String> {
-        #[derive(Debug)]
-        struct Hunk { old_start: isize, old_len: isize, new_start: isize, new_len: isize, lines: Vec<(char, String)> }
+    #[derive(Debug)]
+    struct Hunk { old_start: isize, old_len: isize, _new_start: isize, new_len: isize, lines: Vec<(char, String)> }
         let mut hunks: Vec<Hunk> = Vec::new();
         let mut cur: Option<Hunk> = None;
         for line in diff.lines() {
@@ -107,7 +107,7 @@ impl PatchFileTool {
                 };
                 let (old_start, old_len) = parse(old)?;
                 let (new_start, new_len) = parse(new)?;
-                cur = Some(Hunk { old_start, old_len, new_start, new_len, lines: Vec::new() });
+                cur = Some(Hunk { old_start, old_len, _new_start: new_start, new_len, lines: Vec::new() });
             } else if line.starts_with("--- ") || line.starts_with("+++ ") || line.starts_with("diff ") || line.starts_with("index ") {
                 continue;
             } else if let Some(h) = &mut cur {

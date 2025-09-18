@@ -49,7 +49,7 @@ struct Choice {
 
 pub struct GitService {
     repo: Option<Arc<GitRepository>>,
-    workspace_path: PathBuf,
+    _workspace_path: PathBuf,
     http_client: Client,
     litellm_base_url: String,
 }
@@ -65,12 +65,13 @@ impl GitService {
 
         Ok(Self {
             repo,
-            workspace_path,
+        _workspace_path: workspace_path,
             http_client,
             litellm_base_url,
         })
     }
 
+    #[allow(dead_code)]
     pub fn is_repository_initialized(&self) -> bool {
         self.repo.is_some()
     }
@@ -290,7 +291,8 @@ mod tests {
     #[test]
     fn test_parse_ai_response() {
         let service = GitService {
-            repo: Arc::new(GitRepository::new(PathBuf::from(".")).unwrap()),
+            repo: None,
+            _workspace_path: PathBuf::from("."),
             http_client: Client::new(),
             litellm_base_url: "http://localhost:4000".to_string(),
         };

@@ -1,7 +1,7 @@
 // Desktop LaTeX Adapter - Tauri Commands
 import { invoke } from '@tauri-apps/api/core';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
-import type { LaTeXCompileRequest, LaTeXCompileResponse, LaTeXOperations, CompilationEvent } from '../../types';
+import type { LaTeXCompileRequest, LaTeXCompileResponse, LaTeXOperations, CompilationEvent, LatexBuildState } from '../../types';
 
 export class DesktopLatexAdapter implements LaTeXOperations {
 	private compilationEventCallbacks: ((event: CompilationEvent) => void)[] = [];
@@ -95,5 +95,29 @@ export class DesktopLatexAdapter implements LaTeXOperations {
 			console.error('Failed to set main file:', error);
 			throw error;
 		}
+	}
+
+	async getLatexStatus(): Promise<LatexBuildState> {
+		// Desktop implementation: return a snapshot based on current knowledge.
+		// We don't have a direct Tauri command yet, so provide a conservative default
+		// and attempt to detect the main file for better UX.
+		let main_file: string | null = null;
+		try {
+			main_file = await this.findMainLatexFile();
+		} catch (_) {
+			main_file = null;
+		}
+
+		return {
+			main_file,
+			phase: 'idle',
+			pdf_path: null,
+			pdf_version: 0,
+			engine: null,
+			errors: null,
+			started_at: null,
+			finished_at: null,
+			session_id: 'desktop'
+		};
 	}
 }

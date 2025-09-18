@@ -1,6 +1,6 @@
 use axum::{
     extract::{Path, State},
-    http::{header::AUTHORIZATION, StatusCode},
+    http::StatusCode,
     response::Json,
 };
 use std::sync::Arc;
@@ -13,8 +13,8 @@ use crate::svc::AgentService;
 /// Main chat handler - queues agent requests for processing
 pub async fn chat_handler(
     State(service): State<Arc<AgentService>>,
-    headers: axum::http::HeaderMap,
-    Json(mut request): Json<ChatRequest>,
+    _headers: axum::http::HeaderMap,
+    Json(request): Json<ChatRequest>,
 ) -> Result<Json<ChatResponse>, (StatusCode, String)> {
     info!(
         "Received chat request for session: {}, model: {}, message length: {}", 

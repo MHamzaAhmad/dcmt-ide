@@ -41,7 +41,7 @@ impl PatchFileTool {
         let mut lines: Vec<String> = text.split_inclusive('\n').map(|s| s.to_string()).collect();
         if lines.is_empty() { lines.push(String::new()); }
 
-        let mut apply_range = |
+    let apply_range = |
             lines: &mut Vec<String>,
             start_line: usize, start_col: usize,
             end_line: usize, end_col: usize,
@@ -105,7 +105,7 @@ impl PatchFileTool {
         struct Hunk {
             old_start: isize,
             old_len: isize,
-            new_start: isize,
+            _new_start: isize,
             new_len: isize,
             lines: Vec<(char, String)>,
         }
@@ -137,7 +137,7 @@ impl PatchFileTool {
                 };
                 let (old_start, old_len) = parse_range(old)?;
                 let (new_start, new_len) = parse_range(new)?;
-                cur_hunk = Some(Hunk { old_start, old_len, new_start, new_len, lines: Vec::new() });
+                cur_hunk = Some(Hunk { old_start, old_len, _new_start: new_start, new_len, lines: Vec::new() });
             } else if line.starts_with("--- ") || line.starts_with("+++ ") || line.starts_with("diff ") || line.starts_with("index ") {
                 // file headers; ignore
                 continue;

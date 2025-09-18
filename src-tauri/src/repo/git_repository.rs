@@ -93,6 +93,7 @@ impl GitRepository {
         Repository::open_ext(workspace_path, RepositoryOpenFlags::empty(), Vec::<&Path>::new()).is_ok()
     }
 
+    #[allow(dead_code)]
     pub fn has_commits(&self) -> Result<bool> {
         let repo = self.repo.lock().unwrap();
         let has_commits = match repo.head() {
@@ -467,6 +468,8 @@ mod tests {
             staged: vec![],
             unstaged: vec![],
             untracked: vec!["new_file.txt".to_string()],
+            is_initialized: true,
+            has_commits: true,
         };
         
         let json = serde_json::to_string(&status).unwrap();

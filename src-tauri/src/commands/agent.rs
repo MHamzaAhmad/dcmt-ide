@@ -3,6 +3,8 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 
 use crate::models::agent::{ChatRequest, ChatResponse, SessionInfo, ToolDefinition};
+use crate::repo::llm::LLMRepository;
+use crate::repo::llm::LiteLLMModelsResponse;
 use crate::services::agent_service::AgentService;
 
 /// Chat with the agent - processes in background and returns job_id immediately
@@ -113,4 +115,17 @@ pub async fn is_agent_available(
 ) -> Result<bool, String> {
     let service_guard = agent_service.read().await;
     Ok(service_guard.is_some())
+}
+
+/// List available LLM models via LiteLLM (desktop backend route)
+#[command]
+pub async fn list_llm_models(
+    agent_service: State<'_, Arc<RwLock<Option<AgentService>>>>,
+) -> Result<LiteLLMModelsResponse, String> {
+    let service_guard = agent_service.read().await;
+    let service = service_guard.as_ref()
+        .ok_or("Agent service not initialized")?;
+
+    let repo = LLMRepository::new(service.litellm_base_url().to_string());
+    repo.list_models().await.map_err(|e| format!("Failed to list models: {}", e))
 }

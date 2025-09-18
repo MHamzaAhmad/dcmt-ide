@@ -80,6 +80,7 @@ pub fn run() {
             clear_agent_session,
             get_available_agent_tools,
             is_agent_available,
+            list_llm_models,
             initialize_git_service,
             get_git_status,
             get_git_diff,

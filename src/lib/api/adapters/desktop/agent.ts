@@ -21,12 +21,13 @@ export class DesktopAgentAdapter implements AgentOperations {
     private fileEventCallbacks: FileEventCallback[] = [];
 
     async listModels(): Promise<LiteLLMModelsResponse> {
-        // Use backend API endpoint (even for desktop, use HTTP API)
-        const response = await fetch(`${import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001'}/api/llm/models`);
-        if (!response.ok) {
-            throw new Error(`Failed to fetch models: ${response.statusText}`);
+        // Use Tauri command to list models via desktop backend
+        try {
+            return await invoke<LiteLLMModelsResponse>('list_llm_models');
+        } catch (error) {
+            console.error('Failed to list models:', error);
+            throw new Error(`Failed to fetch models: ${error}`);
         }
-        return await response.json();
     }
 
     async sendMessage(request: AgentChatRequest): Promise<AgentChatResponse> {

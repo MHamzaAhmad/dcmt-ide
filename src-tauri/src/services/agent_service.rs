@@ -3,7 +3,6 @@ use std::sync::Arc;
 use std::time::Duration;
 use futures::future::join_all;
 use futures::StreamExt;
-use reqwest::Client;
 use tokio::fs;
 use uuid::Uuid;
 
@@ -16,11 +15,11 @@ use crate::models::agent::{
 use super::agent_session::SessionManager;
 use super::agent_events::EventBroadcaster;
 use super::agent_tools::ToolRegistry;
+use crate::repo::llm::LLMRepository;
 
 /// Main service for agent operations with LiteLLM integration and parallel processing
 pub struct AgentService {
     config: AgentConfig,
-    http_client: Client,
     tool_registry: ToolRegistry,
     session_manager: Arc<SessionManager>,
     event_broadcaster: Arc<EventBroadcaster>,
@@ -167,6 +166,10 @@ struct ToolFunctionDelta {
 }
 
 impl AgentService {
+    /// Returns the configured LiteLLM base URL
+    pub fn litellm_base_url(&self) -> &str {
+        &self.config.litellm_base_url
+    }
 
     /// Creates metadata for a new operation
     fn create_metadata(operation_id: &str) -> EventMetadata {
@@ -238,7 +241,6 @@ impl AgentService {
             max_session_age: Duration::from_secs(3600), // 1 hour
         };
         
-        let http_client = Client::new();
         let tool_registry = ToolRegistry::new();
         let session_manager = Arc::new(SessionManager::new(config.max_session_age));
         
@@ -248,7 +250,6 @@ impl AgentService {
         
         Ok(Self {
             config,
-            http_client,
             tool_registry,
             session_manager,
             event_broadcaster,
@@ -307,7 +308,6 @@ impl AgentService {
         let session_manager = self.session_manager.clone();
         let event_broadcaster = self.event_broadcaster.clone();
         let tool_registry = self.tool_registry.clone();
-        let http_client = self.http_client.clone();
         let config = self.config.clone();
         let workspace_path = workspace_path.clone();
         let app_handle = self.app_handle.clone();
@@ -323,7 +323,6 @@ impl AgentService {
                 session_manager,
                 event_broadcaster.clone(),
                 tool_registry,
-                http_client,
                 config,
                 workspace_path,
                 app_handle,
@@ -371,7 +370,6 @@ impl AgentService {
         session_manager: Arc<SessionManager>,
         event_broadcaster: Arc<EventBroadcaster>,
         tool_registry: ToolRegistry,
-        http_client: Client,
         config: AgentConfig,
         workspace_path: PathBuf,
         app_handle: tauri::AppHandle,
@@ -416,14 +414,13 @@ impl AgentService {
         tracing::debug!("Starting tool processing for session {}", session_id);
         
         // Process with tool calling loop
-        let response = Self::process_with_tools(
+    let response = Self::process_with_tools(
             messages,
             model.clone(),
             &session_id,
             session_manager.clone(),
             event_broadcaster,
             tool_registry,
-            http_client,
             config,
             workspace_path,
             app_handle,
@@ -449,7 +446,6 @@ impl AgentService {
         session_manager: Arc<SessionManager>,
         event_broadcaster: Arc<EventBroadcaster>,
         tool_registry: ToolRegistry,
-        http_client: Client,
         config: AgentConfig,
         workspace_path: PathBuf,
         app_handle: tauri::AppHandle,
@@ -477,7 +473,6 @@ impl AgentService {
                 &messages,
                 &model,
                 &tool_registry,
-                &http_client,
                 &config,
                 &event_broadcaster,
                 session_id,
@@ -732,7 +727,6 @@ impl AgentService {
         messages: &[ChatMessage],
         model: &str,
         tool_registry: &ToolRegistry,
-        http_client: &Client,
         config: &AgentConfig,
         event_broadcaster: &Arc<EventBroadcaster>,
         session_id: &str,
@@ -740,31 +734,14 @@ impl AgentService {
         tracing::debug!("Calling LiteLLM for session {} with model {}", session_id, model);
         
         // Build streaming request with ALL tools included
-        let request = serde_json::json!({
-            "model": model,
-            "messages": messages,
-            "tools": tool_registry.get_definitions(),
-            "tool_choice": "auto",
-            "stream": true
-        });
+    // tools will be taken from registry below
         
-        tracing::debug!("Making streaming HTTP request to LiteLLM: {}/v1/chat/completions", config.litellm_base_url);
-        
-        let response = http_client
-            .post(format!("{}/v1/chat/completions", config.litellm_base_url))
-            .json(&request)
-            .send()
+        let llm_repo = LLMRepository::new(config.litellm_base_url.clone());
+        let response = llm_repo
+            .create_chat_completion_stream(model, messages, &tool_registry.get_definitions())
             .await
-            .map_err(AgentError::HttpError)?;
-        
-        if !response.status().is_success() {
-            let status = response.status();
-            let error_text = response.text().await.unwrap_or_default();
-            return Err(AgentError::LiteLLMError {
-                message: format!("HTTP {}: {}", status, error_text),
-            });
-        }
-        
+            .map_err(|e| AgentError::LiteLLMError { message: e.to_string() })?;
+
         // Process streaming response
         let mut stream = response.bytes_stream();
         let mut context = StreamingContext::new();

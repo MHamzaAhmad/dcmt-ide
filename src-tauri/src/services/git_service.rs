@@ -1,9 +1,10 @@
 use anyhow::{Context, Result};
-use reqwest::Client;
+// use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::fs;
+use crate::repo::llm::LLMRepository;
 
 use crate::repo::git_repository::{
     CommitResult, GitDiff, GitRepository, GitStatus,
@@ -50,7 +51,6 @@ struct Choice {
 pub struct GitService {
     repo: Option<Arc<GitRepository>>,
     _workspace_path: PathBuf,
-    http_client: Client,
     litellm_base_url: String,
 }
 
@@ -61,12 +61,11 @@ impl GitService {
         } else {
             None
         };
-        let http_client = Client::new();
+    // HTTP client not needed here; use LLMRepository internally
 
         Ok(Self {
             repo,
         _workspace_path: workspace_path,
-            http_client,
             litellm_base_url,
         })
     }
@@ -133,28 +132,11 @@ impl GitService {
                     },
                 };
 
-                let response = self
-                    .http_client
-                    .post(format!("{}/chat/completions", self.litellm_base_url))
-                    .json(&request)
-                    .send()
+                let llm_repo = LLMRepository::new(self.litellm_base_url.clone());
+                let litellm_response: LiteLLMResponse = llm_repo
+                    .create_chat_completion_with_body(&request)
                     .await
-                    .context("Failed to send request to LiteLLM")?;
-
-                if !response.status().is_success() {
-                    let status = response.status();
-                    let error_text = response.text().await.unwrap_or_default();
-                    return Err(anyhow::anyhow!(
-                        "LiteLLM request failed with status {}: {}",
-                        status,
-                        error_text
-                    ));
-                }
-
-                let litellm_response: LiteLLMResponse = response
-                    .json()
-                    .await
-                    .context("Failed to parse LiteLLM response")?;
+                    .context("Failed to request LiteLLM for commit summary")?;
 
                 let ai_content = litellm_response
                     .choices
@@ -293,7 +275,6 @@ mod tests {
         let service = GitService {
             repo: None,
             _workspace_path: PathBuf::from("."),
-            http_client: Client::new(),
             litellm_base_url: "http://localhost:4000".to_string(),
         };
 

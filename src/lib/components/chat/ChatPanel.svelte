@@ -12,6 +12,8 @@
 	import type { ChatMessage as ChatMessageType, AgentChatMessage, LiteLLMModel } from '$lib/api/types';
 	import { Send, Bot, AlertCircle, Loader2, Maximize2, Minimize2, ChevronDown, ChevronUp, ArrowDown } from '@lucide/svelte';
 	import { createQuery, useQueryClient } from '@tanstack/svelte-query';
+	import { billingStore } from '$lib/stores/billing';
+	import { Badge } from '$lib/components/ui/badge';
 	
 	interface Props {
 		mode?: 'docked' | 'floating';
@@ -30,6 +32,33 @@
 	let isMinimized = $state(false); // For floating mode minimize
 	let showScrollToBottom = $state(false);
 	let autoScroll = $state(true);
+
+	// Billing / prompts gating
+	const billingState = $derived($billingStore);
+	let promptsUsed = $state(0);
+	let upgrading = $state(false);
+
+	function hasUnlimitedPrompts(): boolean {
+		if (!billingState.isReady) return false;
+		return billingState.benefits.some((b) => b.benefit_type === 'unlimited_prompts' || b.description?.toLowerCase().includes('unlimited prompt'));
+	}
+
+	function getPromptsUsed(): number {
+		if (typeof window === 'undefined') return 0;
+		const v = window.sessionStorage.getItem('dcmt-chat-prompts-used');
+		const n = v ? parseInt(v, 10) : 0;
+		return Number.isFinite(n) && n >= 0 ? n : 0;
+	}
+
+	function setPromptsUsed(n: number) {
+		if (typeof window === 'undefined') return;
+		window.sessionStorage.setItem('dcmt-chat-prompts-used', String(n));
+		promptsUsed = n;
+	}
+
+	const isPromptLimitReached = $derived(billingState.isReady && !hasUnlimitedPrompts() && promptsUsed >= 2);
+
+	async function handleUpgrade() { upgrading = true; await billingStore.upgrade(); upgrading = false; }
 	
 	// Agent state
 	let agentAvailable = $state(false);
@@ -174,6 +203,8 @@
 	onMount(async () => {
 		// Pass queryClient to agent store
 		agentStore.setQueryClient(queryClient);
+		// Initialize prompts usage from session
+		setPromptsUsed(getPromptsUsed());
 		
 		// Initialize agent system
 		if (isAgentMode) {
@@ -194,12 +225,17 @@
 	
 	async function handleSend() {
 		if (!inputValue.trim() || !selectedModel) return;
+		if (isPromptLimitReached) return;
 		
 		if (isAgentMode && agentAvailable) {
 			// Use agent system
 			try {
 				await agentStore.sendMessage(inputValue.trim());
 				inputValue = '';
+				// Increment prompt count for free users
+				if (billingState.isReady && !hasUnlimitedPrompts()) {
+					setPromptsUsed(Math.min(2, promptsUsed + 1));
+				}
 			} catch (error) {
 				console.error('Failed to send message:', error);
 			}
@@ -215,6 +251,10 @@
 			
 			chatStore.addMessage(newMessage as ChatMessageType);
 			inputValue = '';
+			// Increment prompt count for free users
+			if (billingState.isReady && !hasUnlimitedPrompts()) {
+				setPromptsUsed(Math.min(2, promptsUsed + 1));
+			}
 			
 			// In simple chat mode, messages are stored but no response is generated
 			// The user should enable agent mode for AI assistance
@@ -409,14 +449,14 @@
 			{#if mode === 'floating'}
 				<Input
 					bind:value={inputValue}
-					placeholder={selectedModel ? 'Ask the AI to about your document...' : 'Select a model first...'}
-					disabled={!selectedModel || (isAgentMode ? isProcessing : isLoading)}
+					placeholder={selectedModel ? (isPromptLimitReached ? 'Upgrade to continue chatting…' : 'Ask the AI to about your document...') : 'Select a model first...'}
+					disabled={!selectedModel || (isAgentMode ? isProcessing : isLoading) || isPromptLimitReached}
 					onkeydown={handleKeyDown}
 					class="flex-1 h-8"
 				/>
 				<Button 
 					onclick={handleSend}
-					disabled={!inputValue.trim() || !selectedModel || (isAgentMode ? isProcessing : isLoading)}
+					disabled={!inputValue.trim() || !selectedModel || (isAgentMode ? isProcessing : isLoading) || isPromptLimitReached}
 					size="icon"
 					class="h-8 w-8"
 				>
@@ -428,6 +468,21 @@
 				</Button>
 			{/if}
 		</div>
+
+			<!-- Prompts counter and upgrade CTA -->
+			{#if billingState.isReady && !hasUnlimitedPrompts()}
+				<div class="mt-2 flex items-center justify-end gap-2 text-xs text-muted-foreground">
+					<Badge variant="secondary">Prompts</Badge>
+					{#if isPromptLimitReached}
+						<span>None remaining</span>
+						<button class="underline underline-offset-2 hover:text-foreground" onclick={handleUpgrade} disabled={upgrading}>
+							{upgrading ? 'Redirecting…' : 'Upgrade to get more'}
+						</button>
+					{:else}
+						<span>{2 - promptsUsed} remaining</span>
+					{/if}
+				</div>
+			{/if}
 		
 		{#if mode === 'docked'}
 		<div class="flex gap-2 relative">
@@ -436,14 +491,14 @@
 			{/if}
 			<Input
 				bind:value={inputValue}
-				placeholder={selectedModel ? ((isAgentMode ? isProcessing : isLoading) ? "AI is working..." : "Ask me to help with your LaTeX project...") : "Select a model first..."}
-				disabled={!selectedModel || (isAgentMode ? isProcessing : isLoading)}
+					placeholder={selectedModel ? ((isAgentMode ? isProcessing : isLoading) ? "AI is working..." : (isPromptLimitReached ? 'Upgrade to continue chatting…' : "Ask me to help with your LaTeX project...")) : "Select a model first..."}
+					disabled={!selectedModel || (isAgentMode ? isProcessing : isLoading) || isPromptLimitReached}
 				onkeydown={handleKeyDown}
 				class="flex-1 {(isAgentMode ? isProcessing : isLoading) ? 'opacity-75' : ''}"
 			/>
 			<Button 
 				onclick={handleSend}
-				disabled={!inputValue.trim() || !selectedModel || (isAgentMode ? isProcessing : isLoading)}
+					disabled={!inputValue.trim() || !selectedModel || (isAgentMode ? isProcessing : isLoading) || isPromptLimitReached}
 				size="icon"
 			>
 				{#if isAgentMode ? isProcessing : isLoading}
@@ -453,6 +508,20 @@
 				{/if}
 			</Button>
 		</div>
+			<!-- Prompts counter and upgrade CTA -->
+			{#if billingState.isReady && !hasUnlimitedPrompts()}
+				<div class="mt-2 flex items-center justify-end gap-2 text-xs text-muted-foreground">
+					<Badge variant="secondary">Prompts</Badge>
+					{#if isPromptLimitReached}
+						<span>None remaining</span>
+						<button class="underline underline-offset-2 hover:text-foreground" onclick={handleUpgrade} disabled={upgrading}>
+							{upgrading ? 'Redirecting…' : 'Upgrade to get more'}
+						</button>
+					{:else}
+						<span>{2 - promptsUsed} remaining</span>
+					{/if}
+				</div>
+			{/if}
 		{/if}
 	</div>
 	{/if}

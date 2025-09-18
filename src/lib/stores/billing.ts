@@ -61,6 +61,25 @@ function createBillingStore() {
             const state = get({ subscribe });
             return state.benefits.some((b) => b.benefit_type === key || b.description?.toLowerCase().includes(key));
         },
+        async upgrade(): Promise<void> {
+            if (typeof window === 'undefined') return;
+            // Open a blank tab synchronously to avoid popup blockers
+            const popup = window.open('', '_blank', 'noopener,noreferrer');
+            try {
+                const { url } = await billingAPI.createCheckoutSession();
+                if (popup) {
+                    try { (popup as any).opener = null; } catch {}
+                    popup.location.href = url;
+                } else {
+                    // Fallback if the popup was blocked
+                    window.location.href = url;
+                }
+            } catch (e) {
+                console.error('Failed to create checkout session', e);
+                // Close the blank popup on failure
+                if (popup && !popup.closed) popup.close();
+            }
+        },
     };
 }
 

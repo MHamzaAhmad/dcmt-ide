@@ -4,6 +4,7 @@
 	import { Play, Download, FileText } from '@lucide/svelte';
 	import { pdfStore, latexStore, isCompiling } from '$lib/stores';
 	import { billingStore } from '$lib/stores';
+	// centralized upgrade flow via billingStore
 	import { Badge } from '$lib/components/ui/badge';
 	import LaTeXErrorPanel from '$lib/components/errors/LaTeXErrorPanel.svelte';
 
@@ -22,6 +23,7 @@
 	const latexState = $derived($latexStore);
 	const billingState = $derived($billingStore);
 	let downloadUsed = $state(false);
+	let upgrading = $state(false);
 	// Use store derivatives directly - no manual subscriptions needed
 	const hasValidPdf = $derived(pdfState.currentPdf && pdfState.currentPdf.pdfDoc && !pdfState.isLoading && !pdfState.error);
 
@@ -146,6 +148,8 @@
 		}
 	}
 
+	async function handleUpgrade() { upgrading = true; await billingStore.upgrade(); upgrading = false; }
+
 	onDestroy(() => {
 		// Store cleanup is handled by the orchestrator
 		console.log('PDFPreview: Component destroyed');
@@ -183,7 +187,9 @@
 				<Badge variant="secondary">Downloads</Badge>
 				{#if downloadUsed}
 					<span>None remaining</span>
-					<a href="https://polar.sh/" target="_blank" class="underline underline-offset-2 hover:text-foreground">Upgrade to get more</a>
+					<button class="underline underline-offset-2 hover:text-foreground" onclick={handleUpgrade} disabled={upgrading}>
+						{upgrading ? 'Redirecting…' : 'Upgrade to get more'}
+					</button>
 				{:else}
 					<span>1 remaining</span>
 				{/if}

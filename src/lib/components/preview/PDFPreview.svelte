@@ -15,6 +15,33 @@
 	let { showToolbar = true, fullPanel = false }: Props = $props();
 
 	let canvases = $state<HTMLCanvasElement[]>([]);
+	let containerEl = $state<HTMLDivElement | null>(null);
+	let resizeObserver: ResizeObserver | null = null;
+	let renderQueued = $state(false);
+	let onWindowResize: (() => void) | null = null;
+	let resizeTimer: number | null = null;
+	// Track per-page render tasks to cancel in-flight renders before re-rendering
+	let renderTasks = $state<Array<{ cancel: () => void; promise: Promise<unknown> } | null>>([]);
+	let isRendering = $state(false);
+	let rerenderPending = $state(false);
+	let lastContainerWidth = $state(0);
+	let pageRendered = $state<boolean[]>([]);
+	let lastDocKey = $state<string | null>(null);
+
+	function getEffectiveContainerWidth(): number {
+		const el = containerEl;
+		if (!el) return 0;
+		// Use border-box width to avoid clientWidth changes due to scrollbars
+		const rectWidth = el.getBoundingClientRect().width;
+		const cs = getComputedStyle(el);
+		const padL = parseFloat(cs.paddingLeft || '0');
+		const padR = parseFloat(cs.paddingRight || '0');
+		const borderL = parseFloat(cs.borderLeftWidth || '0');
+		const borderR = parseFloat(cs.borderRightWidth || '0');
+		// Convert to content width: border-box - borders - padding
+		const contentWidth = Math.max(0, rectWidth - borderL - borderR - padL - padR);
+		return contentWidth;
+	}
 	
 	// Reactive store subscriptions
 	const pdfState = $derived($pdfStore);
@@ -30,6 +57,28 @@
 	onMount(() => {
 		checkpointStore.list(cpState.activeNamespace).catch(console.error);
 		downloadUsed = getDownloadUsed();
+
+		// Observe container size to re-render pages responsively
+		if (typeof ResizeObserver !== 'undefined') {
+			resizeObserver = new ResizeObserver((entries) => {
+				const entry = entries[0];
+				if (!entry) return;
+				const width = getEffectiveContainerWidth();
+				if (Math.abs(width - lastContainerWidth) >= 1) {
+					queueResizeRender(width);
+				}
+			});
+			if (containerEl) resizeObserver.observe(containerEl);
+		}
+
+		// Also re-render on window resize or zoom (DPR changes)
+		onWindowResize = () => {
+			const width = getEffectiveContainerWidth();
+			if (Math.abs(width - lastContainerWidth) >= 1) {
+				queueResizeRender(width);
+			}
+		};
+		window.addEventListener('resize', onWindowResize);
 	});
 	function onCheckpointChange(ev: Event) {
 		const id = (ev.target as HTMLSelectElement).value;
@@ -68,24 +117,60 @@
 	// Update canvases when PDF changes
 	$effect(() => {
 		if (pdfState.currentPdf && canvases.length !== pdfState.currentPdf.numPages) {
+			// Cancel any in-flight tasks from previous doc/pages
+			for (const t of renderTasks) { try { t?.cancel(); } catch {} }
+			renderTasks = [];
 			// Initialize canvases array for all pages
 			canvases = Array(pdfState.currentPdf.numPages).fill(null);
+			// Initialize/resize render tasks array accordingly
+			renderTasks = Array(pdfState.currentPdf.numPages).fill(null);
+			pageRendered = Array(pdfState.currentPdf.numPages).fill(false);
+			lastDocKey = pdfState.currentPdf.path || String(Date.now());
+		}
+	});
+
+	// Ensure observer attaches when container becomes available later
+	$effect(() => {
+		if (resizeObserver && containerEl) {
+			try { resizeObserver.observe(containerEl); } catch {}
 		}
 	});
 
 	// Render all pages when canvases are available
 	$effect(() => {
 		if (pdfState.currentPdf && canvases.length > 0 && canvases.some(c => c)) {
-			renderAllPages();
+			// Set baseline container width and trigger initial render once
+			if (lastContainerWidth === 0) lastContainerWidth = getEffectiveContainerWidth();
+			scheduleRender();
 		}
 	});
+
+	function scheduleRender() {
+		if (isRendering) {
+			rerenderPending = true;
+			return;
+		}
+		if (renderQueued) return;
+		renderQueued = true;
+		requestAnimationFrame(async () => {
+			renderQueued = false;
+			await renderAllPages();
+			if (rerenderPending) {
+				rerenderPending = false;
+				scheduleRender();
+			}
+		});
+	}
 
 	async function renderAllPages() {
 		if (!pdfState.currentPdf?.pdfDoc) return;
 
 		try {
+				isRendering = true;
 				// Get device pixel ratio for high-DPI displays
 				const devicePixelRatio = window.devicePixelRatio || 1;
+			const containerWidth = getEffectiveContainerWidth();
+			if (!containerWidth || containerWidth <= 0) return;
 			
 			for (let pageNum = 1; pageNum <= pdfState.currentPdf.numPages; pageNum++) {
 				const canvas = canvases[pageNum - 1];
@@ -95,8 +180,17 @@
 				const context = canvas.getContext('2d');
 				if (!context) continue;
 
-				// Use reasonable display scale that fits well in the viewport
-				const displayScale = 1.4;
+				// If a render is in progress for this page, cancel and await its completion
+				const existingTask = renderTasks[pageNum - 1];
+				if (existingTask) {
+					try { existingTask.cancel(); } catch {}
+					try { await existingTask.promise; } catch {}
+					renderTasks[pageNum - 1] = null;
+				}
+
+				// Compute a display scale that fits the current container width
+				const unscaledViewport = page.getViewport({ scale: 1 });
+				const displayScale = containerWidth / unscaledViewport.width;
 				// Render at higher internal resolution for crisp text
 				const renderScale = displayScale * devicePixelRatio;
 				
@@ -104,25 +198,63 @@
 				const displayViewport = page.getViewport({ scale: displayScale });
 				const renderViewport = page.getViewport({ scale: renderScale });
 				
-				// Set canvas internal size (high resolution for crisp rendering)
-				canvas.width = renderViewport.width;
-				canvas.height = renderViewport.height;
+				// Prepare offscreen canvas to render into, then blit to onscreen to avoid visible clears
+				const targetW = Math.floor(renderViewport.width);
+				const targetH = Math.floor(renderViewport.height);
+				const sizeChanged = canvas.width !== targetW || canvas.height !== targetH;
+				let offscreen: HTMLCanvasElement | OffscreenCanvas;
+				if ('OffscreenCanvas' in window) {
+					// @ts-ignore - TS may not know OffscreenCanvas on Window
+					offscreen = new OffscreenCanvas(targetW, targetH);
+				} else {
+					const tmp = document.createElement('canvas');
+					tmp.width = targetW;
+					tmp.height = targetH;
+					offscreen = tmp;
+				}
 				
-				// Set CSS display size (reasonable size for viewing)
-				canvas.style.width = `${displayViewport.width}px`;
-				canvas.style.height = `${displayViewport.height}px`;
+				// Do not set CSS width/height per render; use responsive CSS to avoid resize loops
 				
-				// Enable crisp text rendering
+				// Enable crisp text rendering for final blit
 				context.imageSmoothingEnabled = true;
 				context.imageSmoothingQuality = 'high';
 
-				await page.render({
-					canvasContext: context,
+				// If nothing changed and page already rendered for this doc, skip
+				if (!sizeChanged && pageRendered[pageNum - 1] && lastDocKey === (pdfState.currentPdf.path || lastDocKey)) {
+					continue;
+				}
+
+				const offCtx = (offscreen as any).getContext('2d');
+				if (!offCtx) continue;
+				(offCtx as CanvasRenderingContext2D).imageSmoothingEnabled = true;
+				(offCtx as CanvasRenderingContext2D).imageSmoothingQuality = 'high';
+				const task = page.render({
+					canvasContext: offCtx,
 					viewport: renderViewport
-				}).promise;
+				});
+				renderTasks[pageNum - 1] = task as unknown as { cancel: () => void; promise: Promise<unknown> };
+				await task.promise;
+				// Update onscreen canvas size only once we have a rendered frame, then blit
+				if (sizeChanged) {
+					canvas.width = targetW;
+					canvas.height = targetH;
+				}
+				if ('transferToImageBitmap' in offscreen) {
+					// @ts-ignore
+					const bitmap = (offscreen as OffscreenCanvas).transferToImageBitmap();
+					context.clearRect(0, 0, canvas.width, canvas.height);
+					// Draw bitmap at 1:1
+					context.drawImage(bitmap as any, 0, 0);
+				} else {
+					context.clearRect(0, 0, canvas.width, canvas.height);
+					context.drawImage(offscreen as HTMLCanvasElement, 0, 0);
+				}
+				pageRendered[pageNum - 1] = true;
 			}
 		} catch (error) {
 			console.error('Failed to render PDF pages:', error);
+		} finally {
+			isRendering = false;
 		}
 	}
 
@@ -134,7 +266,34 @@
 	onDestroy(() => {
 		// Store cleanup is handled by the orchestrator
 		console.log('PDFPreview: Component destroyed');
+		if (resizeObserver && containerEl) {
+			try { resizeObserver.unobserve(containerEl); } catch {}
+		}
+		resizeObserver = null;
+		if (onWindowResize) {
+			window.removeEventListener('resize', onWindowResize);
+			onWindowResize = null;
+		}
+		if (resizeTimer) {
+			clearTimeout(resizeTimer);
+			resizeTimer = null;
+		}
+		// Cancel any in-flight render tasks
+		for (const t of renderTasks) {
+			try { t?.cancel(); } catch {}
+		}
 	});
+
+	function queueResizeRender(width: number) {
+		lastContainerWidth = width;
+		if (resizeTimer) {
+			clearTimeout(resizeTimer);
+		}
+		resizeTimer = window.setTimeout(() => {
+			resizeTimer = null;
+			scheduleRender();
+		}, 120);
+	}
 </script>
 
 <div class="h-full flex flex-col {fullPanel ? 'bg-background' : 'bg-muted/20'}">
@@ -182,11 +341,11 @@
 	</div>
 
 	<!-- PDF Viewer -->
-	<div class="flex-1 overflow-auto p-4 relative">
+	<div class="flex-1 overflow-auto p-4 relative" bind:this={containerEl}>
 		{#if hasValidPdf && pdfState.currentPdf}
 			<div class="flex flex-col items-center gap-4">
 				{#each Array(pdfState.currentPdf.numPages) as _, pageIndex}
-					<canvas bind:this={canvases[pageIndex]} class="shadow rounded bg-white"></canvas>
+					<canvas bind:this={canvases[pageIndex]} class="shadow rounded bg-white w-full h-auto block"></canvas>
 				{/each}
 			</div>
 		{:else}

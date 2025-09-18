@@ -98,26 +98,23 @@ export class DesktopLatexAdapter implements LaTeXOperations {
 	}
 
 	async getLatexStatus(): Promise<LatexBuildState> {
-		// Desktop implementation: return a snapshot based on current knowledge.
-		// We don't have a direct Tauri command yet, so provide a conservative default
-		// and attempt to detect the main file for better UX.
-		let main_file: string | null = null;
 		try {
-			main_file = await this.findMainLatexFile();
-		} catch (_) {
-			main_file = null;
+			const state = await invoke<LatexBuildState>('get_latex_status');
+			return state;
+		} catch (error) {
+			console.error('Failed to get LaTeX status:', error);
+			// Fallback to a minimal idle state
+			return {
+				main_file: null,
+				phase: 'idle',
+				pdf_path: null,
+				pdf_version: 0,
+				engine: null,
+				errors: null,
+				started_at: null,
+				finished_at: null,
+				session_id: 'desktop',
+			};
 		}
-
-		return {
-			main_file,
-			phase: 'idle',
-			pdf_path: null,
-			pdf_version: 0,
-			engine: null,
-			errors: null,
-			started_at: null,
-			finished_at: null,
-			session_id: 'desktop'
-		};
 	}
 }

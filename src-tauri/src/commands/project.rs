@@ -191,6 +191,10 @@ async fn reinitialize_services(app_handle: &AppHandle, workspace_path: PathBuf) 
         }
     }
 
+    // Initialize LaTeX service for snapshot and events
+    let latex_service = Arc::new(crate::services::LaTeXService::new(workspace_path.clone(), app_handle.clone()));
+    app_handle.manage(latex_service);
+
     // Initialize agent service with default LiteLLM URL
     let litellm_url = std::env::var("LITELLM_BASE_URL")
         .unwrap_or_else(|_| "http://localhost:4000".to_string());

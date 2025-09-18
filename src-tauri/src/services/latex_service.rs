@@ -1,4 +1,4 @@
-use crate::models::{LaTeXCompileRequest, LaTeXCompileResponse, LaTeXProvider, CompilationEvent};
+use crate::models::{LaTeXCompileRequest, LaTeXCompileResponse, LaTeXProvider, CompilationEvent, LatexBuildState, LatexBuildPhase};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::collections::HashMap;
@@ -26,6 +26,7 @@ pub struct LaTeXService {
     debounce_timers: Arc<RwLock<HashMap<String, Instant>>>,
     is_auto_compile_enabled: Arc<RwLock<bool>>,
     file_event_sender: mpsc::Sender<String>,
+    build_state: Arc<RwLock<LatexBuildState>>,
 }
 
 impl LaTeXService {
@@ -33,6 +34,19 @@ impl LaTeXService {
         // Create channel for file events
         let (tx, mut rx) = mpsc::channel::<String>(100);
         
+        // Initialize build state snapshot
+        let initial_state = LatexBuildState {
+            main_file: None,
+            phase: LatexBuildPhase::Idle,
+            pdf_path: None,
+            pdf_version: 0,
+            engine: None,
+            errors: None,
+            started_at: None,
+            finished_at: None,
+            session_id: format!("session-{}", uuid::Uuid::new_v4()),
+        };
+
         let service = Self {
             workspace_path,
             compilation_lock: Arc::new(Mutex::new(())),
@@ -41,6 +55,7 @@ impl LaTeXService {
             debounce_timers: Arc::new(RwLock::new(HashMap::new())),
             is_auto_compile_enabled: Arc::new(RwLock::new(true)),
             file_event_sender: tx,
+            build_state: Arc::new(RwLock::new(initial_state)),
         };
         
         // Spawn task to process file events (in Tokio runtime context)
@@ -223,6 +238,10 @@ impl LaTeXService {
                     .to_string();
                 
                 *self.main_tex_file.write().await = Some(main_file.clone());
+                {
+                    let mut s = self.build_state.write().await;
+                    s.main_file = Some(main_file_str.clone());
+                }
                 
                 // Emit main file detected event
                 let event = CompilationEvent::main_file_detected(main_file_str);
@@ -246,6 +265,10 @@ impl LaTeXService {
             .unwrap_or(&main_file)
             .to_string_lossy()
             .to_string();
+        {
+            let mut s = self.build_state.write().await;
+            s.main_file = Some(main_file_str.clone());
+        }
         
         let event = CompilationEvent::main_file_detected(main_file_str);
         self.emit_compilation_event(event).await;
@@ -255,6 +278,42 @@ impl LaTeXService {
 
     /// Emit compilation event via Tauri event system
     async fn emit_compilation_event(&self, event: CompilationEvent) {
+        // Update snapshot based on event type
+        {
+            let mut s = self.build_state.write().await;
+            match event.event_type {
+                crate::models::CompilationEventType::Queued => {
+                    s.phase = LatexBuildPhase::Queued;
+                    s.started_at = Some(event.timestamp);
+                    s.errors = None;
+                }
+                crate::models::CompilationEventType::Started => {
+                    s.phase = LatexBuildPhase::Started;
+                    if let Some(meta) = &event.metadata { s.engine = meta.engine.clone(); }
+                    if s.started_at.is_none() { s.started_at = Some(event.timestamp); }
+                }
+                crate::models::CompilationEventType::Success => {
+                    s.phase = LatexBuildPhase::Success;
+                    if let Some(meta) = &event.metadata {
+                        s.pdf_path = meta.pdf_path.clone();
+                        s.engine = meta.engine.clone();
+                        s.finished_at = Some(event.timestamp);
+                        s.pdf_version = s.pdf_version.saturating_add(1);
+                    }
+                    s.errors = None;
+                }
+                crate::models::CompilationEventType::Error => {
+                    s.phase = LatexBuildPhase::Error;
+                    if let Some(meta) = &event.metadata {
+                        s.errors = meta.errors.clone();
+                        s.finished_at = Some(event.timestamp);
+                    }
+                }
+                crate::models::CompilationEventType::MainFileDetected => {
+                    // main_file is set elsewhere
+                }
+            }
+        }
         if let Err(e) = self.app_handle.emit("compilation-event", &event) {
             error!("Failed to emit compilation event: {}", e);
         }
@@ -664,5 +723,9 @@ impl LaTeXService {
         }
         
         available_engines
+    }
+
+    pub async fn get_snapshot(&self) -> LatexBuildState {
+        self.build_state.read().await.clone()
     }
 }

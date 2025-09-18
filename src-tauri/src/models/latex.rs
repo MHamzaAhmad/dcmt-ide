@@ -57,3 +57,27 @@ impl LaTeXCompileResponse {
         }
     }
 }
+
+// Canonical LaTeX build state (desktop) — mirrors backend for consistency
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum LatexBuildPhase {
+    Idle,
+    Queued,
+    Started,
+    Success,
+    Error,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LatexBuildState {
+    pub main_file: Option<String>,
+    pub phase: LatexBuildPhase,
+    pub pdf_path: Option<String>,
+    pub pdf_version: u64,
+    pub engine: Option<String>,
+    pub errors: Option<Vec<String>>,
+    pub started_at: Option<u64>,
+    pub finished_at: Option<u64>,
+    pub session_id: String,
+}

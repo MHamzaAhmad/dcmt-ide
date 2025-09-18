@@ -1,7 +1,8 @@
 use crate::commands::project::ProjectState;
-use crate::models::{LaTeXCompileRequest, LaTeXCompileResponse};
+use crate::models::{LaTeXCompileRequest, LaTeXCompileResponse, LatexBuildState};
 use crate::services::LaTeXService;
-use tauri::State;
+use tauri::{State, Manager};
+use std::sync::Arc;
 use tracing::{debug, error, info};
 
 #[tauri::command]
@@ -175,4 +176,33 @@ pub async fn set_main_file(
     }
     
     Ok(())
+}
+
+#[tauri::command]
+pub async fn get_latex_status(
+    project_state: State<'_, ProjectState>,
+    app_handle: tauri::AppHandle,
+) -> Result<LatexBuildState, String> {
+    debug!("Get LaTeX status command received");
+
+    // Determine workspace path
+    let workspace_path = {
+        let state_guard = project_state.read().map_err(|e| {
+            error!("Failed to acquire project state read lock: {}", e);
+            "Failed to read project state".to_string()
+        })?;
+
+        match state_guard.as_ref() {
+            Some(project_info) => std::path::PathBuf::from(&project_info.path),
+            None => return Err("No project selected. Please select a project folder first".to_string()),
+        }
+    };
+
+    // Prefer a managed LaTeXService to preserve snapshot across calls
+    if let Some(svc) = app_handle.try_state::<Arc<LaTeXService>>() {
+        return Ok(svc.get_snapshot().await);
+    }
+    // Fallback to a temporary service
+    let latex_service = LaTeXService::new(workspace_path, app_handle);
+    Ok(latex_service.get_snapshot().await)
 }

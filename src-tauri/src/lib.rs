@@ -71,6 +71,7 @@ pub fn run() {
             find_main_latex_file,
             set_auto_compile,
             set_main_file,
+            get_latex_status,
             chat_with_agent,
             subscribe_to_agent_events,
             unsubscribe_from_agent_events,

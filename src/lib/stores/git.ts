@@ -29,6 +29,23 @@ export interface GitStoreState {
 	// AI summary
 	aiSummary: CommitSummary | null;
 	isGeneratingSummary: boolean;
+
+	/**
+	 * Hash of the unstaged diff used to produce the current aiSummary.
+	 * Helps prevent redundant regenerations when nothing has changed.
+	 */
+	lastSummaryDiffHash?: string | null;
+
+	// AI summary cache & config (unstaged-only flow)
+	/**
+	 * Cache commit summaries by a stable diff hash to avoid repeated LLM calls.
+	 * Key: diffHash (unstaged). Value: { summary, ts }
+	 */
+	aiSummaryCache?: Map<string, { summary: CommitSummary; ts: number }>;
+	/** Enable auto-generation for unstaged changes */
+	autoGenerateSummary?: boolean;
+	/** TTL for cached summaries (ms) */
+	summaryTtlMs?: number;
 	
 	// Operations state
 	isStaging: boolean;
@@ -59,6 +76,10 @@ function createGitStore() {
 		stagedDiff: null,
 		aiSummary: null,
 		isGeneratingSummary: false,
+		lastSummaryDiffHash: null,
+		aiSummaryCache: new Map(),
+		autoGenerateSummary: true,
+		summaryTtlMs: 15 * 60 * 1000, // 15 minutes
 		isStaging: false,
 		isCommitting: false,
 		isPushing: false,
@@ -74,6 +95,49 @@ function createGitStore() {
 	// Git adapter instance
 	let gitAdapter: GitOperations | null = null;
 	let autoRefreshTimer: ReturnType<typeof setInterval> | null = null;
+	let summaryDebounceTimer: ReturnType<typeof setTimeout> | null = null;
+	const inFlightSummaries = new Set<string>(); // diffHash in flight
+
+	function hashString(input: string): string {
+		// Simple, fast non-crypto hash (djb2) suitable for cache keys
+		let hash = 5381;
+		for (let i = 0; i < input.length; i++) {
+			hash = ((hash << 5) + hash) + input.charCodeAt(i);
+			hash = hash & 0xffffffff;
+		}
+		// Convert to unsigned hex string
+		return (hash >>> 0).toString(16);
+	}
+
+	function canonicalizeDiff(diff: GitDiff): string {
+		// Stable string representation: sort files by path, include status, counts and hunks
+		const files = [...(diff.files || [])].sort((a, b) => a.path.localeCompare(b.path));
+		const parts: string[] = [];
+		for (const f of files) {
+			parts.push(`PATH:${f.path}`);
+			parts.push(`STATUS:${f.status}`);
+			parts.push(`ADD:${f.additions}`);
+			parts.push(`DEL:${f.deletions}`);
+			if (f.hunks && f.hunks.length) {
+				// Include limited hunk content to keep key stable yet bounded
+				const hunksPreview = f.hunks.slice(0, 20).join('\n');
+				parts.push(`HUNKS:${hunksPreview}`);
+			}
+		}
+		// Include overall stats
+		if (diff.stats) {
+			parts.push(`STATS:${diff.stats.files_changed}:${diff.stats.additions}:${diff.stats.deletions}`);
+		}
+		return parts.join('|');
+	}
+
+	function getUnstagedDiffHash(state: GitStoreState): string | null {
+		if (!state.diff || !state.status) return null;
+		const hasUnstaged = (state.status.unstaged?.length || 0) > 0 || (state.status.untracked?.length || 0) > 0;
+		if (!hasUnstaged) return null;
+		const key = canonicalizeDiff(state.diff);
+		return hashString(key);
+	}
 
 	// ============================================================================
 	// Core Methods
@@ -168,7 +232,10 @@ function createGitStore() {
 
 			// Clear AI summary if no changes
 			if (status.staged.length === 0 && status.unstaged.length === 0 && status.untracked.length === 0) {
-				update(state => ({ ...state, aiSummary: null }));
+				update(state => ({ ...state, aiSummary: null, lastSummaryDiffHash: null }));
+			} else {
+				// Auto-generate summary for unstaged changes (debounced)
+				maybeAutoGenerateSummary();
 			}
 
 		} catch (error) {
@@ -186,7 +253,7 @@ function createGitStore() {
 		}
 	}
 
-	async function generateSummary(useStaged: boolean = true): Promise<void> {
+	async function generateSummary(useStaged: boolean = false): Promise<void> {
 		if (!gitAdapter) {
 			throw new Error('Git adapter not initialized');
 		}
@@ -223,6 +290,71 @@ function createGitStore() {
 			eventStore.events.gitError(errorMessage);
 			throw error;
 		}
+	}
+
+	// Ensure AI summary for current UNSTAGED diff using cache and debounce
+	async function ensureSummary(options?: { force?: boolean }): Promise<void> {
+		const state = get({ subscribe });
+		if (!state.autoGenerateSummary) return;
+		if (!gitAdapter) return;
+
+		const hasUnstaged = state.status && ((state.status.unstaged.length > 0) || (state.status.untracked.length > 0));
+		if (!hasUnstaged) return;
+
+		// Need unstaged diff to compute hash; fetch if missing
+		let diff = state.diff;
+		if (!diff) {
+			try {
+				diff = await gitAdapter.getDiff(false);
+				update(s => ({ ...s, diff }));
+			} catch (e) {
+				console.error('[GitStore] Failed to fetch unstaged diff for summary:', e);
+				return;
+			}
+		}
+
+		const diffHash = getUnstagedDiffHash(get({ subscribe }));
+		if (!diffHash) return;
+
+		const cache = state.aiSummaryCache!;
+		const now = Date.now();
+		const ttl = state.summaryTtlMs ?? 15 * 60 * 1000;
+		const cached = cache.get(diffHash);
+		if (cached && !options?.force && (now - cached.ts) < ttl) {
+			// Serve from cache and mark current diff hash
+			update(s => ({ ...s, aiSummary: cached.summary, lastSummaryDiffHash: diffHash }));
+			return;
+		}
+
+		if (inFlightSummaries.has(diffHash)) {
+			return; // already generating for this hash
+		}
+
+		try {
+			inFlightSummaries.add(diffHash);
+			update(s => ({ ...s, isGeneratingSummary: true, lastError: null }));
+			const summary = await gitAdapter.generateSummary(false);
+			// Cache and publish
+			cache.set(diffHash, { summary, ts: now });
+			update(s => ({ ...s, aiSummary: summary, isGeneratingSummary: false, lastSummaryDiffHash: diffHash }));
+			eventStore.events.gitSummaryGenerated(summary);
+		} catch (error) {
+			const errorMessage = `Failed to generate AI summary (unstaged): ${error}`;
+			console.error('[GitStore]', errorMessage);
+			update(s => ({ ...s, isGeneratingSummary: false, lastError: errorMessage }));
+			eventStore.events.gitError(errorMessage);
+		} finally {
+			inFlightSummaries.delete(diffHash);
+		}
+	}
+
+	function maybeAutoGenerateSummary() {
+		const state = get({ subscribe });
+		if (!state.autoGenerateSummary) return;
+		if (summaryDebounceTimer) clearTimeout(summaryDebounceTimer);
+		summaryDebounceTimer = setTimeout(() => {
+			ensureSummary().catch(console.error);
+		}, 1000);
 	}
 
 	async function stageFiles(paths: string[]): Promise<void> {
@@ -548,6 +680,43 @@ function createGitStore() {
 		$state.isPushing
 	);
 
+	// Whether clicking Regenerate would actually do work
+	const canRegenerateSummary = derived({ subscribe }, $state => {
+		// Need unstaged changes and a current diff
+		if (!$state || !$state.status) return false;
+		const hasUnstaged = ($state.status.unstaged.length > 0) || ($state.status.untracked.length > 0);
+		if (!hasUnstaged) return false;
+		if ($state.isGeneratingSummary) return false;
+		// If no summary yet, we could generate, but the UI auto-generates; treat as disabled for explicit Regenerate
+		if (!$state.aiSummary) return false;
+		// If we don't have a diff yet, be conservative and allow regeneration
+		if (!$state.diff) return true;
+		// Compute current diff hash and compare to lastSummaryDiffHash
+		const files = [...($state.diff.files || [])].sort((a, b) => a.path.localeCompare(b.path));
+		const parts: string[] = [];
+		for (const f of files) {
+			parts.push(`PATH:${f.path}`);
+			parts.push(`STATUS:${f.status}`);
+			parts.push(`ADD:${f.additions}`);
+			parts.push(`DEL:${f.deletions}`);
+			if (f.hunks && f.hunks.length) {
+				const hunksPreview = f.hunks.slice(0, 20).join('\n');
+				parts.push(`HUNKS:${hunksPreview}`);
+			}
+		}
+		if ($state.diff.stats) {
+			parts.push(`STATS:${$state.diff.stats.files_changed}:${$state.diff.stats.additions}:${$state.diff.stats.deletions}`);
+		}
+		let hash = 5381;
+		const key = parts.join('|');
+		for (let i = 0; i < key.length; i++) {
+			hash = ((hash << 5) + hash) + key.charCodeAt(i);
+			hash = hash & 0xffffffff;
+		}
+		const currentHash = (hash >>> 0).toString(16);
+		return currentHash !== ($state.lastSummaryDiffHash || null);
+	});
+
 	// ============================================================================
 	// Cleanup
 	// ============================================================================
@@ -577,6 +746,7 @@ function createGitStore() {
 		// Git operations
 		refresh,
 		generateSummary,
+		ensureSummary,
 		stageFiles,
 		stageAll,
 		commit,
@@ -593,6 +763,7 @@ function createGitStore() {
 		canCommit,
 		canPush,
 		isLoading,
+		canRegenerateSummary,
 
 		// State access
 		getCurrentState(): GitStoreState {

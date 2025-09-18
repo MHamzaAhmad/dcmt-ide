@@ -99,9 +99,16 @@ impl GitService {
     }
 
     pub async fn generate_commit_summary(&self, staged: bool) -> Result<CommitSummary> {
+        tracing::info!("GitService: generate_commit_summary called",);
         match &self.repo {
             Some(repo) => {
+                tracing::info!("GitService: generating diff string",);
                 let diff_string = repo.get_diff_as_string(staged)?;
+                tracing::info!(
+                    "GitService: diff ready (staged={}, bytes={})",
+                    staged,
+                    diff_string.len()
+                );
 
                 if diff_string.is_empty() {
                     return Ok(CommitSummary {
@@ -111,7 +118,8 @@ impl GitService {
                     });
                 }
 
-        let prompt = self.load_prompt_template()?;
+    tracing::info!("GitService: loading prompt template",);
+    let prompt = self.load_prompt_template()?;
                 let formatted_prompt = prompt.replace("{diff_content}", &diff_string);
 
                 // Build typed non-streaming chat request
@@ -130,6 +138,7 @@ impl GitService {
                     response_format: Some(AgentResponseFormat { format_type: "json_object".into() }),
                 };
 
+                tracing::info!("GitService: calling LLM for summary (non-streaming)");
                 let litellm_response = self.llm_repo
                     .create_chat_completion(&req)
                     .await
@@ -143,7 +152,10 @@ impl GitService {
                     .content
                     .clone()
                     .unwrap_or_default();
-
+                tracing::info!(
+                    "GitService: LLM responded (content_len={})",
+                    ai_content.len()
+                );
                 self.parse_ai_response(ai_content)
             }
             None => Err(anyhow::anyhow!("Git repository is not initialized")),
@@ -188,15 +200,36 @@ impl GitService {
     }
 
     fn load_prompt_template(&self) -> Result<String> {
-        // Try to load from the prompts directory
-        let prompt_path = PathBuf::from("prompts/git-summary.md");
-        
-        fs::read_to_string(&prompt_path)
-            .with_context(|| format!("Failed to read prompt template from {:?}", prompt_path))
+        // Try common relative locations first
+        let candidates = [
+            PathBuf::from("prompts/git-summary.md"),                // when CWD is repo root
+            PathBuf::from("../prompts/git-summary.md"),            // when CWD is backend/
+            PathBuf::from("../../prompts/git-summary.md"),         // when CWD is backend/target/debug
+        ];
 
+        for path in candidates.iter() {
+            if path.exists() {
+                tracing::info!("GitService: using prompt at {:?}", path);
+                let content = fs::read_to_string(path)
+                    .with_context(|| format!("Failed to read prompt template from {:?}", path))?;
+                return Ok(content);
+            } else {
+                tracing::debug!("GitService: prompt not found at {:?}", path);
+            }
+        }
+
+        // Fallback to embedding the prompt at compile-time (repo-root/prompts)
+        static EMBEDDED_PROMPT: &str = include_str!(
+            concat!(env!("CARGO_MANIFEST_DIR"), "/../prompts/git-summary.md")
+        );
+        tracing::warn!(
+            "GitService: using embedded prompt fallback (could not find prompt file at runtime)"
+        );
+        Ok(EMBEDDED_PROMPT.to_string())
     }
 
     fn parse_ai_response(&self, response: String) -> Result<CommitSummary> {
+    tracing::info!("GitService: parsing AI response",);
         // Try to parse as JSON
         let summary: CommitSummary = serde_json::from_str(&response)
             .with_context(|| format!("Failed to parse AI response as JSON: {}", response))?;
@@ -214,6 +247,12 @@ impl GitService {
             return Err(anyhow::anyhow!("AI response missing suggested message"));
         }
 
+        tracing::info!(
+            "GitService: parsed summary (summary_chars={}, bullets={}, msg_chars={})",
+            summary.summary.len(),
+            summary.bullets.len(),
+            summary.suggested_message.len()
+        );
         Ok(summary)
     }
 }

@@ -7,6 +7,7 @@ use axum::{
 };
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
+use std::time::Instant;
 
 use crate::svc::git_service::{CommitSummary, GitService};
 use crate::repo::git_repository::{CommitResult, GitDiff, GitStatus};
@@ -122,11 +123,26 @@ async fn generate_commit_summary(
     State(git_service): State<Arc<GitService>>,
 ) -> Result<Json<CommitSummaryResponse>, (StatusCode, Json<ErrorResponse>)> {
     let staged = params.staged.unwrap_or(false);
-    
+    let started = Instant::now();
+    tracing::info!("Summary request received: staged={}", staged);
+
     match git_service.generate_commit_summary(staged).await {
-        Ok(summary) => Ok(Json(CommitSummaryResponse { summary })),
+        Ok(summary) => {
+            let elapsed = started.elapsed().as_millis();
+            let bullets = summary.bullets.len();
+            let summary_len = summary.summary.len();
+            tracing::info!(
+                "Summary success: staged={}, duration_ms={}, bullets={}, summary_chars={}",
+                staged, elapsed, bullets, summary_len
+            );
+            Ok(Json(CommitSummaryResponse { summary }))
+        }
         Err(e) => {
-            tracing::error!("Failed to generate commit summary: {}", e);
+            let elapsed = started.elapsed().as_millis();
+            tracing::error!(
+                "Summary error: staged={}, duration_ms={}, error={}",
+                staged, elapsed, e
+            );
             Err((
                 StatusCode::INTERNAL_SERVER_ERROR,
                 Json(ErrorResponse {

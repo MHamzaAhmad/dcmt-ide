@@ -375,6 +375,29 @@ export interface CommitSummary {
 	suggestedMessage: string;
 }
 
+// Checkpoints
+export interface CheckpointMeta {
+	id: string; // commit oid
+	namespace: string;
+	title: string;
+	bullets?: string[];
+	createdAt: number;
+	author?: string;
+}
+
+export interface CheckpointDiffResult {
+	diff: GitDiff;
+	summary?: CommitSummary;
+}
+
+export interface CheckpointOperations {
+	list(namespace: string): Promise<CheckpointMeta[]>;
+	create(namespace: string, metadata?: { reason?: string; actor?: string; paths?: string[] }): Promise<CheckpointMeta>;
+	diff(namespace: string, baseId: string, targetRef?: 'HEAD' | 'WORKTREE' | string): Promise<CheckpointDiffResult>;
+	restore(namespace: string, id: string): Promise<{ result: string; commitId?: string }>;
+	publish(namespace: string): Promise<{ result: string; mergeCommitId?: string }>;
+}
+
 // Billing / Limits
 export interface BenefitInfo {
 	id: string;

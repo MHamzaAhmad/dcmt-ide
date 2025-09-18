@@ -6,6 +6,7 @@ pub mod websocket;
 pub mod git;
 pub mod llm;
 pub mod billing;
+pub mod checkpoints;
 
 pub use agent::agent_router;
 pub use files::files_router;
@@ -15,3 +16,4 @@ pub use websocket::websocket_router;
 pub use git::git_router;
 pub use llm::llm_router;
 pub use billing::billing_router;
+pub use checkpoints::checkpoints_router;

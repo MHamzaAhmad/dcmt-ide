@@ -89,7 +89,12 @@ pub fn run() {
             stage_all_files,
             commit_changes,
             push_changes,
-            commit_and_push_changes
+            commit_and_push_changes,
+            dcmt_list_checkpoints,
+            dcmt_create_checkpoint,
+            dcmt_diff_checkpoint,
+            dcmt_restore_checkpoint,
+            dcmt_publish_checkpoint
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

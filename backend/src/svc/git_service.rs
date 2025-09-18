@@ -6,7 +6,7 @@ use std::sync::Arc;
 use std::fs;
 
 use crate::repo::git_repository::{
-    CommitResult, GitDiff, GitRepository, GitStatus,
+    CommitResult, GitDiff, GitRepository, GitStatus, CheckpointMeta,
 };
 use crate::repo::llm::{LLMRepository, ChatCompletionRequest};
 use crate::model::agent::{ChatMessage as AgentChatMessage, ResponseFormat as AgentResponseFormat};
@@ -254,5 +254,51 @@ impl GitService {
             summary.suggested_message.len()
         );
         Ok(summary)
+    }
+
+    // ========= Checkpoints =========
+    pub async fn checkpoints_list(&self, namespace: &str, max: Option<usize>) -> Result<Vec<CheckpointMeta>> {
+        match &self.repo {
+            Some(repo) => repo.list_checkpoints(namespace, max.unwrap_or(50)),
+            None => Err(anyhow::anyhow!("Git repository is not initialized")),
+        }
+    }
+
+    pub async fn checkpoints_create(&self, namespace: &str, title: Option<String>) -> Result<CheckpointMeta> {
+        match &self.repo {
+            Some(repo) => repo.create_checkpoint_at_head(namespace, title.as_deref()),
+            None => Err(anyhow::anyhow!("Git repository is not initialized")),
+        }
+    }
+
+    pub async fn checkpoints_diff(&self, _namespace: &str, base: &str, target: &str) -> Result<GitDiff> {
+        match &self.repo {
+            Some(repo) => {
+                let target_oid = if target.eq_ignore_ascii_case("HEAD") {
+                    repo.get_head_oid_string()?
+                } else {
+                    target.to_string()
+                };
+                repo.diff_commits(base, &target_oid)
+            }
+            None => Err(anyhow::anyhow!("Git repository is not initialized")),
+        }
+    }
+
+    pub async fn checkpoints_restore(&self, _namespace: &str, checkpoint_id: &str, message: Option<String>) -> Result<CommitResult> {
+        match &self.repo {
+            Some(repo) => {
+                let msg = message.unwrap_or_else(|| format!("restore: {}", checkpoint_id));
+                repo.restore_checkpoint_as_commit(checkpoint_id, &msg)
+            }
+            None => Err(anyhow::anyhow!("Git repository is not initialized")),
+        }
+    }
+
+    pub async fn checkpoints_publish(&self, namespace: &str) -> Result<String> {
+        match &self.repo {
+            Some(repo) => repo.publish_checkpoint_fast_forward(namespace),
+            None => Err(anyhow::anyhow!("Git repository is not initialized")),
+        }
     }
 }

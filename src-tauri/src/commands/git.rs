@@ -1,5 +1,5 @@
 use crate::services::git_service::{GitService, CommitSummary};
-use crate::repo::git_repository::{GitStatus, GitDiff, CommitResult};
+use crate::repo::git_repository::{GitStatus, GitDiff, CommitResult, CheckpointMeta};
 use anyhow::Result;
 use std::path::PathBuf;
 use tauri::{command, State};
@@ -216,5 +216,103 @@ pub async fn commit_and_push_changes(
         None => {
             Err("Git service not initialized".to_string())
         }
+    }
+}
+
+// ======== Checkpoints Commands ========
+#[command]
+pub async fn dcmt_list_checkpoints(
+    namespace: String,
+    max: Option<usize>,
+    state: State<'_, GitServiceState>,
+) -> Result<Vec<CheckpointMeta>, String> {
+    let service = {
+        let git_service = state.0.lock().unwrap();
+        git_service.clone()
+    };
+    match service {
+        Some(service) => service
+            .checkpoints_list(&namespace, max)
+            .await
+            .map_err(|e| format!("Failed to list checkpoints: {}", e)),
+        None => Err("Git service not initialized".to_string()),
+    }
+}
+
+#[command]
+pub async fn dcmt_create_checkpoint(
+    namespace: String,
+    title: Option<String>,
+    state: State<'_, GitServiceState>,
+) -> Result<CheckpointMeta, String> {
+    let service = {
+        let git_service = state.0.lock().unwrap();
+        git_service.clone()
+    };
+    match service {
+        Some(service) => service
+            .checkpoints_create(&namespace, title)
+            .await
+            .map_err(|e| format!("Failed to create checkpoint: {}", e)),
+        None => Err("Git service not initialized".to_string()),
+    }
+}
+
+#[command]
+pub async fn dcmt_diff_checkpoint(
+    namespace: String,
+    base_id: String,
+    target_ref: Option<String>,
+    state: State<'_, GitServiceState>,
+) -> Result<GitDiff, String> {
+    let service = {
+        let git_service = state.0.lock().unwrap();
+        git_service.clone()
+    };
+    let target = target_ref.unwrap_or_else(|| "HEAD".to_string());
+    match service {
+        Some(service) => service
+            .checkpoints_diff(&namespace, &base_id, &target)
+            .await
+            .map_err(|e| format!("Failed to diff checkpoint: {}", e)),
+        None => Err("Git service not initialized".to_string()),
+    }
+}
+
+#[command]
+pub async fn dcmt_restore_checkpoint(
+    namespace: String,
+    id: String,
+    message: Option<String>,
+    state: State<'_, GitServiceState>,
+) -> Result<CommitResult, String> {
+    let service = {
+        let git_service = state.0.lock().unwrap();
+        git_service.clone()
+    };
+    match service {
+        Some(service) => service
+            .checkpoints_restore(&namespace, &id, message)
+            .await
+            .map_err(|e| format!("Failed to restore checkpoint: {}", e)),
+        None => Err("Git service not initialized".to_string()),
+    }
+}
+
+#[command]
+pub async fn dcmt_publish_checkpoint(
+    namespace: String,
+    state: State<'_, GitServiceState>,
+) -> Result<String, String> {
+    let service = {
+        let git_service = state.0.lock().unwrap();
+        git_service.clone()
+    };
+    match service {
+        Some(service) => service
+            .checkpoints_publish(&namespace)
+            .await
+            .map_err(|e| format!("Failed to publish checkpoints: {}", e)),
+        None => Err("Git service not initialized".to_string()),
     }
 }

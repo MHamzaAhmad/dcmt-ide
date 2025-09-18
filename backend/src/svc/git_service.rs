@@ -2,7 +2,7 @@ use anyhow::{Context, Result};
 // use reqwest::Client; // not needed anymore
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::fs;
 
 use crate::repo::git_repository::{
@@ -53,6 +53,9 @@ pub struct GitService {
     repo: Option<Arc<GitRepository>>,
     _workspace_path: PathBuf,
     llm_repo: Arc<LLMRepository>,
+    // Cache last computed summaries by a stable diff signature to avoid redundant LLM calls
+    cache_unstaged: Mutex<Option<(String, CommitSummary)>>,
+    cache_staged: Mutex<Option<(String, CommitSummary)>>,
 }
 
 impl GitService {
@@ -68,6 +71,8 @@ impl GitService {
             repo,
             _workspace_path: workspace_path,
             llm_repo,
+            cache_unstaged: Mutex::new(None),
+            cache_staged: Mutex::new(None),
         })
     }
 
@@ -110,12 +115,36 @@ impl GitService {
                     diff_string.len()
                 );
 
+                // Compute a stable signature of the diff to detect changes
+                let signature = compute_diff_signature(&diff_string);
+
+                // Check cache based on staged/unstaged
+                let cached = if staged {
+                    self.cache_staged.lock().unwrap().clone()
+                } else {
+                    self.cache_unstaged.lock().unwrap().clone()
+                };
+
+                if let Some((sig, summary)) = cached {
+                    if sig == signature {
+                        tracing::info!("GitService: returning cached summary (staged={})", staged);
+                        return Ok(summary);
+                    }
+                }
+
                 if diff_string.is_empty() {
-                    return Ok(CommitSummary {
+                    let no_changes = CommitSummary {
                         summary: "No changes to commit".to_string(),
                         bullets: vec!["No changes detected".to_string()],
                         suggested_message: "chore: no changes".to_string(),
-                    });
+                    };
+                    // Update cache to reflect empty state
+                    if staged {
+                        *self.cache_staged.lock().unwrap() = Some((signature, no_changes.clone()));
+                    } else {
+                        *self.cache_unstaged.lock().unwrap() = Some((signature, no_changes.clone()));
+                    }
+                    return Ok(no_changes);
                 }
 
     tracing::info!("GitService: loading prompt template",);
@@ -156,7 +185,16 @@ impl GitService {
                     "GitService: LLM responded (content_len={})",
                     ai_content.len()
                 );
-                self.parse_ai_response(ai_content)
+                let parsed = self.parse_ai_response(ai_content)?;
+
+                // Store in cache
+                if staged {
+                    *self.cache_staged.lock().unwrap() = Some((signature, parsed.clone()));
+                } else {
+                    *self.cache_unstaged.lock().unwrap() = Some((signature, parsed.clone()));
+                }
+
+                Ok(parsed)
             }
             None => Err(anyhow::anyhow!("Git repository is not initialized")),
         }
@@ -301,4 +339,11 @@ impl GitService {
             None => Err(anyhow::anyhow!("Git repository is not initialized")),
         }
     }
+}
+
+// Compute a stable, fast signature for a diff string
+fn compute_diff_signature(diff: &str) -> String {
+    // blake3 is fast and stable; hex-encode for readability
+    let hash = blake3::hash(diff.as_bytes());
+    hash.to_hex().to_string()
 }

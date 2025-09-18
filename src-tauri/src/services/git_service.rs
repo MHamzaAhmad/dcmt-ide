@@ -2,7 +2,7 @@ use anyhow::{Context, Result};
 // use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::fs;
 use crate::repo::llm::LLMRepository;
 
@@ -52,6 +52,8 @@ pub struct GitService {
     repo: Option<Arc<GitRepository>>,
     _workspace_path: PathBuf,
     litellm_base_url: String,
+    cache_unstaged: Mutex<Option<(String, CommitSummary)>>,
+    cache_staged: Mutex<Option<(String, CommitSummary)>>,
 }
 
 impl GitService {
@@ -67,6 +69,8 @@ impl GitService {
             repo,
         _workspace_path: workspace_path,
             litellm_base_url,
+            cache_unstaged: Mutex::new(None),
+            cache_staged: Mutex::new(None),
         })
     }
 
@@ -103,12 +107,33 @@ impl GitService {
             Some(repo) => {
                 let diff_string = repo.get_diff_as_string(staged)?;
 
+                // Compute stable signature
+                let signature = compute_diff_signature(&diff_string);
+
+                // Check cache
+                let cached = if staged {
+                    self.cache_staged.lock().unwrap().clone()
+                } else {
+                    self.cache_unstaged.lock().unwrap().clone()
+                };
+                if let Some((sig, summary)) = cached {
+                    if sig == signature {
+                        return Ok(summary);
+                    }
+                }
+
                 if diff_string.is_empty() {
-                    return Ok(CommitSummary {
+                    let no_changes = CommitSummary {
                         summary: "No changes to commit".to_string(),
                         bullets: vec!["No changes detected".to_string()],
                         suggested_message: "chore: no changes".to_string(),
-                    });
+                    };
+                    if staged {
+                        *self.cache_staged.lock().unwrap() = Some((signature, no_changes.clone()));
+                    } else {
+                        *self.cache_unstaged.lock().unwrap() = Some((signature, no_changes.clone()));
+                    }
+                    return Ok(no_changes);
                 }
 
                 let prompt = self.load_prompt_template()?;
@@ -146,7 +171,13 @@ impl GitService {
                     .content
                     .clone();
 
-                self.parse_ai_response(ai_content)
+                let parsed = self.parse_ai_response(ai_content)?;
+                if staged {
+                    *self.cache_staged.lock().unwrap() = Some((signature, parsed.clone()));
+                } else {
+                    *self.cache_unstaged.lock().unwrap() = Some((signature, parsed.clone()));
+                }
+                Ok(parsed)
             }
             None => Err(anyhow::anyhow!("Git repository is not initialized")),
         }
@@ -310,6 +341,11 @@ Given the diff output below, provide:
 
         Ok(summary)
     }
+}
+
+fn compute_diff_signature(diff: &str) -> String {
+    let hash = blake3::hash(diff.as_bytes());
+    hash.to_hex().to_string()
 }
 
 #[cfg(test)]

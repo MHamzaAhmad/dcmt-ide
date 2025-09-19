@@ -28,16 +28,10 @@ function createCheckpointStore() {
 
   const { subscribe, update } = writable<CheckpointState>(initial);
 
-  // Small helpers to simplify state updates
-  const setState = (partial: Partial<CheckpointState>) => update(s => ({ ...s, ...partial }));
-  const setLoading = (isLoading: boolean, lastError: string | null = null) => setState({ isLoading, lastError });
-
   // Simple TTL cache + in-flight dedupe to avoid spamming the API
   const cache = new Map<string, { at: number; data: CheckpointMeta[] }>();
   const inflight = new Map<string, Promise<CheckpointMeta[]>>();
   const TTL_MS = 5_000; // 5s
-  const autoSelected = new Set<string>(); // namespaces auto-selected this session
-  let selectCounter = 0; // concurrency token for restore-on-select
 
   async function list(namespace?: string) {
     const ns = namespace || get({ subscribe }).activeNamespace;
@@ -46,7 +40,7 @@ function createCheckpointStore() {
     // Serve from fresh cache
     const cached = cache.get(key);
     if (cached && Date.now() - cached.at < TTL_MS) {
-      setState({ list: cached.data });
+      update(s => ({ ...s, list: cached.data }));
       return cached.data;
     }
 
@@ -57,22 +51,16 @@ function createCheckpointStore() {
     const adapter = getCheckpointAdapter();
 
     const p = (async () => {
-      setLoading(true, null);
+      update(s => ({ ...s, isLoading: true, lastError: null }));
       try {
         const checkpoints = await adapter.list(ns);
         cache.set(key, { at: Date.now(), data: checkpoints });
-        setState({ list: checkpoints, isLoading: false });
-        // Auto-select latest id once per namespace (no restore side-effects)
-        const current = get({ subscribe });
-        if (!current.selectedId && checkpoints.length > 0 && !autoSelected.has(ns)) {
-          autoSelected.add(ns);
-          setState({ selectedId: checkpoints[0].id });
-        }
+        update(s => ({ ...s, list: checkpoints, isLoading: false }));
         return checkpoints;
       } catch (e: any) {
         const msg = `Failed to list checkpoints: ${e?.message || e}`;
         console.error('[CheckpointStore]', msg);
-        setLoading(false, msg);
+        update(s => ({ ...s, isLoading: false, lastError: msg }));
         throw e;
       } finally {
         inflight.delete(key);
@@ -86,23 +74,17 @@ function createCheckpointStore() {
   async function create(metadata?: { reason?: string; actor?: string; paths?: string[] }) {
     const ns = get({ subscribe }).activeNamespace;
     const adapter = getCheckpointAdapter();
-    setLoading(true, null);
+    update(s => ({ ...s, isLoading: true, lastError: null }));
     try {
       const checkpoint = await adapter.create(ns, metadata);
-      // Invalidate cache for this namespace and refresh list from source to avoid race conditions
+      // Invalidate cache for this namespace
       cache.delete(`list:${ns}`);
-      const refreshed = await list(ns);
-      const isAgent = (metadata?.actor || '').toLowerCase() === 'agent';
-      // Select new checkpoint unless created by agent (agent flows may keep current selection)
-      if (!isAgent) {
-        setState({ selectedId: checkpoint.id });
-      }
-      setLoading(false, null);
+      update(s => ({ ...s, list: [checkpoint, ...s.list], isLoading: false, selectedId: checkpoint.id }));
       return checkpoint;
     } catch (e: any) {
       const msg = `Failed to create checkpoint: ${e?.message || e}`;
       console.error('[CheckpointStore]', msg);
-      setLoading(false, msg);
+      update(s => ({ ...s, isLoading: false, lastError: msg }));
       throw e;
     }
   }
@@ -123,19 +105,19 @@ function createCheckpointStore() {
   async function restore(id: string) {
     const ns = get({ subscribe }).activeNamespace;
     const adapter = getCheckpointAdapter();
-    setLoading(true, null);
+    update(s => ({ ...s, isLoading: true, lastError: null }));
     try {
       const res = await adapter.restore(ns, id);
       // Invalidate cache; underlying history changed
       cache.delete(`list:${ns}`);
-      setLoading(false, null);
+      update(s => ({ ...s, isLoading: false }));
       // Optional: emit a clean UI event
       eventStore.emit({ type: 'ui', subtype: 'project_changed', payload: { projectPath: 'checkpoint_restored', timestamp: Date.now() } });
       return res;
     } catch (e: any) {
       const msg = `Failed to restore checkpoint: ${e?.message || e}`;
       console.error('[CheckpointStore]', msg);
-      setLoading(false, msg);
+      update(s => ({ ...s, isLoading: false, lastError: msg }));
       throw e;
     }
   }
@@ -143,17 +125,17 @@ function createCheckpointStore() {
   async function publish() {
     const ns = get({ subscribe }).activeNamespace;
     const adapter = getCheckpointAdapter();
-    setLoading(true, null);
+    update(s => ({ ...s, isLoading: true, lastError: null }));
     try {
       const res = await adapter.publish(ns);
       cache.delete(`list:${ns}`);
-      setLoading(false, null);
+      update(s => ({ ...s, isLoading: false }));
       eventStore.emit({ type: 'ui', subtype: 'project_changed', payload: { projectPath: 'checkpoint_published', timestamp: Date.now() } });
       return res;
     } catch (e: any) {
       const msg = `Failed to publish checkpoints: ${e?.message || e}`;
       console.error('[CheckpointStore]', msg);
-      setLoading(false, msg);
+      update(s => ({ ...s, isLoading: false, lastError: msg }));
       throw e;
     }
   }
@@ -162,28 +144,8 @@ function createCheckpointStore() {
     update(s => ({ ...s, activeNamespace: ns }));
   }
 
-  async function select(id: string | null) {
-    const prev = get({ subscribe }).selectedId;
-    if (id === null) {
-      setState({ selectedId: null });
-      return;
-    }
-    const token = ++selectCounter;
-    setLoading(true, null);
-    try {
-      await restore(id);
-      // Only apply if this is the latest select
-      if (token === selectCounter) {
-        setState({ selectedId: id, isLoading: false });
-      }
-    } catch (e: any) {
-      const msg = `Failed to restore checkpoint: ${e?.message || e}`;
-      console.error('[CheckpointStore]', msg);
-      if (token === selectCounter) {
-        setState({ selectedId: prev ?? null });
-        setLoading(false, msg);
-      }
-    }
+  function select(id: string | null) {
+    update(s => ({ ...s, selectedId: id }));
   }
 
   function setComparingTo(id: string | null) {

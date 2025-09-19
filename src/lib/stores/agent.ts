@@ -2,7 +2,6 @@ import { writable } from 'svelte/store';
 import { browser } from '$app/environment';
 import { agentAPI } from '$lib/api/agent';
 import { eventStore } from './events';
-import { checkpointStore } from './checkpoints';
 import type { QueryClient } from '@tanstack/svelte-query';
 import type { 
     AgentEvent, 
@@ -656,26 +655,6 @@ function createAgentStore() {
                 isAgentRunning: false
             }));
             
-            // Create a checkpoint to capture the state after this agent run
-            try {
-                const state = store.getCurrentState();
-                const changedPaths = Array.from(state.modifiedFiles.keys());
-                const title = changedPaths.length > 0
-                    ? `Agent run: ${changedPaths.length} file(s) changed`
-                    : 'Agent run completed';
-
-                // Invoke platform-specific checkpoint creation via adapter
-                await checkpointStore.create({ reason: title, actor: 'agent', paths: changedPaths });
-
-                // Optionally refresh list to bypass TTL if another tab updated it
-                // Not strictly required since create() updates the store list
-                // await checkpointStore.list();
-                // Clear modifiedFiles for next run
-                update(s => ({ ...s, modifiedFiles: new Map() }));
-            } catch (err) {
-                console.warn('AgentStore: Failed to auto-create checkpoint after run:', err);
-            }
-
             // Clear completed tool results after a delay
             setTimeout(() => {
                 const state = store.getCurrentState();

@@ -294,3 +294,10 @@ impl GitService {
         Ok(summary)
     }
 }
+
+// Compute a stable signature for a diff string to use for caching summaries.
+// Uses blake3 for fast, consistent hashing.
+fn compute_diff_signature(diff: &str) -> String {
+    let hash = blake3::hash(diff.as_bytes());
+    hash.to_hex().to_string()
+}

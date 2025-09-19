@@ -280,55 +280,6 @@
 		downloadUsed = getDownloadUsed();
 	});
 
-	// Handler functions following STATE.md reactive patterns
-	function handleCompile() {
-		// Use latexStore.forceCompile() as per STATE.md
-		latexStore.forceCompile();
-	}
-
-	function hasUnlimitedDownloads(): boolean {
-		if (!billingState.isReady) return false;
-		// Check by benefit type or description keyword
-		return billingState.benefits.some((b) => b.benefit_type === 'unlimited_downloads' || b.description?.toLowerCase().includes('unlimited download'));
-	}
-
-	function getDownloadUsed(): boolean {
-		if (typeof window === 'undefined') return false;
-		return sessionStorage.getItem('dcmt-download-used') === '1';
-	}
-
-	async function handleDownload() {
-		if (!hasValidPdf || !pdfState.currentPdf) return;
-
-		// Enforce download limits: if user lacks unlimited_downloads and no active sub, allow only one
-		if (billingState.isReady && !hasUnlimitedDownloads()) {
-			// Track a single allowed download per session
-			const key = 'dcmt-download-used';
-			const used = sessionStorage.getItem(key);
-			if (used === '1') {
-				return; // Already used this session
-			} else {
-				sessionStorage.setItem(key, '1');
-				// Reflect immediately in UI
-				downloadUsed = true;
-			}
-		}
-		
-		try {
-			// Create download link for PDF
-			const link = document.createElement('a');
-			link.href = pdfState.currentPdf.url;
-			link.download = pdfState.currentPdf.path.split('/').pop() || 'document.pdf';
-			document.body.appendChild(link);
-			link.click();
-			document.body.removeChild(link);
-		} catch (error) {
-			console.error('Failed to download PDF:', error);
-		}
-	}
-
-	async function handleUpgrade() { upgrading = true; await billingStore.upgrade(); upgrading = false; }
-
 	onDestroy(() => {
 		// Store cleanup is handled by the orchestrator
 		console.log('PDFPreview: Component destroyed');
@@ -411,7 +362,6 @@
 			</TooltipProvider>
 		</div>
 	</div>
-	{/if}
 
 	<!-- PDF Viewer -->
 	<div class="flex-1 overflow-auto p-4 relative" bind:this={containerEl}>

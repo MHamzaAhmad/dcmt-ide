@@ -4,9 +4,7 @@ import { DesktopApiAdapter, DesktopBillingAdapter } from './desktop';
 import { WebApiAdapter, WebBillingAdapter } from './web';
 import { WebGitAdapter } from './web/git';
 import { DesktopGitAdapter } from './desktop/git';
-import { WebCheckpointAdapter } from './web/checkpoints';
-import { DesktopCheckpointAdapter } from './desktop/checkpoints';
-import type { PlatformAPI, ProjectInfo, LaTeXCompileRequest, LaTeXCompileResponse, GitOperations, CompilationEvent, LatexBuildState, CheckpointOperations } from '../types';
+import type { PlatformAPI, ProjectInfo, LaTeXCompileRequest, LaTeXCompileResponse, GitOperations, CompilationEvent, LatexBuildState } from '../types';
 
 // Create singleton instances lazily
 let desktopAdapter: DesktopApiAdapter | null = null;
@@ -15,8 +13,6 @@ let desktopBilling: DesktopBillingAdapter | null = null;
 let webBilling: WebBillingAdapter | null = null;
 let desktopGitAdapter: DesktopGitAdapter | null = null;
 let webGitAdapter: WebGitAdapter | null = null;
-let webCheckpointAdapter: WebCheckpointAdapter | null = null;
-let desktopCheckpointAdapter: DesktopCheckpointAdapter | null = null;
 
 /**
  * Get the appropriate API adapter based on the current platform
@@ -227,19 +223,6 @@ export function getWebGitAdapter(): WebGitAdapter {
 		webGitAdapter = new WebGitAdapter();
 	}
 	return webGitAdapter;
-}
-
-/**
- * Get the unified Checkpoints adapter. For now, checkpoints are served over HTTP even on desktop.
- * @returns CheckpointOperations adapter (web-backed)
- */
-export function getCheckpointAdapter(): CheckpointOperations {
-	if (isTauri()) {
-		if (!desktopCheckpointAdapter) desktopCheckpointAdapter = new DesktopCheckpointAdapter();
-		return desktopCheckpointAdapter;
-	}
-	if (!webCheckpointAdapter) webCheckpointAdapter = new WebCheckpointAdapter();
-	return webCheckpointAdapter;
 }
 
 // Export platform-specific adapters

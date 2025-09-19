@@ -1,8 +1,9 @@
 use crate::{config::Config, svc::{AgentService, FileService, LaTeXService, GitService, LLMService, PolarService}, repo::{AgentRepo, tavily::TavilyRepository, PolarRepository}};
 use crate::transport::middleware::{cors::create_cors_layer, logging::create_trace_layer};
-use crate::transport::routes::{agent_router, files_router, latex_router, sse_router, websocket_router, git_router, llm_router, billing_router, checkpoints_router};
+use crate::transport::routes::{agent_router, files_router, latex_router, sse_router, websocket_router, git_router, llm_router, billing_router};
 use crate::transport::handlers::billing::BillingState;
 use crate::transport::routes::websocket::WebSocketServices;
+use crate::transport::middleware::auth::create_clerk_auth_layer;
 use anyhow::Result;
 use axum::Router;
 use std::sync::Arc;
@@ -68,8 +69,7 @@ pub async fn create_router(config: Config) -> Result<Router> {
     // Create separate routers for different services
     let files_routes = files_router().with_state(file_service.clone());
     let latex_routes = latex_router().with_state(latex_service.clone());
-    let git_routes = git_router().with_state(git_service.clone());
-    let checkpoints_routes = checkpoints_router().with_state(git_service.clone());
+    let git_routes = git_router().with_state(git_service);
     let agent_routes = agent_router().with_state(agent_service.clone());
     let sse_routes = sse_router().with_state(agent_service.clone());
     let llm_routes = llm_router().with_state(llm_service.clone());
@@ -79,14 +79,13 @@ pub async fn create_router(config: Config) -> Result<Router> {
     let api_routes = Router::new()
         .nest("/files", files_routes)
         .nest("/latex", latex_routes)
-    .nest("/git", git_routes)
-    .nest("/checkpoints", checkpoints_routes)
+        .nest("/git", git_routes)
         .nest("/agent", agent_routes)
     .nest("/llm", llm_routes)
     .nest("/billing", billing_routes);
     
     // Protect only REST API routes with Clerk authentication
-    // let api_routes_protected = api_routes.layer(create_clerk_auth_layer(config.clerk_secret_key.clone()));
+    let api_routes_protected = api_routes.layer(create_clerk_auth_layer(config.clerk_secret_key.clone()));
         
         // Create combined WebSocket services state
         let websocket_services = WebSocketServices {
@@ -98,7 +97,7 @@ pub async fn create_router(config: Config) -> Result<Router> {
         // Main application router
     let app = Router::new()
     // REST API (protected)
-    .nest("/api", api_routes)
+    .nest("/api", api_routes_protected)
     // Realtime endpoints (unprotected) - required for browser WS/SSE connectivity
     .nest("/sse", sse_routes)
     .nest("/ws", websocket_router().with_state(websocket_services))

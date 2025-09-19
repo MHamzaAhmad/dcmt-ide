@@ -1,9 +1,8 @@
 use anyhow::{Context, Result};
 use git2::{
-    Branch, BranchType, Delta, DiffOptions, ErrorCode, ObjectType, Oid, Repository, RepositoryOpenFlags,
+    BranchType, Delta, DiffOptions, ErrorCode, Repository, RepositoryOpenFlags,
     Signature, Status, StatusOptions,
 };
-use git2::build::CheckoutBuilder;
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
@@ -70,16 +69,6 @@ pub struct CommitResult {
     pub timestamp: i64,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct CheckpointMeta {
-    pub id: String,
-    pub namespace: String,
-    pub title: String,
-    pub created_at: i64,
-    pub author: String,
-}
-
 pub struct GitRepository {
     repo: Mutex<Repository>,
     workspace_path: PathBuf,
@@ -98,19 +87,6 @@ impl GitRepository {
             repo: Mutex::new(repo),
             workspace_path,
         })
-    }
-
-    fn get_head_commit<'a>(repo: &'a Repository) -> Result<git2::Commit<'a>> {
-        let head = repo.head()?;
-        let commit = head.peel_to_commit()?;
-        Ok(commit)
-    }
-
-    fn find_branch_commit<'a>(repo: &'a Repository, branch_name: &str) -> Result<git2::Commit<'a>> {
-        let branch = repo.find_branch(branch_name, BranchType::Local)
-            .with_context(|| format!("Branch '{}' not found", branch_name))?;
-        let commit = branch.get().peel_to_commit()?;
-        Ok(commit)
     }
 
     pub fn repository_exists(workspace_path: &Path) -> bool {
@@ -426,13 +402,6 @@ impl GitRepository {
         Ok(())
     }
 
-    pub fn get_head_oid_string(&self) -> Result<String> {
-        let repo = self.repo.lock().unwrap();
-        let head = repo.head()?;
-        let oid = head.target().ok_or_else(|| anyhow::anyhow!("HEAD has no target"))?;
-        Ok(oid.to_string())
-    }
-
     fn get_ahead_behind_internal(&self, repo: &Repository, branch_name: &str) -> Result<(usize, usize)> {
         let local_branch = repo.find_branch(branch_name, BranchType::Local)?;
         
@@ -479,239 +448,6 @@ impl GitRepository {
         })?;
         
         Ok(output)
-    }
-
-    pub fn ensure_checkpoint_branch(&self, namespace: &str) -> Result<String> {
-        let repo = self.repo.lock().unwrap();
-        let cp_branch = format!("dcmt/{}", namespace);
-        if repo.find_branch(&cp_branch, git2::BranchType::Local).is_ok() {
-            let commit = Self::find_branch_commit(&repo, &cp_branch)?;
-            return Ok(commit.id().to_string());
-        }
-        // Base new branch on current HEAD
-        let head_commit = Self::get_head_commit(&repo)?;
-        let branch = repo.branch(&cp_branch, &head_commit, false)?;
-        // Return tip id
-        let tip = branch.into_reference().target().ok_or_else(|| anyhow::anyhow!("New branch has no target"))?;
-        Ok(tip.to_string())
-    }
-
-    pub fn list_checkpoints(&self, namespace: &str, max: usize) -> Result<Vec<CheckpointMeta>> {
-        let repo = self.repo.lock().unwrap();
-        let cp_branch = format!("dcmt/{}", namespace);
-        let branch = match repo.find_branch(&cp_branch, git2::BranchType::Local) {
-            Ok(b) => b,
-            Err(_) => {
-                // No checkpoints yet
-                return Ok(Vec::new());
-            }
-        };
-        let mut walk = repo.revwalk()?;
-        walk.push(branch.get().target().ok_or_else(|| anyhow::anyhow!("Branch has no target"))?)?;
-        walk.set_sorting(git2::Sort::TOPOLOGICAL | git2::Sort::TIME)?;
-
-        let mut out = Vec::new();
-        for (i, oid_res) in walk.enumerate() {
-            if i >= max { break; }
-            let oid = oid_res?;
-            let commit = repo.find_commit(oid)?;
-            let title_line = commit.summary().unwrap_or("checkpoint").to_string();
-            let author = commit.author().name().unwrap_or("Unknown").to_string();
-            out.push(CheckpointMeta {
-                id: oid.to_string(),
-                namespace: namespace.to_string(),
-                title: title_line,
-                created_at: commit.time().seconds(),
-                author,
-            });
-        }
-        Ok(out)
-    }
-
-    pub fn diff_commits(&self, base_oid: &str, target_oid: &str) -> Result<GitDiff> {
-        let repo = self.repo.lock().unwrap();
-        let base = Oid::from_str(base_oid)?;
-        let target = Oid::from_str(target_oid)?;
-        let base_commit = repo.find_commit(base)?;
-        let target_commit = repo.find_commit(target)?;
-        let base_tree = base_commit.tree()?;
-        let target_tree = target_commit.tree()?;
-
-        let mut diff_options = DiffOptions::new();
-        let diff = repo.diff_tree_to_tree(Some(&base_tree), Some(&target_tree), Some(&mut diff_options))?;
-
-        let files = Rc::new(RefCell::new(Vec::new()));
-        let total_additions = Rc::new(RefCell::new(0usize));
-        let total_deletions = Rc::new(RefCell::new(0usize));
-        let current_file_index = Rc::new(RefCell::new(None::<usize>));
-
-        {
-            let files_clone = files.clone();
-            let current_file_index_clone = current_file_index.clone();
-            let files_for_line = files.clone();
-            let current_file_index_for_line = current_file_index.clone();
-
-            diff.foreach(
-                &mut |delta, _progress| {
-                    let path = delta.new_file().path()
-                        .and_then(|p| p.to_str())
-                        .unwrap_or("")
-                        .to_string();
-
-                    let old_path = delta.old_file().path()
-                        .and_then(|p| p.to_str())
-                        .map(|s| s.to_string());
-
-                    let status = match delta.status() {
-                        Delta::Added => FileChangeType::Added,
-                        Delta::Deleted => FileChangeType::Deleted,
-                        Delta::Modified => FileChangeType::Modified,
-                        Delta::Renamed => FileChangeType::Renamed,
-                        _ => FileChangeType::Modified,
-                    };
-
-                    let mut files_ref = files_clone.borrow_mut();
-                    files_ref.push(FileDiff {
-                        path,
-                        old_path,
-                        status,
-                        additions: 0,
-                        deletions: 0,
-                        hunks: Vec::new(),
-                    });
-
-                    *current_file_index_clone.borrow_mut() = Some(files_ref.len() - 1);
-
-                    true
-                },
-                None,
-                None,
-                Some(&mut |_delta, _hunk, line| {
-                    match line.origin() {
-                        '+' => {
-                            *total_additions.borrow_mut() += 1;
-                            if let Some(index) = *current_file_index_for_line.borrow() {
-                                if let Some(file) = files_for_line.borrow_mut().get_mut(index) {
-                                    file.additions += 1;
-                                }
-                            }
-                        }
-                        '-' => {
-                            *total_deletions.borrow_mut() += 1;
-                            if let Some(index) = *current_file_index_for_line.borrow() {
-                                if let Some(file) = files_for_line.borrow_mut().get_mut(index) {
-                                    file.deletions += 1;
-                                }
-                            }
-                        }
-                        _ => {}
-                    }
-                    true
-                }),
-            )?;
-        }
-
-        let files_vec = Rc::try_unwrap(files).unwrap().into_inner();
-        let total_adds = *total_additions.borrow();
-        let total_dels = *total_deletions.borrow();
-        let files_count = files_vec.len();
-
-        Ok(GitDiff {
-            files: files_vec,
-            stats: DiffStats {
-                additions: total_adds,
-                deletions: total_dels,
-                files_changed: files_count,
-            },
-        })
-    }
-
-    pub fn publish_checkpoint_fast_forward(&self, namespace: &str) -> Result<String> {
-        let repo = self.repo.lock().unwrap();
-        let cp_branch = format!("dcmt/{}", namespace);
-        let main_branch = self.get_current_branch()?; // publish into current branch
-
-        let cp = repo.find_branch(&cp_branch, git2::BranchType::Local)
-            .with_context(|| format!("Checkpoint branch '{}' not found", cp_branch))?;
-        let cp_oid = cp.get().target().ok_or_else(|| anyhow::anyhow!("Checkpoint branch has no target"))?;
-
-        // Check if current branch is ancestor of checkpoint tip
-        let head_ref = repo.find_reference(&format!("refs/heads/{}", main_branch))?;
-        let head_oid = head_ref.target().ok_or_else(|| anyhow::anyhow!("HEAD has no target"))?;
-        // Require fast-forward: current branch must be ancestor of checkpoint tip
-        let main_is_ancestor = repo.graph_descendant_of(cp_oid, head_oid)?;
-        if !main_is_ancestor {
-            // allow fast-forward only when main is ancestor of checkpoint
-            return Err(anyhow::anyhow!("Publish requires fast-forward: please rebase checkpoint branch onto current branch"));
-        }
-
-        // Fast-forward main to checkpoint tip
-        let mut main_ref = repo.find_reference(&format!("refs/heads/{}", main_branch))?;
-        main_ref.set_target(cp_oid, &format!("fast-forward {} -> {}", main_branch, cp_branch))?;
-
-        // Update checkpoint branch to point to same commit (no-op)
-        let mut cp_ref = cp.into_reference();
-        cp_ref.set_target(cp_oid, &"published".to_string())?;
-        Ok(cp_oid.to_string())
-    }
-
-    pub fn create_checkpoint_at_head(&self, namespace: &str, title: Option<&str>) -> Result<CheckpointMeta> {
-        let repo = self.repo.lock().unwrap();
-        let cp_branch = format!("dcmt/{}", namespace);
-        let head_commit = Self::get_head_commit(&repo)?;
-
-        // Create branch if missing, else move it to HEAD
-        let oid_str = if let Ok(branch) = repo.find_branch(&cp_branch, git2::BranchType::Local) {
-            // Update branch to point to HEAD
-            let mut r = branch.into_reference();
-            r.set_target(head_commit.id(), &format!("update checkpoint {}", namespace))?;
-            head_commit.id().to_string()
-        } else {
-            let branch = repo.branch(&cp_branch, &head_commit, true)?;
-            branch.into_reference().target().ok_or_else(|| anyhow::anyhow!("New checkpoint branch has no target"))?.to_string()
-        };
-
-        let author = head_commit.author().name().unwrap_or("Unknown").to_string();
-        let created_at = head_commit.time().seconds();
-        let title_line = title.map(|s| s.to_string()).unwrap_or_else(|| head_commit.summary().unwrap_or("checkpoint").to_string());
-        Ok(CheckpointMeta { id: oid_str, namespace: namespace.to_string(), title: title_line, created_at, author })
-    }
-
-    pub fn restore_checkpoint_as_commit(&self, checkpoint_oid: &str, message: &str) -> Result<CommitResult> {
-        let repo = self.repo.lock().unwrap();
-        // Ensure clean workdir
-        let statuses = repo.statuses(None)?;
-        if statuses.iter().any(|e| e.status().intersects(Status::WT_MODIFIED | Status::WT_NEW | Status::WT_DELETED | Status::INDEX_MODIFIED | Status::INDEX_NEW | Status::INDEX_DELETED)) {
-            return Err(anyhow::anyhow!("Working directory not clean; commit or stash changes before restore"));
-        }
-
-        let oid = Oid::from_str(checkpoint_oid)?;
-        let commit = repo.find_commit(oid)?;
-        let tree = commit.tree()?;
-
-        // Checkout tree to working directory (force)
-        let mut cb = CheckoutBuilder::new();
-        cb.force();
-        repo.checkout_tree(tree.as_object(), Some(&mut cb))?;
-
-        // Update index to match tree
-        let mut index = repo.index()?;
-        index.read_tree(&tree)?;
-        index.write()?;
-
-        // Create a new commit on current branch with the checkpoint tree
-        let signature = self.get_signature_internal(&repo)?;
-        let head_commit = Self::get_head_commit(&repo)?;
-        let oid = repo.commit(
-            Some("HEAD"),
-            &signature,
-            &signature,
-            message,
-            &tree,
-            &[&head_commit],
-        )?;
-        let new_commit = repo.find_commit(oid)?;
-        Ok(CommitResult { sha: oid.to_string(), message: message.to_string(), author: signature.name().unwrap_or("Unknown").to_string(), timestamp: new_commit.time().seconds() })
     }
 }
 

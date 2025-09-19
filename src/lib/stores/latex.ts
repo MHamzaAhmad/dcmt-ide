@@ -33,6 +33,7 @@ export interface LaTeXState {
     
     // Settings
     autoCompile: boolean;
+    selectedProvider: LaTeXProvider;
     
     // Errors
     error: string | null;
@@ -47,6 +48,7 @@ function createLatexStore() {
         mainFile: null,
         compilationStatus: 'idle',
         autoCompile: true,
+    selectedProvider: LaTeXProvider.Auto,
         lastCompilation: null,
         currentPdfPath: null,
         error: null,
@@ -91,6 +93,14 @@ function createLatexStore() {
                     ...state,
                     isReady: true
                 }));
+
+                // Restore provider preference if available
+                try {
+                    const saved = localStorage.getItem('latex-provider');
+                    if (saved && (Object as any).values(LaTeXProvider).includes(saved)) {
+                        update(state => ({ ...state, selectedProvider: saved as LaTeXProvider }));
+                    }
+                } catch {}
 
                 isInitialized = true;
                 console.log('LaTeXStore: Initialized successfully');
@@ -193,8 +203,9 @@ function createLatexStore() {
         // Manual compilation controls
         async compile(): Promise<void> {
             try {
+                const state = store.getCurrentState();
                 await platformApi.compileLatex({ 
-                    provider: LaTeXProvider.Auto 
+                    provider: state.selectedProvider || LaTeXProvider.Auto 
                 });
             } catch (error) {
                 console.error('LaTeXStore: Manual compilation error:', error);
@@ -233,6 +244,14 @@ function createLatexStore() {
             
             // Note: Backend automatically detects and sets the main file
             // This is just for updating the frontend UI state
+        },
+
+        setProvider(provider: LaTeXProvider): void {
+            update(state => ({
+                ...state,
+                selectedProvider: provider
+            }));
+            try { localStorage.setItem('latex-provider', provider); } catch {}
         },
 
         // Status queries

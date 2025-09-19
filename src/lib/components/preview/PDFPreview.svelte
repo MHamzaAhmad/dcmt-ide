@@ -3,6 +3,7 @@
 	import { Button } from '$lib/components/ui/button';
 	import { Tooltip as TooltipRoot, TooltipContent, TooltipTrigger, TooltipProvider } from '$lib/components/ui/tooltip';
 	import { pdfStore, latexStore, isCompiling, checkpointStore } from '$lib/stores';
+	import { LaTeXProvider } from '$lib/api/types';
 	import { billingStore } from '$lib/stores';
 	import LaTeXErrorPanel from '$lib/components/errors/LaTeXErrorPanel.svelte';
 
@@ -104,6 +105,18 @@
 		}
 	}
 	function handleCompile() { latexStore.forceCompile(); }
+
+	// Provider selection (default Auto)
+	const providerOptions: { label: string; value: LaTeXProvider }[] = [
+		{ label: 'Auto', value: LaTeXProvider.Auto },
+		{ label: 'pdfLaTeX', value: LaTeXProvider.Pdflatex },
+		{ label: 'XeLaTeX', value: LaTeXProvider.Xelatex },
+		{ label: 'LuaLaTeX', value: LaTeXProvider.Lualatex }
+	];
+	function onProviderChange(ev: Event) {
+		const v = (ev.target as HTMLSelectElement).value as LaTeXProvider;
+		latexStore.setProvider(v);
+	}
 	function hasUnlimitedDownloads(): boolean {
 		if (!billingState.isReady) return false;
 		// Check by benefit type or description keyword
@@ -321,8 +334,27 @@
 <div class="h-full flex flex-col {fullPanel ? 'bg-background' : 'bg-muted/20'}">
 	<!-- Single Header Bar -->
 	<div class="h-8 border-b bg-background flex items-center px-3 gap-3">
-		<!-- Left: actions -->
+		<!-- Left: engine + actions -->
 		<div class="flex items-center gap-2">
+			<!-- Engine dropdown with tooltip (before Compile) -->
+			<TooltipProvider>
+				<TooltipRoot>
+					<TooltipTrigger>
+						<select
+							id="latex-provider-select"
+							class="text-xs border rounded px-2 py-1 bg-background w-28 truncate"
+							onchange={onProviderChange}
+							bind:value={latexState.selectedProvider}
+							title="Select LaTeX engine"
+						>
+							{#each providerOptions as opt}
+								<option value={opt.value}>{opt.label}</option>
+							{/each}
+						</select>
+					</TooltipTrigger>
+					<TooltipContent>Engine</TooltipContent>
+				</TooltipRoot>
+			</TooltipProvider>
 			<Button variant="default" size="sm" onclick={handleCompile} disabled={$isCompiling} class="h-6 gap-1.5 px-2">
 				{$isCompiling ? 'Compiling…' : 'Compile'}
 			</Button>
@@ -332,25 +364,32 @@
 		</div>
 		<!-- Spacer -->
 		<div class="flex-1"></div>
-		<!-- Right: checkpoints dropdown and downloads badge -->
+			<!-- Right: provider, checkpoints dropdown and downloads badge -->
 		<div class="flex items-center gap-2">
 			{#if cpState.isLoading}
 				<span class="text-xs text-muted-foreground">Loading…</span>
 			{:else if cpState.list.length === 0}
 				<span class="text-xs text-muted-foreground">No checkpoints</span>
 			{:else}
-				<label class="text-xs text-muted-foreground" for={cpSelectId}>Checkpoint</label>
-				<select
-					id={cpSelectId}
-					class="text-xs border rounded px-2 py-1 bg-background w-28 truncate"
-					bind:value={cpSelectedLocal}
-					onchange={onCheckpointChange}
-					title="Select checkpoint"
-				>
-					{#each cpState.list as cp}
-						<option value={String(cp.id)}>{cp.title}</option>
-					{/each}
-				</select>
+				<!-- Checkpoint dropdown with tooltip (no visible label) -->
+				<TooltipProvider>
+					<TooltipRoot>
+						<TooltipTrigger>
+							<select
+								id={cpSelectId}
+								class="text-xs border rounded px-2 py-1 bg-background w-28 truncate"
+								bind:value={cpSelectedLocal}
+								onchange={onCheckpointChange}
+								title="Select checkpoint"
+							>
+								{#each cpState.list as cp}
+									<option value={String(cp.id)}>{cp.title}</option>
+								{/each}
+							</select>
+						</TooltipTrigger>
+						<TooltipContent>Checkpoint</TooltipContent>
+					</TooltipRoot>
+				</TooltipProvider>
 			{/if}
 			<TooltipProvider>
 				<TooltipRoot>

@@ -3,7 +3,8 @@ import type { CheckpointMeta, CheckpointDiffResult, CheckpointOperations, GitDif
 
 export class WebCheckpointAdapter implements CheckpointOperations {
   async list(namespace: string): Promise<CheckpointMeta[]> {
-    const params = new URLSearchParams({ ns: namespace });
+  // Ask backend for a reasonable capped list (kept in sync with desktop adapter default)
+  const params = new URLSearchParams({ ns: namespace, max: String(50) });
     const res = await apiClient.get<{ checkpoints: any[] }>(`/api/checkpoints?${params}`);
     return (res.checkpoints || []).map((cp: any) => ({
       id: cp.id,

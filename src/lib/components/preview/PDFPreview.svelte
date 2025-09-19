@@ -48,6 +48,20 @@
 	const latexState = $derived($latexStore);
 	const billingState = $derived($billingStore);
 	const cpState = $derived($checkpointStore);
+	import { agentStore } from '$lib/stores';
+	const agentState = $derived($agentStore);
+	// Local selection state mirrors store; restore is now an explicit action
+	let cpSelectedLocal = $state<string>('');
+	let cpSelectPending = $state(false);
+
+	// Sync local from store when not in-flight and when value actually changed
+	$effect(() => {
+		if (cpSelectPending) return;
+		const next = cpState.selectedId ? String(cpState.selectedId) : '';
+		if (cpSelectedLocal !== next) {
+			cpSelectedLocal = next;
+		}
+	});
 	let downloadUsed = $state(false);
 	// Use store derivatives directly - no manual subscriptions needed
 	const hasValidPdf = $derived(pdfState.currentPdf && pdfState.currentPdf.pdfDoc && !pdfState.isLoading && !pdfState.error);
@@ -78,11 +92,16 @@
 				queueResizeRender(width);
 			}
 		};
-		window.addEventListener('resize', onWindowResize);
+	window.addEventListener('resize', onWindowResize);
 	});
-	function onCheckpointChange(ev: Event) {
+	async function onCheckpointChange(ev: Event) {
 		const id = (ev.target as HTMLSelectElement).value;
-		checkpointStore.select(id || null);
+		cpSelectPending = true;
+		try {
+			await checkpointStore.select(id || null);
+		} finally {
+			cpSelectPending = false;
+		}
 	}
 	function handleCompile() { latexStore.forceCompile(); }
 	function hasUnlimitedDownloads(): boolean {
@@ -99,6 +118,9 @@
 		if (hasUnlimitedDownloads()) return '∞';
 		return downloadUsed ? 0 : 1;
 	}
+
+	// Note: we rely on checkpointStore.create() (triggered by agent store) to update the list.
+	// Avoid reactive refresh loops here.
 	async function handleDownload() {
 		if (!hasValidPdf || !pdfState.currentPdf) return;
 		if (billingState.isReady && !hasUnlimitedDownloads()) {
@@ -318,10 +340,15 @@
 				<span class="text-xs text-muted-foreground">No checkpoints</span>
 			{:else}
 				<label class="text-xs text-muted-foreground" for={cpSelectId}>Checkpoint</label>
-				<select id={cpSelectId} class="text-xs border rounded px-2 py-1 bg-background" onchange={onCheckpointChange} value={cpState.selectedId ?? ''} title="Select checkpoint">
-					<option value="">Select checkpoint…</option>
+				<select
+					id={cpSelectId}
+					class="text-xs border rounded px-2 py-1 bg-background w-28 truncate"
+					bind:value={cpSelectedLocal}
+					onchange={onCheckpointChange}
+					title="Select checkpoint"
+				>
 					{#each cpState.list as cp}
-						<option value={cp.id}>{cp.title}</option>
+						<option value={String(cp.id)}>{cp.title}</option>
 					{/each}
 				</select>
 			{/if}

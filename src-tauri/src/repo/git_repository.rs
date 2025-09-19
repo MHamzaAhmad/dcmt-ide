@@ -498,27 +498,33 @@ impl GitRepository {
 
     pub fn list_checkpoints(&self, namespace: &str, max: usize) -> Result<Vec<CheckpointMeta>> {
         let repo = self.repo.lock().unwrap();
-        let cp_branch = format!("dcmt/{}", namespace);
-        let branch = match repo.find_branch(&cp_branch, git2::BranchType::Local) {
-            Ok(b) => b,
-            Err(_) => {
-                // No checkpoints yet
-                return Ok(Vec::new());
+        let pattern = format!("dcmt/{}/v*", namespace);
+        let tag_names = repo.tag_names(Some(&pattern))?;
+
+        let mut versions: Vec<(u64, String)> = Vec::new();
+        for name_opt in tag_names.iter().flatten() {
+            if let Some(idx) = name_opt.rfind('v') {
+                if let Ok(num) = name_opt[idx + 1..].parse::<u64>() {
+                    versions.push((num, name_opt.to_string()));
+                }
             }
-        };
-        let mut walk = repo.revwalk()?;
-        walk.push(branch.get().target().ok_or_else(|| anyhow::anyhow!("Branch has no target"))?)?;
-        walk.set_sorting(git2::Sort::TOPOLOGICAL | git2::Sort::TIME)?;
+        }
+        versions.sort_by(|a, b| b.0.cmp(&a.0));
 
         let mut out = Vec::new();
-        for (i, oid_res) in walk.enumerate() {
+        for (i, (_v, tag_name)) in versions.into_iter().enumerate() {
             if i >= max { break; }
-            let oid = oid_res?;
-            let commit = repo.find_commit(oid)?;
-            let title_line = commit.summary().unwrap_or("checkpoint").to_string();
+            let full_ref = format!("refs/tags/{}", tag_name);
+            let obj = repo.revparse_single(&full_ref)?;
+            let commit = obj.peel_to_commit()?;
             let author = commit.author().name().unwrap_or("Unknown").to_string();
+            let title_line = tag_name
+                .rsplit('/')
+                .next()
+                .map(|s| s.to_string())
+                .unwrap_or_else(|| "v1".to_string());
             out.push(CheckpointMeta {
-                id: oid.to_string(),
+                id: commit.id().to_string(),
                 namespace: namespace.to_string(),
                 title: title_line,
                 created_at: commit.time().seconds(),
@@ -658,23 +664,59 @@ impl GitRepository {
     pub fn create_checkpoint_at_head(&self, namespace: &str, title: Option<&str>) -> Result<CheckpointMeta> {
         let repo = self.repo.lock().unwrap();
         let cp_branch = format!("dcmt/{}", namespace);
-        let head_commit = Self::get_head_commit(&repo)?;
 
-        // Create branch if missing, else move it to HEAD
-        let oid_str = if let Ok(branch) = repo.find_branch(&cp_branch, git2::BranchType::Local) {
-            // Update branch to point to HEAD
-            let mut r = branch.into_reference();
-            r.set_target(head_commit.id(), &format!("update checkpoint {}", namespace))?;
-            head_commit.id().to_string()
-        } else {
-            let branch = repo.branch(&cp_branch, &head_commit, true)?;
-            branch.into_reference().target().ok_or_else(|| anyhow::anyhow!("New checkpoint branch has no target"))?.to_string()
+        // Stage all files to snapshot current state
+        {
+            let mut index = repo.index()?;
+            index.add_all(["*"].iter(), git2::IndexAddOption::DEFAULT, None)?;
+            index.write()?;
+        }
+
+        // Build tree and create a commit object (without moving HEAD)
+        let tree_id = repo.index()?.write_tree()?;
+        let tree = repo.find_tree(tree_id)?;
+        let parent_commit = match repo.head() {
+            Ok(h) => Some(h.peel_to_commit()?),
+            Err(e) if e.code() == ErrorCode::UnbornBranch => None,
+            Err(e) => return Err(e.into()),
         };
+        let parents: Vec<git2::Commit> = parent_commit.iter().cloned().collect();
+        let sig = self.get_signature_internal(&repo)?;
+        let commit_message = title
+            .map(|s| s.to_string())
+            .unwrap_or_else(|| format!("checkpoint: {}", namespace));
+        let new_oid = repo.commit(None, &sig, &sig, &commit_message, &tree, &parents.iter().collect::<Vec<_>>())?;
+        let new_commit = repo.find_commit(new_oid)?;
 
-        let author = head_commit.author().name().unwrap_or("Unknown").to_string();
-        let created_at = head_commit.time().seconds();
-        let title_line = title.map(|s| s.to_string()).unwrap_or_else(|| head_commit.summary().unwrap_or("checkpoint").to_string());
-        Ok(CheckpointMeta { id: oid_str, namespace: namespace.to_string(), title: title_line, created_at, author })
+        // Ensure/update checkpoint branch to this new commit
+        if let Ok(branch) = repo.find_branch(&cp_branch, git2::BranchType::Local) {
+            let mut r = branch.into_reference();
+            r.set_target(new_oid, &format!("update checkpoint {}", namespace))?;
+        } else {
+            let _ = repo.branch(&cp_branch, &new_commit, true)?;
+        }
+
+        let author = new_commit.author().name().unwrap_or("Unknown").to_string();
+        let created_at = new_commit.time().seconds();
+
+        // Create next version tag pointing to the snapshot commit
+        let pattern = format!("dcmt/{}/v*", namespace);
+        let tag_names = repo.tag_names(Some(&pattern))?;
+        let mut max_ver: u64 = 0;
+        for name_opt in tag_names.iter().flatten() {
+            if let Some(idx) = name_opt.rfind('v') {
+                if let Ok(num) = name_opt[idx + 1..].parse::<u64>() {
+                    if num > max_ver { max_ver = num; }
+                }
+            }
+        }
+        let next_ver = max_ver + 1;
+        let tag_short = format!("v{}", next_ver);
+        let tag_full = format!("dcmt/{}/{}", namespace, tag_short);
+        repo.tag_lightweight(&tag_full, new_commit.as_object(), false)
+            .with_context(|| format!("Failed to create checkpoint tag '{}'", tag_full))?;
+
+        Ok(CheckpointMeta { id: new_oid.to_string(), namespace: namespace.to_string(), title: tag_short, created_at, author })
     }
 
     pub fn restore_checkpoint_as_commit(&self, checkpoint_oid: &str, message: &str) -> Result<CommitResult> {

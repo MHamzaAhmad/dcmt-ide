@@ -230,8 +230,9 @@ export function getWebGitAdapter(): WebGitAdapter {
 }
 
 /**
- * Get the unified Checkpoints adapter. For now, checkpoints are served over HTTP even on desktop.
- * @returns CheckpointOperations adapter (web-backed)
+ * Get the unified Checkpoints adapter.
+ * - Desktop (Tauri): use Tauri commands -> local git repo (no HTTP).
+ * - Web: use backend HTTP API.
  */
 export function getCheckpointAdapter(): CheckpointOperations {
 	if (isTauri()) {

@@ -15,6 +15,7 @@ import { eventStore } from './events';
 import { projectStore } from './project';
 import { authStore } from './auth';
 import { isTauri } from '$lib/utils/platform';
+import { platformApi } from '$lib/api/adapters';
 import type { QueryClient } from '@tanstack/svelte-query';
 
 export interface InitializationStep {
@@ -395,6 +396,52 @@ function createInitializationOrchestrator() {
 
                 // Wait for all parallel operations to complete
                 await Promise.all(parallelInitPromises);
+
+                // Ensure a main file is opened in the editor after systems are ready
+                try {
+                    const wsState = workspaceStore.getCurrentState();
+                    const hasActive = !!wsState.activeFile;
+                    if (!hasActive) {
+                        // Try LaTeX-detected main file first
+                        let targetPath: string | null = latexStore.getCurrentState().mainFile || null;
+
+                        // If not yet detected, ask platform API
+                        if (!targetPath) {
+                            try {
+                                targetPath = await platformApi.findMainLatexFile();
+                            } catch (e) {
+                                console.warn('Orchestrator: findMainLatexFile failed, will try fallback:', e);
+                            }
+                        }
+
+                        // Fallback: first .tex from file tree
+                        if (!targetPath) {
+                            const findFirstTex = (nodes: any[] | undefined): string | null => {
+                                if (!nodes) return null;
+                                for (const node of nodes) {
+                                    if (node.type === 'file' && typeof node.path === 'string' && node.path.toLowerCase().endsWith('.tex')) {
+                                        return node.path;
+                                    }
+                                    if (node.type === 'directory' && Array.isArray(node.children)) {
+                                        const found = findFirstTex(node.children);
+                                        if (found) return found;
+                                    }
+                                }
+                                return null;
+                            };
+                            targetPath = findFirstTex(wsState.fileTree);
+                        }
+
+                        if (targetPath) {
+                            await workspaceStore.openFile(targetPath);
+                            console.log('InitializationOrchestrator: Opened editor file:', targetPath);
+                        } else {
+                            console.log('InitializationOrchestrator: No LaTeX file to open by default');
+                        }
+                    }
+                } catch (e) {
+                    console.warn('InitializationOrchestrator: Failed to auto-open editor file:', e);
+                }
 
                 // All steps completed successfully
                 const totalDuration = Date.now() - startTime;

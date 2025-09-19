@@ -100,6 +100,10 @@
 	// Check if project selection is needed (desktop only)
 	let needsSetup = $derived(supportsProjects && projectState.isReady && !projectState.currentProject);
 
+
+
+
+
 </script>
 
 {#if needsSetup}

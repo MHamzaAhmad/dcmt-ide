@@ -9,18 +9,12 @@ echo "🚀 Starting DCMT Editor Container..."
 # Create necessary directories
 mkdir -p /app/logs
 
-# If running as root, ensure workspace ownership matches appuser before dropping privileges
+# If running as root, prepare env defaults and ensure workspace path exists
 if [ "$(id -u)" = "0" ]; then
-    # Default envs in case not provided
     : "${APP_USER:=appuser}"
     : "${APP_GROUP:=appgroup}"
     : "${DCMT_WORKSPACE_PATH:=/app/workspace}"
-
-    echo "🔐 Running as root; ensuring workspace ownership for ${APP_USER}:${APP_GROUP}..."
     mkdir -p "$DCMT_WORKSPACE_PATH"
-    # Attempt a fast chown; ignore errors on special filesystems
-    chown -R ${APP_USER}:${APP_GROUP} "$DCMT_WORKSPACE_PATH" 2>/dev/null || true
-    chmod 0775 "$DCMT_WORKSPACE_PATH" 2>/dev/null || true
 fi
 
 # Environment variable validation
@@ -64,22 +58,18 @@ if [ -d "$DCMT_WORKSPACE_PATH" ]; then
     echo "  - Permissions: $workspace_perms"
     echo "  - UID:GID: $workspace_uid:$workspace_gid"
     
-    # Check if workspace is writable by current user
-    if [ -w "$DCMT_WORKSPACE_PATH" ]; then
-        echo "  - Writable: ✅ Yes"
-    else
-        echo "  - Writable: ❌ No"
-        echo "⚠️  Warning: Workspace directory is not writable by current user"
-        # If running as root, fix perms; otherwise log and continue (git may still fail)
-        if [ "$(id -u)" = "0" ]; then
-            echo "🔧 Attempting to fix workspace permissions (running as root)..."
-            # Prefer to adjust ownership only if owned by root. If owned by a non-root UID
-            # (e.g. host user via bind mount), we will instead drop privileges to that UID later.
-            if [ "$workspace_uid" = "0" ]; then
-              chown -R ${APP_USER}:${APP_GROUP} "$DCMT_WORKSPACE_PATH" || true
-              chmod 0775 "$DCMT_WORKSPACE_PATH" || true
-            fi
+    # If running as root, ensure libgit2 owner rules are satisfied:
+    # - If workspace owned by root, take ownership as appuser so app can run as appuser
+    # - If workspace owned by a non-root UID (bind mount), do not chown; we'll drop to that UID later
+    if [ "$(id -u)" = "0" ]; then
+        if [ "$workspace_uid" = "0" ]; then
+            echo "🔑 Taking ownership of workspace for ${APP_USER}:${APP_GROUP}"
+            chown -R ${APP_USER}:${APP_GROUP} "$DCMT_WORKSPACE_PATH" || true
+            # After this, effective owner for matching should be appuser
+        else
+            echo "ℹ️  Workspace owned by non-root UID ($workspace_uid); will run as that UID"
         fi
+        chmod 0775 "$DCMT_WORKSPACE_PATH" || true
     fi
 else
     echo "❌ Workspace directory does not exist: $DCMT_WORKSPACE_PATH"

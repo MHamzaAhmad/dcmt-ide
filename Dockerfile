@@ -74,12 +74,8 @@ RUN python3 -m venv /app/litellm-venv && \
     /app/litellm-venv/bin/pip install --upgrade pip && \
     /app/litellm-venv/bin/pip install 'litellm[proxy]'
 
-# Create app user with specific UID/GID for better volume compatibility
-RUN groupadd -g ${USER_GID} appgroup && \
-    useradd -u ${USER_UID} -g appgroup -m -s /bin/bash appuser
-
-# Document effective runtime IDs
-ENV APP_USER=appuser APP_GROUP=appgroup APP_UID=${USER_UID} APP_GID=${USER_GID}
+# Document effective runtime IDs (names not required; we run with numeric IDs)
+ENV APP_UID=${USER_UID} APP_GID=${USER_GID}
 
 # Create necessary directories
 RUN mkdir -p /app/frontend \
@@ -92,38 +88,38 @@ RUN mkdir -p /app/frontend \
     /var/lib/nginx/fastcgi \
     /var/lib/nginx/uwsgi \
     /var/lib/nginx/scgi \
-    && chown -R appuser:appgroup /app \
-    && chown -R appuser:appgroup /var/log/supervisor \
-    && chown -R appuser:appgroup /var/lib/nginx \
-    && chown -R appuser:appgroup /run/nginx \
+    && chown -R ${USER_UID}:${USER_GID} /app \
+    && chown -R ${USER_UID}:${USER_GID} /var/log/supervisor \
+    && chown -R ${USER_UID}:${USER_GID} /var/lib/nginx \
+    && chown -R ${USER_UID}:${USER_GID} /run/nginx \
     && chmod -R 0775 /var/log/supervisor /var/lib/nginx /run/nginx
 
 # Ensure logs directory is writable
 RUN chmod 0775 /app/logs
 
 # Copy built frontend
-COPY --from=frontend-builder --chown=appuser:appgroup /app/build /app/frontend
+COPY --from=frontend-builder --chown=${USER_UID}:${USER_GID} /app/build /app/frontend
 
 # Copy built backend
-COPY --from=backend-builder --chown=appuser:appgroup /app/backend/target/release/dcmt-backend /app/backend/dcmt-backend
+COPY --from=backend-builder --chown=${USER_UID}:${USER_GID} /app/backend/target/release/dcmt-backend /app/backend/dcmt-backend
 
 # Copy configuration files
-COPY --chown=appuser:appgroup docker/nginx-internal.conf /etc/nginx/nginx.conf
-COPY --chown=appuser:appgroup docker/supervisord.conf /etc/supervisord.conf
-COPY --chown=appuser:appgroup docker/docker-entrypoint.sh /app/docker-entrypoint.sh
+COPY --chown=${USER_UID}:${USER_GID} docker/nginx-internal.conf /etc/nginx/nginx.conf
+COPY --chown=${USER_UID}:${USER_GID} docker/supervisord.conf /etc/supervisord.conf
+COPY --chown=${USER_UID}:${USER_GID} docker/docker-entrypoint.sh /app/docker-entrypoint.sh
 
 # Copy LiteLLM configuration
-COPY --chown=appuser:appgroup litellm/config.yaml /app/litellm/config.yaml
+COPY --chown=${USER_UID}:${USER_GID} litellm/config.yaml /app/litellm/config.yaml
 
 # Copy prompts directory
-COPY --chown=appuser:appgroup prompts/ /app/prompts/
+COPY --chown=${USER_UID}:${USER_GID} prompts/ /app/prompts/
 
 # Make scripts executable
 RUN chmod +x /app/docker-entrypoint.sh
 
-## Create workspace directory owned by appuser; runtime will be rootless
+## Create workspace directory owned by numeric runtime user; runtime will be rootless
 RUN mkdir -p /workspace && \
-    chown -R appuser:appgroup /workspace && \
+    chown -R ${USER_UID}:${USER_GID} /workspace && \
     chmod 0775 /workspace
 
 # Declare workspace as a volume (matches orchestrator mount target)
@@ -138,8 +134,8 @@ ENV DCMT_PORT=3001
 ENV DCMT_WORKSPACE_PATH=/workspace
 ENV LITELLM_BASE_URL=http://127.0.0.1:4000
 
-## Rootless runtime: switch to appuser
-USER appuser
+## Rootless runtime: switch to numeric user
+USER ${USER_UID}:${USER_GID}
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \

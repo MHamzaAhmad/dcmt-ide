@@ -91,6 +91,7 @@ impl GitService {
             Some(u) if !u.trim().is_empty() => u,
             _ => return Ok(false),
         };
+        tracing::info!("GitService: ensure_repository cloning/opening url={}", url);
         let repo = GitRepository::clone_or_open(
             self.workspace_path.clone(),
             &url,
@@ -99,6 +100,7 @@ impl GitService {
         )?;
         let mut guard = self.repo.lock().unwrap();
         *guard = Some(Arc::new(repo));
+        tracing::info!("GitService: repository is now initialized");
         Ok(true)
     }
 

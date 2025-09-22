@@ -1,6 +1,6 @@
 use anyhow::{Context, Result};
 use git2::{
-    BranchType, Delta, DiffOptions, ErrorCode, FetchOptions, RemoteCallbacks, Repository, RepositoryOpenFlags,
+    BranchType, Delta, DiffOptions, ErrorCode, Repository, RepositoryOpenFlags,
     Signature, Status, StatusOptions,
 };
 use serde::{Deserialize, Serialize};
@@ -82,30 +82,80 @@ impl GitRepository {
         git_user_name: Option<&str>,
         git_user_email: Option<&str>,
     ) -> Result<Self> {
-        // If .git exists or open_ext succeeds, just open
+        // If a repository appears to exist at the path, verify it's usable; if it's a partial/empty repo, clean and re-clone.
         if Self::repository_exists(&workspace_path) {
-            return Self::new(workspace_path);
+            // Attempt to open and verify state
+            match Self::new(workspace_path.clone()) {
+                Ok(existing) => {
+                    let has_commits = existing.has_commits().unwrap_or(false);
+
+                    // If repo has commits, it's valid; return it.
+                    if has_commits {
+                        return Ok(existing);
+                    }
+
+                    // If no commits and likely no remote, and directory is effectively empty (only .git), treat as partial and re-clone
+                    let only_git_dir = match std::fs::read_dir(&workspace_path) {
+                        Ok(mut it) => {
+                            let mut non_git_entries = 0usize;
+                            while let Some(Ok(entry)) = it.next() {
+                                let name = entry.file_name();
+                                if name != ".git" { non_git_entries += 1; break; }
+                            }
+                            non_git_entries == 0
+                        }
+                        Err(_) => false,
+                    };
+
+                    if !has_commits && only_git_dir {
+                        tracing::warn!("Found partial git repo (no commits, no remote) at {:?}; re-cloning {}", workspace_path, repo_url);
+                        // Clean directory and proceed to clone
+                        if workspace_path.exists() {
+                            std::fs::remove_dir_all(&workspace_path)
+                                .with_context(|| format!("Failed to remove partial repo at {:?}", workspace_path))?;
+                        }
+                        std::fs::create_dir_all(&workspace_path)
+                            .with_context(|| format!("Failed to recreate workspace directory at {:?}", workspace_path))?;
+                    } else {
+                        // Repo exists but has no commits (intentional empty repo) or has remote configured; return as-is
+                        return Ok(existing);
+                    }
+                }
+                Err(_e) => {
+                    // Fall through to try a fresh clone
+                    if workspace_path.exists() {
+                        let _ = std::fs::remove_dir_all(&workspace_path);
+                    }
+                }
+            }
         }
 
         // Ensure directory exists
         std::fs::create_dir_all(&workspace_path)
             .with_context(|| format!("Failed to create workspace directory at {:?}", workspace_path))?;
 
-        // Try to clone
-        let mut callbacks = RemoteCallbacks::new();
-        callbacks.credentials(|_url, username_from_url, _allowed_types| {
-            // Try SSH agent if URL is ssh, otherwise default
-            git2::Cred::ssh_key_from_agent(username_from_url.unwrap_or("git"))
-        });
-        let mut fo = FetchOptions::new();
-        fo.remote_callbacks(callbacks);
-
+        // Try to clone (HTTPS with embedded credentials in the URL). No credential callbacks.
         let mut builder = git2::build::RepoBuilder::new();
-        builder.fetch_options(fo);
 
-        let repo = builder
-            .clone(repo_url, &workspace_path)
-            .with_context(|| format!("Failed to clone repository from {} to {:?}", repo_url, workspace_path))?;
+        tracing::info!("GitRepository: cloning into {:?}", workspace_path);
+        let repo = match builder.clone(repo_url, &workspace_path) {
+            Ok(r) => {
+                tracing::info!("GitRepository: clone complete");
+                r
+            }
+            Err(e) => {
+                tracing::error!("GitRepository: clone failed into {:?}: {}", workspace_path, e);
+                // Best-effort cleanup of partial repo to avoid leaving just .git
+                if workspace_path.exists() {
+                    if let Err(clean_err) = std::fs::remove_dir_all(&workspace_path) {
+                        tracing::warn!("GitRepository: failed to cleanup partial workspace at {:?}: {}", workspace_path, clean_err);
+                    }
+                    let _ = std::fs::create_dir_all(&workspace_path);
+                }
+                return Err(anyhow::anyhow!("Failed to clone repository: {}", e))
+                    .with_context(|| format!("Failed to clone repository to {:?}", workspace_path));
+            }
+        };
 
         // Configure user.name and user.email if provided
         if git_user_name.is_some() || git_user_email.is_some() {
@@ -433,28 +483,15 @@ impl GitRepository {
     pub fn push(&self, remote_name: &str, branch_name: &str) -> Result<()> {
         let repo = self.repo.lock().unwrap();
         let mut remote = repo.find_remote(remote_name)?;
-        
-        // Push with authentication callback
-        let mut callbacks = git2::RemoteCallbacks::new();
-        callbacks.credentials(|_url, username_from_url, _allowed_types| {
-            git2::Cred::ssh_key_from_agent(username_from_url.unwrap_or("git"))
-        });
-        
-        let mut push_options = git2::PushOptions::new();
-        push_options.remote_callbacks(callbacks);
-        
-        remote.push(
-            &[format!("refs/heads/{}:refs/heads/{}", branch_name, branch_name)],
-            Some(&mut push_options),
-        )?;
-        
-        Ok(())
-    }
+        let remote_url = remote.url().unwrap_or("").to_string();
 
-    pub fn get_remote_url(&self) -> Result<String> {
-        let repo = self.repo.lock().unwrap();
-        let remote = repo.find_remote("origin")?;
-        Ok(remote.url().unwrap_or("").to_string())
+        // Push without credential callbacks; for HTTPS, embedded credentials in URL should be used
+        let refspec = format!("refs/heads/{}:refs/heads/{}", branch_name, branch_name);
+        tracing::info!("GitRepository: pushing {} to remote {}", branch_name, redacted_remote(&remote_url));
+        remote
+            .push(&[refspec], None)
+            .with_context(|| format!("Failed to push to remote {}", redacted_remote(&remote_url)))?;
+        Ok(())
     }
 
     fn get_ahead_behind_internal(&self, repo: &Repository, branch_name: &str) -> Result<(usize, usize)> {
@@ -504,6 +541,18 @@ impl GitRepository {
         
         Ok(output)
     }
+}
+
+// Helper to redact credentials from URLs in logs
+fn redacted_remote(url: &str) -> String {
+    if let (Some(scheme_idx), Some(at_idx)) = (url.find("://"), url.find('@')) {
+        if at_idx > scheme_idx + 3 {
+            let (left, rest) = url.split_at(scheme_idx + 3);
+            let (_, right) = rest.split_at(at_idx - (scheme_idx + 3));
+            return format!("{}***{}", left, right);
+        }
+    }
+    url.to_string()
 }
 
 // Implement Send + Sync for GitRepository since git2::Repository is Send but not Sync

@@ -145,12 +145,28 @@ impl GitRepository {
             }
             Err(e) => {
                 tracing::error!("GitRepository: clone failed into {:?}: {}", workspace_path, e);
-                // Best-effort cleanup of partial repo to avoid leaving just .git
+                // Best-effort cleanup of partial repo artifacts without deleting the workspace itself
                 if workspace_path.exists() {
-                    if let Err(clean_err) = std::fs::remove_dir_all(&workspace_path) {
-                        tracing::warn!("GitRepository: failed to cleanup partial workspace at {:?}: {}", workspace_path, clean_err);
+                    let git_dir = workspace_path.join(".git");
+                    if git_dir.exists() {
+                        if let Err(clean_err) = std::fs::remove_dir_all(&git_dir) {
+                            tracing::warn!(
+                                "GitRepository: failed to remove partial .git at {:?}: {}",
+                                git_dir, clean_err
+                            );
+                        }
                     }
-                    let _ = std::fs::create_dir_all(&workspace_path);
+                    // Remove any temporary _git2_* files created by libgit2
+                    if let Ok(entries) = std::fs::read_dir(&workspace_path) {
+                        for entry in entries.flatten() {
+                            if let Ok(name) = entry.file_name().into_string() {
+                                if name.starts_with("_git2_") || name.ends_with(".lock") {
+                                    let path = entry.path();
+                                    let _ = std::fs::remove_file(&path);
+                                }
+                            }
+                        }
+                    }
                 }
                 return Err(anyhow::anyhow!("Failed to clone repository: {}", e))
                     .with_context(|| format!("Failed to clone repository to {:?}", workspace_path));

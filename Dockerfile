@@ -63,7 +63,6 @@ RUN apt-get update && apt-get install -y \
     supervisor \
     ca-certificates \
     wget \
-    gosu \
     python3 \
     python3-pip \
     python3-venv \
@@ -96,10 +95,10 @@ RUN mkdir -p /app/frontend \
     && chown -R appuser:appgroup /var/log/supervisor \
     && chown -R appuser:appgroup /var/lib/nginx \
     && chown -R appuser:appgroup /run/nginx \
-    && chmod -R 0777 /var/log/supervisor /var/lib/nginx /run/nginx
+    && chmod -R 0775 /var/log/supervisor /var/lib/nginx /run/nginx
 
 # Ensure logs directory is writable
-RUN chmod 0777 /app/logs
+RUN chmod 0775 /app/logs
 
 # Copy built frontend
 COPY --from=frontend-builder --chown=appuser:appgroup /app/build /app/frontend
@@ -121,14 +120,13 @@ COPY --chown=appuser:appgroup prompts/ /app/prompts/
 # Make scripts executable
 RUN chmod +x /app/docker-entrypoint.sh
 
-# Create workspace directory with permissive permissions to support arbitrary runtime UID/GID
-# This avoids write issues when the container is run with a different user ID
-RUN mkdir -p /app/workspace && \
-    chown -R appuser:appgroup /app/workspace && \
-    chmod 0777 /app/workspace
+## Create workspace directory owned by appuser; runtime will be rootless
+RUN mkdir -p /workspace && \
+    chown -R appuser:appgroup /workspace && \
+    chmod 0775 /workspace
 
-# Declare workspace as a volume for proper handling
-VOLUME ["/app/workspace"]
+# Declare workspace as a volume (matches orchestrator mount target)
+VOLUME ["/workspace"]
 
 # Expose unprivileged port for internal HTTP traffic (rootless)
 EXPOSE 3000
@@ -136,11 +134,11 @@ EXPOSE 3000
 # Set environment variables
 ENV DCMT_HOST=0.0.0.0
 ENV DCMT_PORT=3001
-ENV DCMT_WORKSPACE_PATH=/app/workspace
+ENV DCMT_WORKSPACE_PATH=/workspace
 ENV LITELLM_BASE_URL=http://127.0.0.1:4000
 
-# NOTE: We intentionally stay as root here so the entrypoint can fix ownership
-# of volume-mounted workspace directories, then drop privileges with gosu.
+## Rootless runtime: switch to appuser
+USER appuser
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \

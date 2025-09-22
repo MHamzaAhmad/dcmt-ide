@@ -32,7 +32,7 @@ impl Config {
         let _ = dotenvy::dotenv();
         
         let workspace_path = std::env::var("DCMT_WORKSPACE_PATH")
-            .unwrap_or_else(|_| "./workspace".to_string())
+            .unwrap_or_else(|_| "/workspace".to_string())
             .into();
         
         let host = std::env::var("DCMT_HOST")

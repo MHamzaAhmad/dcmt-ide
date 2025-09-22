@@ -1,4 +1,4 @@
-.PHONY: litellm docker-build docker-run ssl-setup tavily-proxy pull docker-clean docker-restart
+.PHONY: litellm docker-build docker-run ssl-setup tavily-proxy pull docker-clean docker-restart prod-build
 litellm:
 	docker run \
 		--env-file .env \

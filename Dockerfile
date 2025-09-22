@@ -63,6 +63,7 @@ RUN apt-get update && apt-get install -y \
     supervisor \
     ca-certificates \
     wget \
+    gosu \
     python3 \
     python3-pip \
     python3-venv \
@@ -94,10 +95,11 @@ RUN mkdir -p /app/frontend \
     && chown -R appuser:appgroup /app \
     && chown -R appuser:appgroup /var/log/supervisor \
     && chown -R appuser:appgroup /var/lib/nginx \
-    && chown -R appuser:appgroup /run/nginx
+    && chown -R appuser:appgroup /run/nginx \
+    && chmod -R 0777 /var/log/supervisor /var/lib/nginx /run/nginx
 
 # Ensure logs directory is writable
-RUN chmod 775 /app/logs
+RUN chmod 0777 /app/logs
 
 # Copy built frontend
 COPY --from=frontend-builder --chown=appuser:appgroup /app/build /app/frontend
@@ -137,8 +139,8 @@ ENV DCMT_PORT=3001
 ENV DCMT_WORKSPACE_PATH=/app/workspace
 ENV LITELLM_BASE_URL=http://127.0.0.1:4000
 
-# Switch to app user
-USER appuser
+# NOTE: We intentionally stay as root here so the entrypoint can fix ownership
+# of volume-mounted workspace directories, then drop privileges with gosu.
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \

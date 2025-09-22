@@ -9,8 +9,19 @@ echo "🚀 Starting DCMT Editor Container..."
 # Create necessary directories
 mkdir -p /app/logs
 
-# Note: /app/workspace is already created with proper ownership in Dockerfile
-# We can't chown as non-root user, so permissions are handled during build
+# If running as root, ensure workspace ownership matches appuser before dropping privileges
+if [ "$(id -u)" = "0" ]; then
+    # Default envs in case not provided
+    : "${APP_USER:=appuser}"
+    : "${APP_GROUP:=appgroup}"
+    : "${DCMT_WORKSPACE_PATH:=/app/workspace}"
+
+    echo "🔐 Running as root; ensuring workspace ownership for ${APP_USER}:${APP_GROUP}..."
+    mkdir -p "$DCMT_WORKSPACE_PATH"
+    # Attempt a fast chown; ignore errors on special filesystems
+    chown -R ${APP_USER}:${APP_GROUP} "$DCMT_WORKSPACE_PATH" 2>/dev/null || true
+    chmod 0775 "$DCMT_WORKSPACE_PATH" 2>/dev/null || true
+fi
 
 # Environment variable validation
 echo "🔧 Validating configuration..."
@@ -45,21 +56,29 @@ mkdir -p "$DCMT_WORKSPACE_PATH"
 if [ -d "$DCMT_WORKSPACE_PATH" ]; then
     workspace_owner=$(stat -c '%U:%G' "$DCMT_WORKSPACE_PATH" 2>/dev/null || echo "unknown")
     workspace_perms=$(stat -c '%a' "$DCMT_WORKSPACE_PATH" 2>/dev/null || echo "unknown")
+    workspace_uid=$(stat -c '%u' "$DCMT_WORKSPACE_PATH" 2>/dev/null || echo "unknown")
+    workspace_gid=$(stat -c '%g' "$DCMT_WORKSPACE_PATH" 2>/dev/null || echo "unknown")
     echo "📁 Workspace status:"
     echo "  - Path: $DCMT_WORKSPACE_PATH"
     echo "  - Owner: $workspace_owner"
     echo "  - Permissions: $workspace_perms"
+    echo "  - UID:GID: $workspace_uid:$workspace_gid"
     
     # Check if workspace is writable by current user
     if [ -w "$DCMT_WORKSPACE_PATH" ]; then
         echo "  - Writable: ✅ Yes"
     else
         echo "  - Writable: ❌ No"
-        echo "⚠️  Warning: Workspace directory is not writable by appuser"
-        # If running as root, try to adjust permissions for compatibility
+        echo "⚠️  Warning: Workspace directory is not writable by current user"
+        # If running as root, fix perms; otherwise log and continue (git may still fail)
         if [ "$(id -u)" = "0" ]; then
             echo "🔧 Attempting to fix workspace permissions (running as root)..."
-            chmod 0777 "$DCMT_WORKSPACE_PATH" || true
+            # Prefer to adjust ownership only if owned by root. If owned by a non-root UID
+            # (e.g. host user via bind mount), we will instead drop privileges to that UID later.
+            if [ "$workspace_uid" = "0" ]; then
+              chown -R ${APP_USER}:${APP_GROUP} "$DCMT_WORKSPACE_PATH" || true
+              chmod 0775 "$DCMT_WORKSPACE_PATH" || true
+            fi
         fi
     fi
 else
@@ -92,5 +111,18 @@ echo "  - WebSocket: ws://localhost:3000/ws"
 echo ""
 echo "📋 Note: SSL termination should be handled by host nginx"
 
-# Execute the command passed to the container
-exec "$@"
+# If we're root, drop privileges to appuser before launching services
+if [ "$(id -u)" = "0" ]; then
+    # Determine UID/GID to drop to: if workspace is owned by a non-root numeric UID,
+    # run as that UID to satisfy libgit2 owner checks without chowning the host mount.
+    if [ "$workspace_uid" != "unknown" ] && [ "$workspace_gid" != "unknown" ] && [ "$workspace_uid" != "0" ]; then
+        echo "👤 Dropping privileges to workspace owner ${workspace_uid}:${workspace_gid} via gosu"
+        exec gosu ${workspace_uid}:${workspace_gid} "$@"
+    else
+        echo "👤 Dropping privileges to ${APP_USER}:${APP_GROUP} via gosu"
+        exec gosu ${APP_USER}:${APP_GROUP} "$@"
+    fi
+else
+    # Execute the command passed to the container
+    exec "$@"
+fi

@@ -54,8 +54,9 @@ RUN touch src/cmd/main.rs && cargo build --release
 FROM texlive/texlive:latest
 
 # Allow configuring container user to match host UID/GID for volume permissions
-ARG USER_UID=1001
-ARG USER_GID=1001
+# Default to 1000:1000 to align with typical host users and the launcher config
+ARG USER_UID=1000
+ARG USER_GID=1000
 
 # Install runtime dependencies
 RUN apt-get update && apt-get install -y \

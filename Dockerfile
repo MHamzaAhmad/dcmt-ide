@@ -34,6 +34,9 @@ WORKDIR /app
 # Copy Cargo files
 COPY backend/Cargo.toml backend/Cargo.lock backend/
 
+# Copy prompts directory that the backend needs at build time
+COPY prompts/ prompts/
+
 # Create dummy main.rs for dependency caching
 RUN mkdir -p backend/src/cmd && echo "fn main() {}" > backend/src/cmd/main.rs
 

@@ -36,7 +36,7 @@ echo "  - Host: $DCMT_HOST"
 echo "  - Port: $DCMT_PORT"
 echo "  - Workspace: $DCMT_WORKSPACE_PATH"
 echo "  - LiteLLM URL: $LITELLM_BASE_URL"
-echo "  - User: $(id -u):$(id -g) (expected UID:GID $APP_UID:$APP_GID)"
+echo "  - User: $(id -u):$(id -g)"
 
 # Create workspace if it doesn't exist (in case of volume mount)
 mkdir -p "$DCMT_WORKSPACE_PATH"
@@ -56,6 +56,11 @@ if [ -d "$DCMT_WORKSPACE_PATH" ]; then
     else
         echo "  - Writable: ❌ No"
         echo "⚠️  Warning: Workspace directory is not writable by appuser"
+        # If running as root, try to adjust permissions for compatibility
+        if [ "$(id -u)" = "0" ]; then
+            echo "🔧 Attempting to fix workspace permissions (running as root)..."
+            chmod 0777 "$DCMT_WORKSPACE_PATH" || true
+        fi
     fi
 else
     echo "❌ Workspace directory does not exist: $DCMT_WORKSPACE_PATH"

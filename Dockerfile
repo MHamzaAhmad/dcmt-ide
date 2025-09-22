@@ -119,11 +119,11 @@ COPY --chown=appuser:appgroup prompts/ /app/prompts/
 # Make scripts executable
 RUN chmod +x /app/docker-entrypoint.sh
 
-# Create workspace directory with proper permissions
-# Use 775 permissions to allow group access for volume mounting scenarios
+# Create workspace directory with permissive permissions to support arbitrary runtime UID/GID
+# This avoids write issues when the container is run with a different user ID
 RUN mkdir -p /app/workspace && \
     chown -R appuser:appgroup /app/workspace && \
-    chmod 2775 /app/workspace
+    chmod 0777 /app/workspace
 
 # Declare workspace as a volume for proper handling
 VOLUME ["/app/workspace"]
@@ -145,4 +145,4 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
     CMD wget --no-verbose --tries=1 --spider http://localhost:3000/ || exit 1
 
 ENTRYPOINT ["/app/docker-entrypoint.sh"]
-CMD ["/usr/bin/supervisord", "-c", "/etc/supervisord.conf"]
+CMD ["/usr/bin/supervisord", "-n", "-c", "/etc/supervisord.conf"]

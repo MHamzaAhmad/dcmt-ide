@@ -4,10 +4,10 @@ set -e
 echo "🚀 Starting DCMT Editor Container..."
 
 # Create necessary directories
-mkdir -p /app/logs /app/workspace
+mkdir -p /app/logs
 
-# Set permissions
-chown -R appuser:appgroup /app/logs /app/workspace 2>/dev/null || true
+# Note: /app/workspace is already created with proper ownership in Dockerfile
+# We can't chown as non-root user, so permissions are handled during build
 
 # Environment variable validation
 echo "🔧 Validating configuration..."
@@ -34,14 +34,27 @@ echo "  - Port: $DCMT_PORT"
 echo "  - Workspace: $DCMT_WORKSPACE_PATH"
 echo "  - LiteLLM URL: $LITELLM_BASE_URL"
 
-# Create workspace if it doesn't exist and set permissions
+# Create workspace if it doesn't exist (in case of volume mount)
 mkdir -p "$DCMT_WORKSPACE_PATH"
-chown -R appuser:appgroup "$DCMT_WORKSPACE_PATH"
 
-# Fix permissions for mounted workspace volume
+# Check workspace permissions (for debugging)
 if [ -d "$DCMT_WORKSPACE_PATH" ]; then
-    chown -R appuser:appgroup "$DCMT_WORKSPACE_PATH" 2>/dev/null || true
-    chmod -R 755 "$DCMT_WORKSPACE_PATH" 2>/dev/null || true
+    workspace_owner=$(stat -c '%U:%G' "$DCMT_WORKSPACE_PATH" 2>/dev/null || echo "unknown")
+    workspace_perms=$(stat -c '%a' "$DCMT_WORKSPACE_PATH" 2>/dev/null || echo "unknown")
+    echo "📁 Workspace status:"
+    echo "  - Path: $DCMT_WORKSPACE_PATH"
+    echo "  - Owner: $workspace_owner"
+    echo "  - Permissions: $workspace_perms"
+    
+    # Check if workspace is writable by current user
+    if [ -w "$DCMT_WORKSPACE_PATH" ]; then
+        echo "  - Writable: ✅ Yes"
+    else
+        echo "  - Writable: ❌ No"
+        echo "⚠️  Warning: Workspace directory is not writable by appuser"
+    fi
+else
+    echo "❌ Workspace directory does not exist: $DCMT_WORKSPACE_PATH"
 fi
 
 # Test backend binary
@@ -62,15 +75,12 @@ if ! nginx -t -c /etc/nginx/nginx.conf; then
     exit 1
 fi
 
-# Final permissions check
-chown -R appuser:appgroup /app/logs /app/workspace 2>/dev/null || true
-
 echo "✅ Container initialization completed successfully!"
 echo "🌐 Starting services..."
-echo "  - Frontend: http://localhost:80"
-echo "  - API: http://localhost:80/api/"
-echo "  - LiteLLM: http://localhost:80/llm/"
-echo "  - WebSocket: ws://localhost:80/ws"
+echo "  - Frontend: http://localhost:3000"
+echo "  - API: http://localhost:3000/api/"
+echo "  - LiteLLM: http://localhost:3000/llm/"
+echo "  - WebSocket: ws://localhost:3000/ws"
 echo ""
 echo "📋 Note: SSL termination should be handled by host nginx"
 

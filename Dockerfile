@@ -69,7 +69,7 @@ RUN python3 -m venv /app/litellm-venv && \
     /app/litellm-venv/bin/pip install --upgrade pip && \
     /app/litellm-venv/bin/pip install 'litellm[proxy]'
 
-# Create app user
+# Create app user with specific UID/GID for better volume compatibility
 RUN groupadd -g 1001 appgroup && \
     useradd -u 1001 -g appgroup -m -s /bin/bash appuser
 
@@ -110,10 +110,16 @@ COPY --chown=appuser:appgroup prompts/ /app/prompts/
 RUN chmod +x /app/docker-entrypoint.sh
 
 # Create workspace directory with proper permissions
-RUN mkdir -p /app/workspace && chown -R appuser:appgroup /app/workspace
+# Use 775 permissions to allow group access for volume mounting scenarios
+RUN mkdir -p /app/workspace && \
+    chown -R appuser:appgroup /app/workspace && \
+    chmod 775 /app/workspace
 
-# Expose port 80 for internal HTTP traffic
-EXPOSE 80
+# Declare workspace as a volume for proper handling
+VOLUME ["/app/workspace"]
+
+# Expose unprivileged port for internal HTTP traffic (rootless)
+EXPOSE 3000
 
 # Set environment variables
 ENV DCMT_HOST=0.0.0.0
@@ -126,7 +132,7 @@ USER appuser
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
-    CMD wget --no-verbose --tries=1 --spider http://localhost:80/ || exit 1
+    CMD wget --no-verbose --tries=1 --spider http://localhost:3000/ || exit 1
 
 ENTRYPOINT ["/app/docker-entrypoint.sh"]
 CMD ["/usr/bin/supervisord", "-c", "/etc/supervisord.conf"]

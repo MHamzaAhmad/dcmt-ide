@@ -50,8 +50,8 @@ struct Choice {
 }
 
 pub struct GitService {
-    repo: Option<Arc<GitRepository>>,
-    _workspace_path: PathBuf,
+    repo: Mutex<Option<Arc<GitRepository>>>,
+    workspace_path: PathBuf,
     llm_repo: Arc<LLMRepository>,
     // Cache last computed summaries by a stable diff signature to avoid redundant LLM calls
     cache_unstaged: Mutex<Option<(String, CommitSummary)>>,
@@ -68,8 +68,8 @@ impl GitService {
     let llm_repo = Arc::new(LLMRepository::new(litellm_base_url.clone())?);
 
         Ok(Self {
-            repo,
-            _workspace_path: workspace_path,
+            repo: Mutex::new(repo),
+            workspace_path,
             llm_repo,
             cache_unstaged: Mutex::new(None),
             cache_staged: Mutex::new(None),
@@ -77,11 +77,33 @@ impl GitService {
     }
 
     pub fn is_repository_initialized(&self) -> bool {
-        self.repo.is_some()
+        self.repo.lock().unwrap().is_some()
+    }
+
+    /// Ensure a git repository exists; if missing and repo_url provided, clone it.
+    pub async fn ensure_repository(&self, repo_url: Option<String>, git_user_name: Option<String>, git_user_email: Option<String>) -> Result<bool> {
+        {
+            if self.repo.lock().unwrap().is_some() {
+                return Ok(true);
+            }
+        }
+        let url = match repo_url {
+            Some(u) if !u.trim().is_empty() => u,
+            _ => return Ok(false),
+        };
+        let repo = GitRepository::clone_or_open(
+            self.workspace_path.clone(),
+            &url,
+            git_user_name.as_deref(),
+            git_user_email.as_deref(),
+        )?;
+        let mut guard = self.repo.lock().unwrap();
+        *guard = Some(Arc::new(repo));
+        Ok(true)
     }
 
     pub async fn get_status(&self) -> Result<GitStatus> {
-        match &self.repo {
+        match &*self.repo.lock().unwrap() {
             Some(repo) => repo.get_status(),
             None => Ok(GitStatus {
                 branch: "main".to_string(),
@@ -97,7 +119,7 @@ impl GitService {
     }
 
     pub async fn get_diff(&self, staged: bool) -> Result<GitDiff> {
-        match &self.repo {
+        match &*self.repo.lock().unwrap() {
             Some(repo) => repo.get_diff(staged),
             None => Err(anyhow::anyhow!("Git repository is not initialized")),
         }
@@ -105,7 +127,7 @@ impl GitService {
 
     pub async fn generate_commit_summary(&self, staged: bool) -> Result<CommitSummary> {
         tracing::info!("GitService: generate_commit_summary called",);
-        match &self.repo {
+        match &*self.repo.lock().unwrap() {
             Some(repo) => {
                 tracing::info!("GitService: generating diff string",);
                 let diff_string = repo.get_diff_as_string(staged)?;
@@ -201,28 +223,28 @@ impl GitService {
     }
 
     pub async fn stage_files(&self, paths: Vec<String>) -> Result<()> {
-        match &self.repo {
+        match &*self.repo.lock().unwrap() {
             Some(repo) => repo.stage_files(paths),
             None => Err(anyhow::anyhow!("Git repository is not initialized")),
         }
     }
 
     pub async fn stage_all(&self) -> Result<()> {
-        match &self.repo {
+        match &*self.repo.lock().unwrap() {
             Some(repo) => repo.stage_all(),
             None => Err(anyhow::anyhow!("Git repository is not initialized")),
         }
     }
 
     pub async fn commit(&self, message: String) -> Result<CommitResult> {
-        match &self.repo {
+        match &*self.repo.lock().unwrap() {
             Some(repo) => repo.commit(message),
             None => Err(anyhow::anyhow!("Git repository is not initialized")),
         }
     }
 
     pub async fn push(&self) -> Result<()> {
-        match &self.repo {
+        match &*self.repo.lock().unwrap() {
             Some(repo) => {
                 let branch = repo.get_current_branch()?;
                 repo.push("origin", &branch)

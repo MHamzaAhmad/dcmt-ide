@@ -10,6 +10,13 @@ import type {
 export class DesktopGitAdapter implements GitOperations {
 	private initialized = false;
 
+	async ensureRepository(): Promise<boolean> {
+		// Not applicable on desktop; repo is the user's local project.
+		// Returning false indicates nothing to clone.
+		console.warn('ensureRepository is not implemented on desktop platform');
+		return false;
+	}
+
 	async initialize(workspacePath: string, litellmBaseUrl: string): Promise<void> {
 		try {
 			await invoke('initialize_git_service', {

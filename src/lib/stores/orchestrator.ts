@@ -15,7 +15,7 @@ import { eventStore } from './events';
 import { projectStore } from './project';
 import { authStore } from './auth';
 import { isTauri } from '$lib/utils/platform';
-import { platformApi } from '$lib/api/adapters';
+import { platformApi, getGitAdapter } from '$lib/api/adapters';
 import type { QueryClient } from '@tanstack/svelte-query';
 
 export interface InitializationStep {
@@ -51,6 +51,11 @@ function createInitializationOrchestrator() {
         {
             name: 'auth',
             description: 'Check authentication',
+            status: 'pending'
+        },
+        {
+            name: 'repo',
+            description: 'Ensure workspace repository is available',
             status: 'pending'
         },
         {
@@ -142,9 +147,9 @@ function createInitializationOrchestrator() {
             // Filter steps based on platform and options
             let steps = [...initialSteps];
 
-            // Remove auth step for desktop
+            // Remove auth/repo steps for desktop
             if (isTauri()) {
-                steps = steps.filter(step => step.name !== 'auth');
+                steps = steps.filter(step => step.name !== 'auth' && step.name !== 'repo');
             }
 
             // Remove agent step if requested
@@ -178,6 +183,17 @@ function createInitializationOrchestrator() {
                         // Emit auth event
                         if (authState.user) {
                             eventStore.events.authAuthenticated(authState.user.id || 'unknown', authState.user.email);
+                        }
+                    });
+
+                    // Step 0.5: Ensure repo is present (web only)
+                    await orchestrator.executeStep('repo', async () => {
+                        console.log('InitializationOrchestrator: Ensuring workspace repository (web)...');
+                        try {
+                            const ensured = await getGitAdapter().ensureRepository();
+                            console.log('InitializationOrchestrator: ensureRepository (web) =>', ensured);
+                        } catch (e) {
+                            console.warn('InitializationOrchestrator: ensureRepository failed (web), continuing:', e);
                         }
                     });
                 }

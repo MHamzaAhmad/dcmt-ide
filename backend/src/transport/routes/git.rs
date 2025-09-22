@@ -11,6 +11,7 @@ use std::time::Instant;
 
 use crate::svc::git_service::{CommitSummary, GitService};
 use crate::repo::git_repository::{CommitResult, GitDiff, GitStatus};
+use crate::config::Config;
 
 #[derive(Debug, Deserialize)]
 pub struct DiffQuery {
@@ -78,7 +79,8 @@ pub fn git_router() -> Router<Arc<GitService>> {
         .route("/stage-all", post(stage_all))
         .route("/commit", post(commit_changes))
         .route("/push", post(push_changes))
-        .route("/commit-and-push", post(commit_and_push))
+    .route("/commit-and-push", post(commit_and_push))
+    .route("/ensure", post(ensure_repository))
 }
 
 async fn get_git_status(
@@ -265,5 +267,34 @@ async fn commit_and_push(
                 }),
             ))
         }
+    }
+}
+
+#[derive(Debug, Serialize)]
+pub struct EnsureResponse { success: bool, initialized: bool }
+
+async fn ensure_repository(
+    State(git_service): State<Arc<GitService>>,
+) -> Result<Json<EnsureResponse>, (StatusCode, Json<ErrorResponse>)> {
+    let config = Config::load().map_err(|e| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(ErrorResponse { error: format!("Failed to load config: {}", e) }),
+        )
+    })?;
+
+    match git_service
+        .ensure_repository(
+            config.repo_url.clone(),
+            config.git_user_name.clone(),
+            config.git_user_email.clone(),
+        )
+        .await
+    {
+        Ok(initialized) => Ok(Json(EnsureResponse { success: initialized, initialized })),
+        Err(e) => Err((
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(ErrorResponse { error: format!("Failed to ensure repository: {}", e) }),
+        )),
     }
 }

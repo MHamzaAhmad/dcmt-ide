@@ -5,7 +5,8 @@
 
 import { writable, derived, get } from 'svelte/store';
 import { browser } from '$app/environment';
-import { fileSystemApi } from '$lib/api/adapters';
+import { fileSystemApi, getGitAdapter } from '$lib/api/adapters';
+import { isTauri } from '$lib/utils/platform';
 import type { QueryClient } from '@tanstack/svelte-query';
 import { useQueryClient } from '@tanstack/svelte-query';
 import { eventStore } from './events';
@@ -125,6 +126,15 @@ function createWorkspaceStore() {
             }));
 
             try {
+                // On web, ensure backend has cloned the repository to the workspace
+                if (!isTauri()) {
+                    try {
+                        const ensured = await getGitAdapter().ensureRepository();
+                        console.log('WorkspaceStore: ensureRepository (web) =>', ensured);
+                    } catch (e) {
+                        console.warn('WorkspaceStore: ensureRepository failed (web), continuing:', e);
+                    }
+                }
                 // Load initial file tree
                 await store.refreshFileTree();
                 

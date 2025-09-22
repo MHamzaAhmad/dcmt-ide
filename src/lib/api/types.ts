@@ -145,6 +145,7 @@ export interface LaTeXOperations {
 }
 
 export interface GitOperations {
+	ensureRepository(): Promise<boolean>;
 	getStatus(): Promise<GitStatus>;
 	getDiff(staged: boolean): Promise<GitDiff>;
 	generateSummary(staged: boolean): Promise<CommitSummary>;

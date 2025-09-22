@@ -6,6 +6,9 @@ pub struct Config {
     pub workspace_path: PathBuf,
     pub server: ServerConfig,
     pub agent: AgentConfig,
+    pub repo_url: Option<String>,
+    pub git_user_name: Option<String>,
+    pub git_user_email: Option<String>,
     pub base_url: String,
     pub clerk_secret_key: Option<String>,
     pub tavily_api_key: Option<String>,
@@ -50,10 +53,29 @@ impl Config {
         let base_url = std::env::var("BASE_URL")
             .unwrap_or_else(|_| format!("http://{}:{}", host, port));
 
+        // Optional repository URL to auto-clone into workspace on web start
+        let repo_url = std::env::var("DCMT_REPO_URL").ok();
+
+        // Optional git user config for commits
+        // Prefer DCMT_* vars; fall back to common GIT_* vars if present
+        let git_user_name = std::env::var("DCMT_GIT_USER_NAME")
+            .ok()
+            .or_else(|| std::env::var("GIT_AUTHOR_NAME").ok())
+            .or_else(|| std::env::var("GIT_COMMITTER_NAME").ok())
+            .or_else(|| std::env::var("GIT_USER_NAME").ok());
+        let git_user_email = std::env::var("DCMT_GIT_USER_EMAIL")
+            .ok()
+            .or_else(|| std::env::var("GIT_AUTHOR_EMAIL").ok())
+            .or_else(|| std::env::var("GIT_COMMITTER_EMAIL").ok())
+            .or_else(|| std::env::var("GIT_USER_EMAIL").ok());
+
         Ok(Config {
             workspace_path,
             server: ServerConfig { host, port },
             agent: AgentConfig { litellm_base_url },
+            repo_url,
+            git_user_name,
+            git_user_email,
             base_url,
             clerk_secret_key,
             tavily_api_key,

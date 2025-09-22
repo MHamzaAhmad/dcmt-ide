@@ -8,6 +8,18 @@ import type {
 } from '../../types';
 
 export class WebGitAdapter implements GitOperations {
+	async ensureRepository(): Promise<boolean> {
+		try {
+			const response = await apiClient.post<{ success: boolean; initialized: boolean }>(
+				'/api/git/ensure',
+				{}
+			);
+			return response.initialized ?? response.success ?? false;
+		} catch (error) {
+			console.error('Failed to ensure repository:', error);
+			return false;
+		}
+	}
 
 	async getStatus(): Promise<GitStatus> {
 		try {

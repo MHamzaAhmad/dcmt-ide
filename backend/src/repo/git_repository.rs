@@ -1,6 +1,6 @@
 use anyhow::{Context, Result};
 use git2::{
-    BranchType, Delta, DiffOptions, ErrorCode, Repository, RepositoryOpenFlags,
+    BranchType, Delta, DiffOptions, ErrorCode, FetchOptions, RemoteCallbacks, Repository, RepositoryOpenFlags,
     Signature, Status, StatusOptions,
 };
 use serde::{Deserialize, Serialize};
@@ -75,6 +75,56 @@ pub struct GitRepository {
 }
 
 impl GitRepository {
+    /// Clone repository into workspace if not already a git repo. Returns initialized GitRepository.
+    pub fn clone_or_open(
+        workspace_path: PathBuf,
+        repo_url: &str,
+        git_user_name: Option<&str>,
+        git_user_email: Option<&str>,
+    ) -> Result<Self> {
+        // If .git exists or open_ext succeeds, just open
+        if Self::repository_exists(&workspace_path) {
+            return Self::new(workspace_path);
+        }
+
+        // Ensure directory exists
+        std::fs::create_dir_all(&workspace_path)
+            .with_context(|| format!("Failed to create workspace directory at {:?}", workspace_path))?;
+
+        // Try to clone
+        let mut callbacks = RemoteCallbacks::new();
+        callbacks.credentials(|_url, username_from_url, _allowed_types| {
+            // Try SSH agent if URL is ssh, otherwise default
+            git2::Cred::ssh_key_from_agent(username_from_url.unwrap_or("git"))
+        });
+        let mut fo = FetchOptions::new();
+        fo.remote_callbacks(callbacks);
+
+        let mut builder = git2::build::RepoBuilder::new();
+        builder.fetch_options(fo);
+
+        let repo = builder
+            .clone(repo_url, &workspace_path)
+            .with_context(|| format!("Failed to clone repository from {} to {:?}", repo_url, workspace_path))?;
+
+        // Configure user.name and user.email if provided
+        if git_user_name.is_some() || git_user_email.is_some() {
+            let mut cfg = repo.config()?;
+            if let Some(name) = git_user_name {
+                if !name.is_empty() {
+                    cfg.set_str("user.name", name)?;
+                }
+            }
+            if let Some(email) = git_user_email {
+                if !email.is_empty() {
+                    cfg.set_str("user.email", email)?;
+                }
+            }
+        }
+
+        Ok(Self { repo: Mutex::new(repo), workspace_path })
+    }
+
     pub fn new(workspace_path: PathBuf) -> Result<Self> {
         let repo = Repository::open_ext(
             &workspace_path,

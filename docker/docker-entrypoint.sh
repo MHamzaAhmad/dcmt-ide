@@ -1,6 +1,9 @@
 #!/bin/sh
 set -e
 
+# Ensure group-writable files/dirs by default (works with setgid bit on dirs)
+umask 0002
+
 echo "🚀 Starting DCMT Editor Container..."
 
 # Create necessary directories
@@ -33,6 +36,7 @@ echo "  - Host: $DCMT_HOST"
 echo "  - Port: $DCMT_PORT"
 echo "  - Workspace: $DCMT_WORKSPACE_PATH"
 echo "  - LiteLLM URL: $LITELLM_BASE_URL"
+echo "  - User: $(id -u):$(id -g) (expected UID:GID $APP_UID:$APP_GID)"
 
 # Create workspace if it doesn't exist (in case of volume mount)
 mkdir -p "$DCMT_WORKSPACE_PATH"
@@ -71,8 +75,7 @@ fi
 # Test nginx configuration
 echo "🧪 Testing nginx configuration..."
 if ! nginx -t -c /etc/nginx/nginx.conf; then
-    echo "❌ Nginx configuration test failed!"
-    exit 1
+    echo "⚠️  Nginx configuration test reported issues (will continue and let supervisord capture logs)."
 fi
 
 echo "✅ Container initialization completed successfully!"

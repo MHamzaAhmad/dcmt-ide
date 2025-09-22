@@ -1,4 +1,4 @@
-.PHONY: litellm docker-build docker-run ssl-setup tavily-proxy pull docker-clean docker-restart prod-build
+.PHONY: litellm docker-build docker-run ssl-setup tavily-proxy pull docker-clean docker-restart prod-build volume-create
 litellm:
 	docker run \
 		--env-file .env \
@@ -19,10 +19,11 @@ docker-build:
 
 
 docker-run:
+	@docker volume inspect dcmt-workspace >/dev/null 2>&1 || docker volume create dcmt-workspace >/dev/null
 	docker run \
 		--env-file .env \
-		-p 8080:80 \
-		-v /tmp/workspace:/app/workspace \
+		-p 8080:3000 \
+		-v dcmt-workspace:/app/workspace \
 		--name dcmt-editor \
 		--rm \
 		-d \
@@ -59,3 +60,6 @@ tavily-proxy:
 		--name tavily-proxy \
 		--rm \
 		tavily-proxy:latest
+
+volume-create:
+	@docker volume inspect dcmt-workspace >/dev/null 2>&1 || docker volume create dcmt-workspace

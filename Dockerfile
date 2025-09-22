@@ -53,6 +53,10 @@ RUN touch src/cmd/main.rs && cargo build --release
 # Production stage
 FROM texlive/texlive:latest
 
+# Allow configuring container user to match host UID/GID for volume permissions
+ARG USER_UID=1001
+ARG USER_GID=1001
+
 # Install runtime dependencies
 RUN apt-get update && apt-get install -y \
     nginx \
@@ -70,8 +74,11 @@ RUN python3 -m venv /app/litellm-venv && \
     /app/litellm-venv/bin/pip install 'litellm[proxy]'
 
 # Create app user with specific UID/GID for better volume compatibility
-RUN groupadd -g 1001 appgroup && \
-    useradd -u 1001 -g appgroup -m -s /bin/bash appuser
+RUN groupadd -g ${USER_GID} appgroup && \
+    useradd -u ${USER_UID} -g appgroup -m -s /bin/bash appuser
+
+# Document effective runtime IDs
+ENV APP_USER=appuser APP_GROUP=appgroup APP_UID=${USER_UID} APP_GID=${USER_GID}
 
 # Create necessary directories
 RUN mkdir -p /app/frontend \
@@ -88,6 +95,9 @@ RUN mkdir -p /app/frontend \
     && chown -R appuser:appgroup /var/log/supervisor \
     && chown -R appuser:appgroup /var/lib/nginx \
     && chown -R appuser:appgroup /run/nginx
+
+# Ensure logs directory is writable
+RUN chmod 775 /app/logs
 
 # Copy built frontend
 COPY --from=frontend-builder --chown=appuser:appgroup /app/build /app/frontend
@@ -113,7 +123,7 @@ RUN chmod +x /app/docker-entrypoint.sh
 # Use 775 permissions to allow group access for volume mounting scenarios
 RUN mkdir -p /app/workspace && \
     chown -R appuser:appgroup /app/workspace && \
-    chmod 775 /app/workspace
+    chmod 2775 /app/workspace
 
 # Declare workspace as a volume for proper handling
 VOLUME ["/app/workspace"]

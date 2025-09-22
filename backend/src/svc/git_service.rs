@@ -127,7 +127,13 @@ impl GitService {
 
     pub async fn generate_commit_summary(&self, staged: bool) -> Result<CommitSummary> {
         tracing::info!("GitService: generate_commit_summary called",);
-        match &*self.repo.lock().unwrap() {
+        // Clone the repo Arc out of the mutex so we don't hold a MutexGuard across awaits
+        let repo_arc: Option<Arc<GitRepository>> = {
+            let guard = self.repo.lock().unwrap();
+            guard.as_ref().cloned()
+        };
+
+        match repo_arc {
             Some(repo) => {
                 tracing::info!("GitService: generating diff string",);
                 let diff_string = repo.get_diff_as_string(staged)?;

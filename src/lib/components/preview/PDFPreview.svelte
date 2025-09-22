@@ -8,6 +8,7 @@
 	// centralized upgrade flow via billingStore
 	import { Badge } from '$lib/components/ui/badge';
 	import LaTeXErrorPanel from '$lib/components/errors/LaTeXErrorPanel.svelte';
+	import { FileText } from '@lucide/svelte';
 
 	// Props
 	interface Props {

@@ -3,6 +3,7 @@
 
 import type { FileEvent } from './fileWebSocket';
 import type { CompilationEvent } from '../../types';
+import { getWebSocketUrl } from '$lib/utils/api';
 
 export interface FileEventCallback {
     (type: string, event: FileEvent): void;
@@ -59,9 +60,7 @@ export class WebSocketManager {
         console.log('WebSocketManager: Creating new WebSocket connection...');
 
         try {
-            const protocol = import.meta.env.VITE_API_BASE_URL?.startsWith('https') ? 'wss:' : 'ws:';
-            const baseUrl = import.meta.env.VITE_API_BASE_URL?.replace(/^(https?:\/\/)/, '') || 'localhost:3001';
-            const wsUrl = `${protocol}//${baseUrl}/ws`;
+            const wsUrl = `${getWebSocketUrl()}/ws`;
 
             this.ws = new WebSocket(wsUrl);
             this.connectionCount++;

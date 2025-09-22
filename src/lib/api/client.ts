@@ -1,12 +1,13 @@
 // API Client Configuration
 
 import { authStore } from '$lib/stores/auth';
+import { getApiBaseUrl } from '$lib/utils/api';
 
 export class APIClient {
 	public baseURL: string;
 
 	constructor(baseURL: string = '') {
-		this.baseURL = baseURL || import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001';
+		this.baseURL = baseURL || getApiBaseUrl();
 	}
 
 	private async request<T>(

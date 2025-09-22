@@ -2,6 +2,7 @@
 import type { AgentEvent, FileEventData } from '../../types';
 import type { FileEventCallback, FileEventType } from '../../hooks/useFileWatcher';
 import { eventStore } from '$lib/stores/events';
+import { getWebSocketUrl } from '$lib/utils/api';
 
 export type AgentEventCallback = (event: AgentEvent) => void;
 
@@ -32,9 +33,7 @@ export class AgentWebSocketAdapter {
         try {
             // Use relative URL to let nginx handle proxying in Docker deployment
             // Construct WebSocket URL based on current protocol and host
-            const protocol = import.meta.env.VITE_API_BASE_URL.startsWith('https') ? 'wss:' : 'ws:';
-            const baseUrl = import.meta.env.VITE_API_BASE_URL.replace(/^(https?:\/\/)/, '');
-            const wsUrl = `${protocol}//${baseUrl}/ws`;
+            const wsUrl = `${getWebSocketUrl()}/ws`;
             console.log('Connecting to agent WebSocket:', wsUrl);
             
             this.ws = new WebSocket(wsUrl);

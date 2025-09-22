@@ -1,6 +1,7 @@
 // Agent SSE (Server-Sent Events) Adapter for Real-time Agent Events
 import type { AgentEvent } from '../../types';
 import { eventStore } from '$lib/stores/events';
+import { getApiBaseUrl } from '$lib/utils/api';
 
 export type AgentEventCallback = (event: AgentEvent) => void;
 
@@ -30,7 +31,7 @@ export class AgentSSEAdapter {
         
         this.currentSessionId = sessionId;
         // Use relative URL to let nginx handle proxying in Docker deployment
-        const baseUrl = `${import.meta.env.VITE_API_BASE_URL}/sse` || '/sse';
+        const baseUrl = `${getApiBaseUrl()}/sse` || '/sse';
         const sseUrl = `${baseUrl}/agent/session/${sessionId}/events`;
 
         console.log('Connecting to agent SSE for session:', sessionId, 'URL:', sseUrl);

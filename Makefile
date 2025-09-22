@@ -13,8 +13,6 @@ pull:
 docker-build:
 	export $$(grep -v '^#' .env | xargs) && \
 	docker build \
-		--build-arg VITE_API_BASE_URL=$$VITE_API_BASE_URL \
-		--build-arg VITE_LITELLM_BASE_URL=$$VITE_LITELLM_BASE_URL \
 		--build-arg VITE_CLERK_PUBLISHABLE_KEY=$$VITE_CLERK_PUBLISHABLE_KEY \
 		--build-arg VITE_CLERK_SIGN_IN_URL=$$VITE_CLERK_SIGN_IN_URL \
 		-t dcmt-editor:latest .
@@ -34,6 +32,14 @@ docker-clean:
 	@docker rm -f dcmt-editor
 
 docker-restart: docker-clean pull docker-build docker-run
+
+prod-build:
+	export $$(grep -v '^#' .env | xargs) && \
+	docker build \
+		--build-arg VITE_CLERK_PUBLISHABLE_KEY=$$VITE_CLERK_PUBLISHABLE_KEY \
+		--build-arg VITE_CLERK_SIGN_IN_URL=$$VITE_CLERK_SIGN_IN_URL \
+		-t hamzaawan88/dcmt:ide-v2-latest .
+
 
 ssl-setup:
 	@if [ "$$(id -u)" -ne 0 ]; then \

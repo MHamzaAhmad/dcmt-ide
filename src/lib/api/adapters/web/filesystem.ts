@@ -1,6 +1,7 @@
 // Web File System Operations (HTTP API)
 import { apiClient } from '../../client';
 import type { FileInfo, FileContent, CreateFileRequest, UpdateFileRequest, FileSystemOperations } from '../../types';
+import { getApiBaseUrl } from '$lib/utils/api';
 
 export class WebFileSystemAdapter implements FileSystemOperations {
 	// File operations
@@ -109,7 +110,7 @@ export class WebFileSystemAdapter implements FileSystemOperations {
 	async fileExists(path: string): Promise<boolean> {
 		try {
 			// For binary files (like PDFs), use HEAD request to /api/files/raw/ endpoint
-			const baseUrl = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001';
+			const baseUrl = getApiBaseUrl();
 			const url = `${baseUrl}/api/files/raw/${encodeURIComponent(path)}`;
 			
 			const response = await fetch(url, { method: 'HEAD' });
@@ -121,7 +122,7 @@ export class WebFileSystemAdapter implements FileSystemOperations {
 	}
 
 	async readFileRaw(path: string): Promise<string> {
-		const baseUrl = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001';
+		const baseUrl = getApiBaseUrl();
 		const url = `${baseUrl}/api/files/raw/${encodeURIComponent(path)}?t=${Date.now()}`;
 		return url;
 	}

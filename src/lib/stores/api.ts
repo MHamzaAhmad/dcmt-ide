@@ -1,5 +1,6 @@
 import { writable } from 'svelte/store';
 import { apiClient } from '$lib/api/client';
+import { getApiBaseUrl } from '$lib/utils/api';
 
 export interface APIState {
 	baseURL: string;
@@ -9,7 +10,7 @@ export interface APIState {
 
 function createAPIStore() {
 	const initialState: APIState = {
-		baseURL: import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001',
+		baseURL: getApiBaseUrl(),
 		isConnected: false,
 		connectionError: null
 	};

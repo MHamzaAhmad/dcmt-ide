@@ -187,7 +187,7 @@ impl AgentRepo {
     fn is_file_modifying_tool(tool: &str) -> bool {
         matches!(
             tool,
-            "write_file" | "update_file" | "create_file" | "delete_file" | "create_directory"
+            "write_file" | "update_file" | "patch_file" | "create_file" | "delete_file" | "create_directory"
         )
     }
 
@@ -464,9 +464,19 @@ impl AgentRepo {
                                 tool: tool_call.function.name.clone(),
                                 args: serde_json::from_str(&tool_call.function.arguments)
                                     .unwrap_or(serde_json::Value::Null),
-                                display_name: Some(display_name),
-                                progressive_form: Some(progressive_form),
+                                display_name: Some(display_name.clone()),
+                                progressive_form: Some(progressive_form.clone()),
                                 metadata: Self::create_metadata(&format!("tool-req-{}", tool_call.id)),
+                            })
+                            .await;
+                        
+                        // Emit ToolExecuting for consistency with parallel execution path
+                        self.event_broadcaster
+                            .broadcast(session_id, AgentEvent::ToolExecuting {
+                                tool: tool_call.function.name.clone(),
+                                display_name: Some(display_name.clone()),
+                                progressive_form: Some(progressive_form.clone()),
+                                metadata: Self::create_metadata(&format!("tool-exec-{}", tool_call.id)),
                             })
                             .await;
                         

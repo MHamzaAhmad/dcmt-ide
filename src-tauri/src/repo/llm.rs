@@ -2,6 +2,7 @@ use anyhow::Result;
 use reqwest::{Client, Response};
 use serde::{Deserialize, Serialize};
 use serde::de::DeserializeOwned;
+use std::time::Duration;
 
 use crate::models::agent::{ChatMessage, ToolDefinition, LiteLLMRequest, LiteLLMResponse};
 
@@ -13,10 +14,15 @@ pub struct LLMRepository {
 
 impl LLMRepository {
     pub fn new(base_url: String) -> Self {
-        Self {
-            client: Client::new(),
-            base_url,
-        }
+        let client = Client::builder()
+            // Default for non-streaming requests
+            .timeout(Duration::from_secs(60))
+            .pool_max_idle_per_host(10)
+            .pool_idle_timeout(Duration::from_secs(60))
+            .build()
+            .unwrap_or_else(|_| Client::new());
+
+        Self { client, base_url }
     }
 
     fn models_endpoint(&self) -> String {
@@ -71,7 +77,13 @@ impl LLMRepository {
             "stream": true
         });
 
-        let res = self.client.post(self.chat_endpoint()).json(&payload).send().await?;
+        let res = self.client
+            .post(self.chat_endpoint())
+            .json(&payload)
+            // Streaming may take longer; set a generous timeout
+            .timeout(Duration::from_secs(600))
+            .send()
+            .await?;
         if !res.status().is_success() {
             let status = res.status();
             let text = res.text().await.unwrap_or_default();

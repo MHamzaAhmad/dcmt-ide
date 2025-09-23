@@ -48,7 +48,8 @@ impl LLMRepository {
     /// Creates a new LLM repository instance
     pub fn new(base_url: String) -> Result<Self> {
         let client = Client::builder()
-            .timeout(Duration::from_secs(30))
+            // Keep a conservative default for non-streaming requests
+            .timeout(Duration::from_secs(60))
             .pool_max_idle_per_host(10)
             .pool_idle_timeout(Duration::from_secs(60))
             .build()?;
@@ -142,6 +143,8 @@ impl LLMRepository {
             .header("Content-Type", "application/json")
             .header("Accept", "text/event-stream")
             .json(&req)
+            // Streaming can take a long time; override default timeout for SSE
+            .timeout(Duration::from_secs(600))
             .send()
             .await?;
 

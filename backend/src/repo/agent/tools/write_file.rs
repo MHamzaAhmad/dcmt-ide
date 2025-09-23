@@ -1,6 +1,7 @@
 use super::*;
 use tokio::fs;
 use std::path::Path;
+use tokio::io::AsyncReadExt;
 
 /// Tool for creating or completely overwriting files in the workspace
 pub struct WriteFileTool;
@@ -69,6 +70,30 @@ impl AgentTool for WriteFileTool {
         }
         
         let full_path = workspace.join(path);
+
+        // Enforce single LaTeX main per workspace in a simple way:
+        // If we're writing a .tex file that contains \documentclass and there already exists
+        // another .tex file with \documentclass somewhere in the workspace, block creation.
+        if path.ends_with(".tex") && content.contains("\\documentclass") {
+            // Find an existing main.tex (any .tex containing \documentclass), skipping the target file itself if present
+            if let Some(existing_main) = find_existing_main_with_documentclass(workspace, Some(&full_path)).await.map_err(|e| AgentError::IoError(e))? {
+                let existing_rel = existing_main
+                    .strip_prefix(workspace)
+                    .unwrap_or(&existing_main)
+                    .to_string_lossy()
+                    .to_string();
+                // If the existing main is a different path, prevent creating a new one
+                if existing_rel != path {
+                    return Err(AgentError::InvalidToolArguments {
+                        tool: self.name().to_string(),
+                        error: format!(
+                            "A LaTeX main file already exists at '{}'. Strictly one LaTeX project per workspace. Update the existing main or delete it before creating a new one.",
+                            existing_rel
+                        ),
+                    });
+                }
+            }
+        }
         
         // Create parent directories if they don't exist
         if let Some(parent) = full_path.parent() {
@@ -103,4 +128,35 @@ impl AgentTool for WriteFileTool {
             Err(e) => Err(AgentError::IoError(std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))),
         }
     }
+}
+
+/// Recursively search the workspace for a .tex file that contains \documentclass.
+/// Optionally skip a specific path (e.g., when overwriting the same file).
+async fn find_existing_main_with_documentclass(workspace: &Path, skip: Option<&Path>) -> std::io::Result<Option<std::path::PathBuf>> {
+    let mut stack = vec![workspace.to_path_buf()];
+    while let Some(dir) = stack.pop() {
+        let mut rd = fs::read_dir(&dir).await?;
+        while let Some(entry) = rd.next_entry().await? {
+            let p = entry.path();
+            if let Some(skip_p) = skip { if p == skip_p { continue; } }
+
+            if p.is_dir() {
+                if let Some(name) = p.file_name().and_then(|s| s.to_str()) {
+                    if matches!(name, "build" | "dist" | "output" | ".git" | "node_modules" | "target") {
+                        continue;
+                    }
+                }
+                stack.push(p);
+            } else if p.extension().and_then(|s| s.to_str()) == Some("tex") {
+                let file = fs::File::open(&p).await?;
+                let mut buf = String::new();
+                // Read up to ~128KB to avoid huge files; most headers are at top
+                let _ = tokio::io::BufReader::new(file).take(128 * 1024).read_to_string(&mut buf).await?;
+                if buf.contains("\\documentclass") {
+                    return Ok(Some(p));
+                }
+            }
+        }
+    }
+    Ok(None)
 }

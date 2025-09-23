@@ -209,6 +209,7 @@ To avoid creating duplicate main documents and conflicting PDFs, follow this sel
 
 2) Update vs. create:
 	- Default: Update the active main and its included files. Do NOT create a new top-level main `.tex` file in an existing LaTeX project by default.
+	- Hard rule enforced by tools: If a `.tex` you want to write contains `\documentclass` and an existing main already exists anywhere in the workspace, you MUST update the existing main instead or delete it first. The tools will block creating a second main.
 	- If the user explicitly asks for a separate/new document (e.g., "create a new resume as a separate document"), create it inside `drafts/<slug>/main.tex` (or a clearly isolated subfolder) to avoid collisions.
 	- When creating a separate document, add `% !TEX root = main.tex` markers to included files and consider adding a short README in that folder explaining it is a separate draft.
 
@@ -219,3 +220,6 @@ To avoid creating duplicate main documents and conflicting PDFs, follow this sel
 4) Root markers and hygiene:
 	- Add or preserve `% !TEX root = <relative-path-to-active-main>` at the top of edited included files.
 	- Avoid writing PDFs to the project root if the workspace already has a main; respect existing output directories and do not change `-jobname` unless explicitly asked.
+
+Note on strictness:
+- There must be exactly one LaTeX main (file containing `\documentclass`) per workspace. Creating additional mains is prohibited to keep projects simple and reliable.

@@ -559,7 +559,8 @@ impl AgentRepo {
             model: model.to_string(),
             messages: messages.to_vec(),
             tools: Some(self.tool_registry.get_definitions()),
-            tool_choice: Some("auto".to_string()),
+            // Force tool usage so the agent acts as a doer, not a talker
+            tool_choice: Some("required".to_string()),
             stream: Some(true),
             temperature: None,
             max_tokens: None,

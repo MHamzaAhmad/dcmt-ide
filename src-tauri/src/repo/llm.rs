@@ -73,7 +73,8 @@ impl LLMRepository {
             "model": model,
             "messages": messages,
             "tools": tools,
-            "tool_choice": "auto",
+            // Force tool usage; the agent must act via tools
+            "tool_choice": "required",
             "stream": true
         });
 

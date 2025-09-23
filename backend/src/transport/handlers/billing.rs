@@ -1,5 +1,4 @@
 use axum::{extract::{State, Extension}, Json};
-use axum::http::HeaderMap;
 use axum::http::StatusCode;
 use serde::Serialize;
 use std::sync::Arc;
@@ -41,21 +40,13 @@ pub struct CheckoutResponse { pub url: String }
 
 pub async fn create_checkout_session(
     State(state): State<BillingState>,
-    headers: HeaderMap,
-) -> Result<Json<CheckoutResponse>, axum::http::StatusCode> {
-    let user_id = headers
-        .get("x-user-id")
-        .or_else(|| headers.get("x-userid"))
-        .or_else(|| headers.get("x-user"))
-        .or_else(|| headers.get("user-id"))
-        .or_else(|| headers.get("x-clerk-user-id"))
-        .and_then(|v| v.to_str().ok())
-        .ok_or(axum::http::StatusCode::FORBIDDEN)?
-        .to_string();
+    Extension(jwt): Extension<ClerkJwt>,
+) -> Result<Json<CheckoutResponse>, StatusCode> {
+    let user_id = jwt.sub.clone();
 
     let success_url = format!("{}/?checkout=success", state.config.base_url);
     match state.service.create_checkout_session_url(&user_id, &success_url).await {
         Ok(url) => Ok(Json(CheckoutResponse { url })),
-        Err(_) => Err(axum::http::StatusCode::BAD_GATEWAY),
+        Err(_) => Err(StatusCode::BAD_GATEWAY),
     }
 }

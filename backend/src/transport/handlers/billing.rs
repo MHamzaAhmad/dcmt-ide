@@ -1,10 +1,12 @@
-use axum::{extract::State, Json};
+use axum::{extract::{State, Extension}, Json};
 use axum::http::HeaderMap;
+use axum::http::StatusCode;
 use serde::Serialize;
 use std::sync::Arc;
 
 use crate::svc::PolarService;
 use crate::config::Config;
+use clerk_rs::validators::authorizer::ClerkJwt;
 
 #[derive(Clone)]
 pub struct BillingState {
@@ -20,26 +22,17 @@ pub struct LimitsResponse {
 
 pub async fn get_limits(
     State(state): State<BillingState>,
-    headers: HeaderMap,
-) -> Result<Json<LimitsResponse>, axum::http::StatusCode> {
-    tracing::debug!("Received get_limits request with headers: {:?}", headers);
-    // Read user id from headers (set by auth layer)
-    let user_id = headers
-        .get("x-user-id")
-        .or_else(|| headers.get("x-userid"))
-        .or_else(|| headers.get("x-user"))
-        .or_else(|| headers.get("user-id"))
-        .or_else(|| headers.get("x-clerk-user-id"))
-        .and_then(|v| v.to_str().ok())
-        .ok_or(axum::http::StatusCode::FORBIDDEN)?
-        .to_string();
+    Extension(jwt): Extension<ClerkJwt>,
+) -> Result<Json<LimitsResponse>, StatusCode> {
+    // Extract the user ID from the ClerkUser injected by the ClerkLayer
+    let user_id = jwt.sub.clone();
 
     match state.service.get_user_limits(&user_id).await {
         Ok(res) => Ok(Json(LimitsResponse {
             has_active_subscription: res.has_active_subscription,
             benefits: res.benefits,
         })),
-        Err(_) => Err(axum::http::StatusCode::BAD_GATEWAY),
+        Err(_) => Err(StatusCode::BAD_GATEWAY),
     }
 }
 

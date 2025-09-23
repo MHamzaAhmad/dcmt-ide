@@ -22,6 +22,7 @@ pub async fn get_limits(
     State(state): State<BillingState>,
     headers: HeaderMap,
 ) -> Result<Json<LimitsResponse>, axum::http::StatusCode> {
+    tracing::debug!("Received get_limits request with headers: {:?}", headers);
     // Read user id from headers (set by auth layer)
     let user_id = headers
         .get("x-user-id")

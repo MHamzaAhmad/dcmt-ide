@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { onMount, onDestroy } from 'svelte';
-	import { Input } from '$lib/components/ui/input';
+	import { Textarea } from '$lib/components/ui/textarea';
 	import { Button } from '$lib/components/ui/button';
 	import * as Select from '$lib/components/ui/select';
 	import ChatMessage from './ChatMessage.svelte';
@@ -229,6 +229,8 @@
 	
 	async function handleSend() {
 		if (!inputValue.trim() || !selectedModel) return;
+		// Hard guard: don't allow sending while processing/loading
+		if ((isAgentMode ? isProcessing : isLoading)) return;
 		if (isPromptLimitReached) return;
 		
 		if (isAgentMode && agentAvailable) {
@@ -451,12 +453,12 @@
 			
 			
 			{#if mode === 'floating'}
-				<Input
+				<Textarea
 					bind:value={inputValue}
-					placeholder={selectedModel ? (isPromptLimitReached ? 'Upgrade to continue chatting…' : 'Ask the AI to about your document...') : 'Select a model first...'}
+					placeholder={selectedModel ? ((isAgentMode ? isProcessing : isLoading) ? 'AI is working...' : (isPromptLimitReached ? 'Upgrade to continue chatting…' : 'Ask the AI about your document...')) : 'Select a model first...'}
 					disabled={!selectedModel || (isAgentMode ? isProcessing : isLoading) || isPromptLimitReached}
 					onkeydown={handleKeyDown}
-					class="flex-1 h-8"
+					class="flex-1 min-h-8"
 				/>
 				<Button 
 					onclick={handleSend}
@@ -479,10 +481,10 @@
 			{#if (isAgentMode ? isProcessing : isLoading)}
 				<div class="absolute inset-0 bg-gradient-to-r from-blue-500/10 via-purple-500/10 to-blue-500/10 animate-pulse rounded-lg -z-10" style="animation-duration: 2s;"></div>
 			{/if}
-			<Input
+			<Textarea
 				bind:value={inputValue}
-					placeholder={selectedModel ? ((isAgentMode ? isProcessing : isLoading) ? "AI is working..." : (isPromptLimitReached ? 'Upgrade to continue chatting…' : "Ask me to help with your LaTeX project...")) : "Select a model first..."}
-					disabled={!selectedModel || (isAgentMode ? isProcessing : isLoading) || isPromptLimitReached}
+				placeholder={selectedModel ? ((isAgentMode ? isProcessing : isLoading) ? 'AI is working...' : (isPromptLimitReached ? 'Upgrade to continue chatting…' : 'Ask me to help with your LaTeX project...')) : 'Select a model first...'}
+				disabled={!selectedModel || (isAgentMode ? isProcessing : isLoading) || isPromptLimitReached}
 				onkeydown={handleKeyDown}
 				class="flex-1 {(isAgentMode ? isProcessing : isLoading) ? 'opacity-75' : ''}"
 			/>

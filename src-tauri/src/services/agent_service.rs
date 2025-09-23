@@ -264,21 +264,38 @@ impl AgentService {
     }
     
     
-    /// Loads the system prompt from consolidated prompts file or uses default
+    /// Loads the system prompt from consolidated prompts file with robust fallbacks
     async fn load_system_prompt() -> String {
-        // Try to load from consolidated prompts file first
-        let config_path = PathBuf::from("prompts/latex-agent-systemprompt.md");
-        
-        match fs::read_to_string(&config_path).await {
-            Ok(content) => {
-                tracing::info!("Loaded system prompt from prompts/latex-agent-systemprompt.md");
-                content
-            }
-            Err(_) => {
-                tracing::warn!("Could not load system prompt from {:?}, using default", config_path);
-                "You are a helpful LaTeX document assistant.".to_string()
+        // Candidate locations to try at runtime
+        let mut candidates: Vec<PathBuf> = Vec::new();
+
+        // 1) Current working directory (dev from repo root)
+        candidates.push(PathBuf::from("prompts/latex-agent-systemprompt.md"));
+
+        // 2) Relative to this crate directory (repo_root/prompts/...)
+        let crate_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        candidates.push(crate_dir.join("..").join("prompts").join("latex-agent-systemprompt.md"));
+
+        // 3) Near executable (packaged app or debug run)
+        if let Ok(exec_path) = std::env::current_exe() {
+            if let Some(exec_dir) = exec_path.parent() {
+                candidates.push(exec_dir.join("prompts").join("latex-agent-systemprompt.md"));
+                candidates.push(exec_dir.join("..").join("prompts").join("latex-agent-systemprompt.md"));
+                candidates.push(exec_dir.join("../..").join("prompts").join("latex-agent-systemprompt.md"));
             }
         }
+
+        for path in candidates {
+            if let Ok(content) = fs::read_to_string(&path).await {
+                tracing::info!("Loaded LaTeX agent system prompt from {:?}", path);
+                return content;
+            }
+        }
+
+        // 4) Compile-time embedded fallback
+        const EMBEDDED_PROMPT: &str = include_str!("../../../prompts/latex-agent-systemprompt.md");
+        tracing::warn!("Falling back to embedded LaTeX agent system prompt");
+        EMBEDDED_PROMPT.to_string()
     }
     
     /// Processes a chat request with background processing and real-time events

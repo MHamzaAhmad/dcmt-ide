@@ -40,7 +40,8 @@
 
 	function hasUnlimitedPrompts(): boolean {
 		if (!billingState.isReady) return false;
-		return billingState.benefits.some((b) => b.benefit_type === 'unlimited_prompts' || b.description?.toLowerCase().includes('unlimited prompt'));
+		// Only check the benefit description
+		return billingState.benefits.some((b) => (b.description || '').toLowerCase() === 'unlimited_prompts');
 	}
 
 	function getPromptsUsed(): number {

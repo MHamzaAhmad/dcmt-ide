@@ -97,8 +97,8 @@
 	}
 	function hasUnlimitedDownloads(): boolean {
 		if (!billingState.isReady) return false;
-		// Check by benefit type or description keyword
-		return billingState.benefits.some((b) => b.benefit_type === 'unlimited_downloads' || b.description?.toLowerCase().includes('unlimited download'));
+		// Only check the benefit description
+		return billingState.benefits.some((b) => (b.description || '').toLowerCase() === 'unlimited_downloads');
 	}
 	function getDownloadUsed(): boolean {
 		if (typeof window === 'undefined') return false;
